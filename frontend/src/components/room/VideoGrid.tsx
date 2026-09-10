@@ -12,7 +12,7 @@ interface VideoTileProps {
   isScreenShare?: boolean;
 }
 
-function VideoTile({ stream, label, isLocal, isScreenShare }: VideoTileProps) {
+function VideoTile({ stream, label, isLocal, isScreenShare, peer }: VideoTileProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -24,6 +24,18 @@ function VideoTile({ stream, label, isLocal, isScreenShare }: VideoTileProps) {
   const hasAudio = stream?.getAudioTracks().length ?? 0;
   const hasVideo = stream?.getVideoTracks().length ?? 0;
 
+  const displayName = isLocal ? 'Você' : label;
+  const audioStatus = isLocal
+    ? (peer?.audioMuted ?? false) || stream?.getAudioTracks().length === 0
+      ? 'microfone desligado'
+      : 'microfone ligado'
+    : hasAudio === 0
+      ? 'microfone desligado'
+      : 'microfone ligado';
+  const videoStatus = hasVideo > 0 ? 'câmera ligada' : 'câmera desligada';
+  const screenStatus = isScreenShare ? ', compartilhando tela' : '';
+  const ariaLabel = `${displayName}, ${audioStatus}, ${videoStatus}${screenStatus}`;
+
   return (
     <div
       className={clsx(
@@ -31,6 +43,8 @@ function VideoTile({ stream, label, isLocal, isScreenShare }: VideoTileProps) {
         'bg-slate-800/80 border border-white/5 hover:border-white/10',
         isScreenShare && 'col-span-2',
       )}
+      role="group"
+      aria-label={ariaLabel}
     >
       {/* Media elements */}
       <audio ref={audioRef} autoPlay playsInline muted={isLocal} />

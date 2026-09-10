@@ -458,7 +458,7 @@ export function TailscaleShareTutorial() {
                   <p className="text-xs text-slate-300 font-medium">ACL rápido</p>
                   <p className="text-xs text-slate-500">
                     Se você tem ACL configurado, garanta que as regras permitem tráfego TCP entre membros.
-                    Veja em <a href="https://login.tailscale.com/admin/acls" target="_blank" rel="noopener noreferrer" className="text-brand-400 hover:text-brand-300 underline">login.tailscale.com/admin/acls</a>.
+                    Veja em <a href="https://login.tailscale.com/admin/acls" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-brand-300 hover:bg-white/10 text-xs font-medium transition-colors">🔒 login.tailscale.com/admin/acls ↗</a>.
                   </p>
                 </div>
               </div>
@@ -475,14 +475,28 @@ export function TailscaleShareTutorial() {
       )}
 
       {/* ── Footer link to full docs ──────────────────────────── */}
-      <div className="text-center">
+      <div className="text-center flex flex-wrap gap-2 justify-center">
         <a
-          href="/docs/tailscale-setup.md"
+          href="/tutorial"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-300 hover:bg-white/10 hover:text-white transition-all"
+        >
+          📖 Abrir tutorial completo
+        </a>
+        <a
+          href="https://tailscale.com/docs/use-cases/personal-or-at-home-use/share-private-game-server"
           target="_blank"
           rel="noopener noreferrer"
-          className="text-xs text-slate-500 hover:text-slate-300 transition-colors underline underline-offset-2"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-600/20 border border-brand-500/30 text-sm text-brand-300 hover:bg-brand-600/30 transition-all"
         >
-          📄 Ver documentação completa do Tailscale Setup
+          🎮 Ver exemplo Tailscale ↗
+        </a>
+        <a
+          href="https://tailscale.com/download"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs text-slate-500 hover:text-slate-300 border border-transparent hover:border-white/10 transition-colors"
+        >
+          ⬇️ Download
         </a>
       </div>
     </div>

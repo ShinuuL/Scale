@@ -1,23 +1,23 @@
-# Configuracao do Tailscale para Scale
+# Configuração do Tailscale para Scale
 
-## O que e Tailscale?
+## O que é Tailscale?
 
-[Tailscale](https://tailscale.com/) e uma rede privada virtual (mesh VPN) baseada no WireGuard. Ele cria uma rede segura entre seus dispositivos, onde cada um recebe um IP unico na faixa `100.x.x.x` (chamado de **Tailscale IP** ou **Clef IP**). Com Tailscale, seus dispositivos podem se comunicar diretamente, sem a necessidade de configurar port forwarding,.Firewall rules ou servidores de intermediacao.
+[Tailscale](https://tailscale.com/) é uma rede privada virtual (mesh VPN) baseada no WireGuard. Ele cria uma rede segura entre seus dispositivos, onde cada um recebe um IP único na faixa `100.x.x.x` (chamado de **Tailscale IP**). Com Tailscale, seus dispositivos podem se comunicar diretamente, sem a necessidade de configurar port forwarding, firewall rules ou servidores de intermediação.
 
 ### Por que usar Tailscale com Scale?
 
-Scale e um sistema de videochamadas P2P (mesh). Para que os participantes se conectem diretamente via WebRTC, eles precisam poder se alcancar na rede. Tailscale resolve isso ao:
+Scale é um sistema de videochamadas P2P (mesh). Para que os participantes se conectem diretamente via WebRTC, eles precisam poder se alcançar na rede. Tailscale resolve isso ao:
 
 1. **Atribuir IPs fixos** a cada dispositivo (`100.x.x.x`)
-2. **Traversal de NAT automatico** usando relays (DERP)
-3. **Seguranca por padrao** com criptografia WireGuard
-4. **Sem port forwarding** necessario
+2. **Traversal de NAT automático** usando relays (DERP)
+3. **Segurança por padrão** com criptografia WireGuard
+4. **Sem port forwarding** necessário
 
 ### Plano Gratuito
 
 O plano gratuito do Tailscale inclui:
 
-- Ate **3 usuarios** e **100 dispositivos**
+- Até **3 usuários** e **100 dispositivos**
 - Rede mesh completa
 - Relays DERP globais
 - MagicDNS (resolucao de nomes por IP)
