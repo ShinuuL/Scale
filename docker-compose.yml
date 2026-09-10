@@ -1,0 +1,104 @@
+name: scale
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "4000:4000"
+    env_file:
+      - .env
+    volumes:
+      - db_data:/app/data
+    healthcheck:
+      # Use 127.0.0.1 (not localhost): BusyBox wget can resolve localhost to
+      # ::1 first, and IPv4-only listeners then refuse the connection (observed
+      # on the frontend container).
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - scale
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      - NEXT_PUBLIC_BACKEND_URL=http://localhost:4000
+      - NEXT_PUBLIC_WS_URL=http://localhost:4000
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - scale
+
+  coturn:
+    image: coturn/coturn
+    profiles:
+      - turn
+    ports:
+      - "3478:3478/udp"
+    networks:
+      - scale
+
+  caddy:
+    image: caddy:2-alpine
+    profiles:
+      - https
+    ports:
+      - "3443:443"
+    volumes:
+      - ./certs:/certs:ro
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - scale
+
+  mcp:
+    build:
+      context: .
+      dockerfile: mcp/Dockerfile
+    profiles:
+      - mcp
+    ports:
+      - "4001:4001"
+    environment:
+      - PORT=4001
+      - MCP_TOKEN=${MCP_TOKEN}
+      - BACKEND_URL=http://backend:4000
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4001/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - scale
+
+volumes:
+  db_data:
+  caddy_data:
+
+networks:
+  scale:

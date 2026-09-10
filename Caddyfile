@@ -1,0 +1,17 @@
+# Caddyfile for Concord HTTPS via Tailscale cert
+# Usage: docker compose --profile https up --build
+# Requires certs/server.crt + certs/server.key (see certs/README.md)
+
+:443 {
+	tls /certs/server.crt /certs/server.key
+
+	# Socket.io signaling -> backend (Next.js rewrites do NOT proxy WebSockets)
+	handle_path /socket.io/* {
+		reverse_proxy backend:4000
+	}
+
+	# Everything else -> frontend (pages, API via same-origin rewrites)
+	handle {
+		reverse_proxy frontend:3000
+	}
+}

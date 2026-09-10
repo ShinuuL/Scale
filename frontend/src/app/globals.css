@@ -1,0 +1,110 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply bg-slate-950 text-slate-100 font-sans;
+    min-height: 100vh;
+  }
+
+  /* Focus ring — accessibility */
+  :focus-visible {
+    @apply outline-none ring-2 ring-brand-500 ring-offset-2 ring-offset-slate-950;
+  }
+
+  /* Skip to content link */
+  .skip-link {
+    @apply absolute -top-10 left-4 z-50 bg-brand-600 text-white px-4 py-2 rounded-md;
+  }
+  .skip-link:focus {
+    @apply top-4;
+  }
+}
+
+@layer components {
+  /* Glass card utility */
+  .glass {
+    @apply bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl;
+  }
+
+  .glass-subtle {
+    @apply bg-white/[0.03] backdrop-blur-md border border-white/[0.06] rounded-xl;
+  }
+
+  /* Button base */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl
+           bg-brand-600 px-5 py-2.5 text-sm font-medium text-white
+           shadow-lg shadow-brand-600/25
+           transition-all duration-200
+           hover:bg-brand-500 hover:shadow-brand-500/30
+           active:scale-[0.98]
+           disabled:opacity-50 disabled:pointer-events-none
+           focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl
+           bg-white/10 px-5 py-2.5 text-sm font-medium text-slate-200
+           border border-white/10
+           transition-all duration-200
+           hover:bg-white/15 hover:border-white/20
+           active:scale-[0.98]
+           disabled:opacity-50 disabled:pointer-events-none
+           focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl
+           px-4 py-2.5 text-sm font-medium text-slate-300
+           transition-all duration-200
+           hover:bg-white/5 hover:text-white
+           active:scale-[0.98]
+           disabled:opacity-50 disabled:pointer-events-none
+           focus-visible:ring-2 focus-visible:ring-white/20 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950;
+  }
+
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl
+           bg-red-600 px-5 py-2.5 text-sm font-medium text-white
+           shadow-lg shadow-red-600/25
+           transition-all duration-200
+           hover:bg-red-500
+           active:scale-[0.98]
+           disabled:opacity-50 disabled:pointer-events-none;
+  }
+
+  /* Input base */
+  .input-base {
+    @apply w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5
+           text-sm text-slate-100 placeholder:text-slate-500
+           transition-all duration-200
+           focus:border-brand-500 focus:bg-white/[0.07] focus:ring-1 focus:ring-brand-500
+           focus:outline-none;
+  }
+
+  /* Badge */
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5
+           text-xs font-medium;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}

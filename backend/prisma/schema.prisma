@@ -1,0 +1,53 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum RoomStatus {
+  ACTIVE
+  ENDED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  createdAt    DateTime @default(now())
+
+  ownedRooms  Room[]
+  roomMembers RoomMember[]
+}
+
+model Room {
+  id               String    @id @default(uuid())
+  name             String
+  ownerId          String?
+  isPersistent     Boolean   @default(false)
+  isPrivate        Boolean   @default(false)
+  maxParticipants  Int       @default(8)
+  inviteToken      String    @unique @default(uuid())
+  status           RoomStatus @default(ACTIVE)
+  createdAt        DateTime  @default(now())
+  expiresAt        DateTime?
+
+  owner         User?         @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  roomMembers   RoomMember[]
+}
+
+model RoomMember {
+  id       String @id @default(cuid())
+  roomId   String
+  userId   String?
+  guestName String?
+  joinedAt DateTime @default(now())
+
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@unique([roomId, userId])
+}
