@@ -226,7 +226,7 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
       </a>
 
       {/* Header */}
-      <header className="flex items-center justify-between px-4 py-2 border-b border-white/5 bg-slate-950/80 backdrop-blur-sm z-10">
+      <header className="flex items-center justify-between px-4 py-2 border-b border-white/5 bg-forest-950/80 backdrop-blur-sm z-10">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="sm" onClick={() => window.location.href = '/'}>
             ←

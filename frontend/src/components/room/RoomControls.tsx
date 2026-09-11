@@ -35,7 +35,7 @@ export function RoomControls({
 
   return (
     <div
-      className="flex items-center justify-center gap-2 px-4 py-3 border-t border-white/5 bg-slate-950/60 backdrop-blur-xl transition-colors"
+      className="flex items-center justify-center gap-2 px-4 py-3 border-t border-white/5 bg-forest-950/60 backdrop-blur-xl transition-colors"
       role="toolbar"
       aria-label="Controles da sala"
     >

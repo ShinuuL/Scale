@@ -17,18 +17,18 @@
 
 | Token | Cor | Uso |
 |-------|-----|-----|
-| `slate-950` | `#020617` | Background principal (dark) |
-| `slate-900` | `#0f172a` | Superfícies, cards |
-| `violet-500` | `#8b5cf6` | Accent primário (CTAs, links) |
-| `violet-400` | `#a78bfa` | Hover states |
-| `emerald-500` | `#10b981` | Status positivo (online, conectado) |
-| `emerald-400` | `#34d399` | Indicators, badges |
+| `forest-950` | `#071412` | Background principal (dark verdant) |
+| `forest-900` | `#0f2620` | Superfícies, cards |
+| `moss-600`/`brand-600` | `#059669` | Accent primário (CTAs, links) |
+| `emerald-400` | `#34d399` | Hover states, indicators, badges |
+| `emerald-500` | `#10b981` | Status positivo + accent primário (online, conectado) |
+| `mint-300` | `#6ee7b7` | Focus rings |
 | `slate-100` | `#f1f5f9` | Texto principal |
 
 ### Proporção
 
-- **80%** escuros (slate-950, slate-900) — fundo e superfícies
-- **15%** violeta — interações e navegação
+- **80%** escuros verdant (forest-950, forest-900) — fundo e superfícies
+- **15%** verde moss/emerald — interações e navegação
 - **5%** verde-êsmeralda — feedback e status
 
 ## Tipografia
@@ -67,8 +67,8 @@ O ícone do Scale é o **S escamado** em PNG: gradiente **azul → roxo** (`#3b8
 
 ## Princípios de Design
 
-1. **Dark-first**: fundo escuro reduz fadiga visual durante chamadas longas
+1. **Dark-first verdant**: fundo forest (`#071412`) escuro e profundo reduz fadiga visual durante chamadas longas
 2. **Minimal chrome**: ao máximo, a UI desaparece para dar espaço ao vídeo
-3. **Sinalização clara**: verde = conectado, violeta = ação, vermelho = erro
+3. **Sinalização clara**: verde = conectado e ação, vermelho = erro
 4. **Grid responsivo**: vídeo em grid adaptável (2×1 até 4×2 para 8 peers)
 5. **Acessibilidade**: contraste WCAG AA+, skip links, focus ring visível

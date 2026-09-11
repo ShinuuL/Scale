@@ -37,7 +37,7 @@ export function Button({
         sizeClasses[size],
         'font-medium inline-flex items-center justify-center gap-2',
         'transition-all duration-200',
-        'focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950',
+        'focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-offset-2 focus-visible:ring-offset-forest-950',
         disabled && 'opacity-50 cursor-not-allowed',
         className,
       )}
