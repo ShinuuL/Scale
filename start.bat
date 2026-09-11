@@ -28,9 +28,9 @@ rem
 rem  SELF-UPDATE:
 rem    Este .bat e sempre mantido atualizado no repositorio (commits
 rem    convencionais). Antes de subir servicos, se existir um remoto
-rem    Git, o script tenta `git pull --ff-only`; offline ou com
-rem    mudancas locais, ele apenas avisa e segue com o codigo local.
-rem    Para atualizar o proprio start.bat: git pull && start.bat up
+rem    Git, o script tenta `git pull --ff-only origin main`; offline
+rem    ou com mudancas locais, ele apenas avisa e segue com o codigo
+rem    local. Para atualizar o proprio start.bat: git pull && start.bat up
 rem ================================================================
 
 setlocal
@@ -59,7 +59,7 @@ rem ===================== acoes =====================
 
 :do_up
 call :prepare
-if errorlevel 1 goto :end
+if errorlevel 1 ( set "EXIT_CODE=1" & goto :end )
 echo.
 echo [Scale] Subindo servicos (docker compose up --build -d)...
 docker compose up --build -d
@@ -73,43 +73,43 @@ goto :end
 
 :do_https
 call :prepare
-if errorlevel 1 goto :end
+if errorlevel 1 ( set "EXIT_CODE=1" & goto :end )
 echo.
 echo [Scale] Subindo com profile https (Caddy/TLS)...
 docker compose --profile https up --build -d
 if errorlevel 1 (
-    echo [Scale] ERRO: docker compose up (https) falhou.
+    echo [Scale] ERRO: docker compose up ^(https^) falhou.
     set "EXIT_CODE=1"
 )
 goto :end
 
 :do_mcp
 call :prepare
-if errorlevel 1 goto :end
+if errorlevel 1 ( set "EXIT_CODE=1" & goto :end )
 echo.
 echo [Scale] Subindo com profile mcp (MCP server)...
 docker compose --profile mcp up --build -d
 if errorlevel 1 (
-    echo [Scale] ERRO: docker compose up (mcp) falhou.
+    echo [Scale] ERRO: docker compose up ^(mcp^) falhou.
     set "EXIT_CODE=1"
 )
 goto :end
 
 :do_all
 call :prepare
-if errorlevel 1 goto :end
+if errorlevel 1 ( set "EXIT_CODE=1" & goto :end )
 echo.
 echo [Scale] Subindo com profiles https + mcp...
 docker compose --profile https --profile mcp up --build -d
 if errorlevel 1 (
-    echo [Scale] ERRO: docker compose up (https+mcp) falhou.
+    echo [Scale] ERRO: docker compose up ^(https+mcp^) falhou.
     set "EXIT_CODE=1"
 )
 goto :end
 
 :do_dev
 call :prepare
-if errorlevel 1 goto :end
+if errorlevel 1 ( set "EXIT_CODE=1" & goto :end )
 echo.
 echo [Scale] Modo desenvolvimento: install + lint + build + up...
 call npm install
@@ -199,8 +199,7 @@ goto :end
 rem ===================== helpers =====================
 
 :prepare
-call :check_docker
-if errorlevel 1 exit /b 1
+call :check_docker || exit /b 1
 call :git_pull_if_remote
 exit /b 0
 
@@ -211,15 +210,20 @@ if errorlevel 1 (
     echo [Scale] Instale o Docker Desktop e rode start.bat novamente.
     exit /b 1
 )
+docker info >nul 2>nul
+if errorlevel 1 (
+    echo [Scale] Docker Desktop nao esta rodando. Inicie o Docker Desktop e tente novamente.
+    exit /b 1
+)
 exit /b 0
 
 :git_pull_if_remote
 git remote | findstr . >nul 2>nul
 if errorlevel 1 exit /b 0
-echo [Scale] Remoto Git detectado. Atualizando (git pull --ff-only)...
-git pull --ff-only
+echo [Scale] Remoto Git detectado. Atualizando git pull --ff-only origin main...
+git pull --ff-only origin main >nul 2>nul
 if errorlevel 1 (
-    echo [Scale] Aviso: git pull falhou (offline, conflito ou trabalho local).
+    echo [Scale] Aviso: git pull falhou - offline, conflito ou trabalho local.
     echo [Scale] Continuando com o codigo local.
 )
 exit /b 0
