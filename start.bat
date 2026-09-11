@@ -164,9 +164,9 @@ call npm run lint
 if errorlevel 1 set "EXIT_CODE=1"
 call npm run build
 if errorlevel 1 set "EXIT_CODE=1"
-docker compose config --profile mcp
+docker compose --profile mcp config
 if errorlevel 1 set "EXIT_CODE=1"
-docker compose config --profile https
+docker compose --profile https config
 if errorlevel 1 set "EXIT_CODE=1"
 if "%EXIT_CODE%"=="0" (
     echo.
