@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import bcrypt from 'bcryptjs';
 import { sanitizeFilename, detectMagicBytes, getQuotaUsage } from '../lib/uploads.js';
 import { prisma } from '../lib/prisma.js';
 import Fastify from 'fastify';
@@ -434,5 +435,137 @@ describe('REST files', () => {
     });
     expect(res.statusCode).toBe(400);
     await prisma.room.delete({ where: { id: room.id } }).catch(() => {});
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/*  Hardening Task 15 — membership (salas protegidas)                   */
+/* ------------------------------------------------------------------ */
+
+describe('REST membership hardening', () => {
+  let app: Awaited<ReturnType<typeof buildRestApp>>;
+  let privateRoomId: string;
+  let privateToken: string;
+  let passRoomId: string;
+
+  beforeAll(async () => {
+    process.env.JWT_SECRET = 'test-secret-for-unit-tests';
+    process.env.NODE_ENV = 'test';
+    app = await buildRestApp();
+    const priv = await prisma.room.create({
+      data: { name: 'REST Private Members', isPersistent: true, isPrivate: true },
+    });
+    privateRoomId = priv.id;
+    privateToken = priv.inviteToken;
+    await prisma.chatMessage.createMany({
+      data: Array.from({ length: 3 }, (_, i) => ({
+        roomId: privateRoomId,
+        content: `p-${i}`,
+      })),
+    });
+    const pass = await prisma.room.create({
+      data: {
+        name: 'REST Pass Members',
+        isPersistent: true,
+        passwordHash: bcrypt.hashSync('segredo123', 10),
+      },
+    });
+    passRoomId = pass.id;
+  });
+
+  afterAll(async () => {
+    await prisma.room
+      .deleteMany({
+        where: { name: { in: ['REST Private Members', 'REST Pass Members'] } },
+      })
+      .catch(() => {});
+    await fs
+      .rm(path.resolve(process.cwd(), 'uploads', privateRoomId), {
+        recursive: true,
+        force: true,
+      })
+      .catch(() => {});
+    await app.close();
+  });
+
+  it('messages: 403 sem creds; 200 com inviteToken ou password', async () => {
+    const noCreds = await app.inject({
+      method: 'GET',
+      url: `/api/rooms/${privateRoomId}/messages`,
+    });
+    expect(noCreds.statusCode).toBe(403);
+
+    const withToken = await app.inject({
+      method: 'GET',
+      url: `/api/rooms/${privateRoomId}/messages?inviteToken=${privateToken}`,
+    });
+    expect(withToken.statusCode).toBe(200);
+    expect(JSON.parse(withToken.payload).messages).toHaveLength(3);
+
+    const withPass = await app.inject({
+      method: 'GET',
+      url: `/api/rooms/${passRoomId}/messages?password=segredo123`,
+    });
+    expect(withPass.statusCode).toBe(200);
+  });
+
+  it('files POST: 403 sem creds; 201 com inviteToken field', async () => {
+    const noCreds = await app.inject({
+      method: 'POST',
+      url: `/api/rooms/${privateRoomId}/files`,
+      ...multipartBody([
+        { filename: 'a.png', contentType: 'image/png', content: PNG },
+      ]),
+    });
+    expect(noCreds.statusCode).toBe(403);
+
+    const withToken = await app.inject({
+      method: 'POST',
+      url: `/api/rooms/${privateRoomId}/files`,
+      ...multipartBody(
+        [{ filename: 'b.png', contentType: 'image/png', content: PNG }],
+        { inviteToken: privateToken },
+      ),
+    });
+    expect(withToken.statusCode).toBe(201);
+  });
+
+  it('GET /files/:fileId: 403 sem creds ou token de outra sala; 200 com token da sala', async () => {
+    const post = await app.inject({
+      method: 'POST',
+      url: `/api/rooms/${privateRoomId}/files`,
+      ...multipartBody(
+        [{ filename: 'guard.png', contentType: 'image/png', content: PNG }],
+        { inviteToken: privateToken },
+      ),
+    });
+    expect(post.statusCode).toBe(201);
+    const fileId = (JSON.parse(post.payload) as { files: Array<{ id: string }> }).files[0].id;
+
+    const noCreds = await app.inject({
+      method: 'GET',
+      url: `/api/files/${fileId}`,
+    });
+    expect(noCreds.statusCode).toBe(403);
+
+    const other = await prisma.room.create({
+      data: { name: 'REST Other', isPersistent: true },
+    });
+    try {
+      const wrongToken = await app.inject({
+        method: 'GET',
+        url: `/api/files/${fileId}?inviteToken=${other.inviteToken}`,
+      });
+      expect(wrongToken.statusCode).toBe(403);
+    } finally {
+      await prisma.room.delete({ where: { id: other.id } }).catch(() => {});
+    }
+
+    const withToken = await app.inject({
+      method: 'GET',
+      url: `/api/files/${fileId}?inviteToken=${privateToken}`,
+    });
+    expect(withToken.statusCode).toBe(200);
+    expect(withToken.headers['content-type']).toMatch(/image\/png/);
   });
 });

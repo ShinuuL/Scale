@@ -13,6 +13,8 @@ import { metricsRoutes } from './routes/metrics.js';
 import { messagesRoutes } from './routes/messages.js';
 import { filesRoutes } from './routes/files.js';
 import { createSocketServer } from './socket/handler.js';
+import { checkTailscaleOrigin } from './plugins/checkTailscale.js';
+import { gcDeletedFiles } from './lib/uploads.js';
 import multipart from '@fastify/multipart';
 
 const env = getEnv();
@@ -21,7 +23,13 @@ const server = Fastify({
   logger: {
     level: env.NODE_ENV === 'test' ? 'silent' : 'info',
   },
+  // Confia no X-Forwarded-For dos proxies (Caddy/Next.js): request.ip vira o IP
+  // real do cliente na tailnet, usado pelo checkTailscaleOrigin.
+  trustProxy: true,
 });
+
+// Hardening tailnet: rejeita 403 fora da rede privada (ver checkTailscale.ts).
+server.addHook('onRequest', checkTailscaleOrigin);
 
 // Plugins
 await server.register(cookie);
@@ -53,6 +61,12 @@ server.get('/api/health', async () => {
 const httpServer = server.server;
 const io = createSocketServer(httpServer);
 (server as unknown as Record<string, unknown>).io = io;
+
+// GC diário de arquivos deletados há >7d (libera quota; logs em uploads.ts)
+const gcTimer = setInterval(() => {
+  gcDeletedFiles().catch((err) => server.log.error(err));
+}, 24 * 60 * 60 * 1000);
+gcTimer.unref();
 
 const start = async (): Promise<void> => {
   const port = env.PORT;

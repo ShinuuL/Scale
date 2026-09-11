@@ -54,8 +54,18 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
   const [copiedFlag, setCopiedFlag] = useState(false);
   const [copiedTsLink, setCopiedTsLink] = useState(false);
 
+  // Extract invite token from URL query params (client-side only)
+  const urlInviteTokenRef = useRef<string | null>(null);
+  if (typeof window !== 'undefined' && urlInviteTokenRef.current === null) {
+    const params = new URLSearchParams(window.location.search);
+    urlInviteTokenRef.current = params.get('token');
+  }
+
+  // Use URL token first, then fall back to room's own inviteToken (if owner)
+  const inviteToken = urlInviteTokenRef.current ?? room?.room.inviteToken ?? undefined;
+
   const socket = useSocket();
-  const chat = useChat(roomId, socket.socket);
+  const chat = useChat(roomId, socket.socket, inviteToken);
   const chatRef = useRef(chat);
   chatRef.current = chat;
 
@@ -81,16 +91,6 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
       .then((res) => setCurrentUserId(res.user.id))
       .catch(() => setCurrentUserId(null));
   }, []);
-
-  // Extract invite token from URL query params (client-side only)
-  const urlInviteTokenRef = useRef<string | null>(null);
-  if (typeof window !== 'undefined' && urlInviteTokenRef.current === null) {
-    const params = new URLSearchParams(window.location.search);
-    urlInviteTokenRef.current = params.get('token');
-  }
-
-  // Use URL token first, then fall back to room's own inviteToken (if owner)
-  const inviteToken = urlInviteTokenRef.current ?? room?.room.inviteToken ?? undefined;
 
   const webrtc = useWebRTC(socket, roomId, inviteToken);
 
@@ -378,6 +378,7 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
             isOwner={isOwner}
             currentUserId={currentUserId}
             guestName={socket.guestName}
+            inviteToken={inviteToken}
           />
         )}
       </div>

@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
+import { extractAccessFromQuery, hasRoomAccess } from '../lib/roomAccess.js';
 
 const querySchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(50),
@@ -18,8 +19,12 @@ export async function messagesRoutes(fastify: FastifyInstance): Promise<void> {
     if (!room) return reply.code(404).send({ error: 'Room not found' });
     if (!room.isPersistent) return reply.code(400).send({ error: 'Temporary rooms have no persisted history' });
 
-    // TODO: membership check — se necessário, validar aqui via roomPeers ou token (feito em hardening Task 14/15)
-    // por ora, mantém aberto para dono/guest com inviteToken validado em join-room; hardening adiciona gate.
+    // Membership: salas protegidas exigem JWT do dono, inviteToken ou password
+    // (mesma regra do join-room). Salas públicas continuam abertas.
+    const creds = extractAccessFromQuery(request);
+    if (!(await hasRoomAccess(room, creds))) {
+      return reply.code(403).send({ error: 'Not a room member' });
+    }
 
     let cursorCreatedAt: Date | undefined;
     if (cursor) {

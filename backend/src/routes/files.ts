@@ -2,7 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import fs from 'node:fs';
 import path from 'node:path';
 import { prisma } from '../lib/prisma.js';
-import { sanitizeFilename, detectMagicBytes, saveFile, getQuotaUsage, ALLOWED_MIME_RE } from '../lib/uploads.js';
+import { sanitizeFilename, detectMagicBytes, saveFile, getQuotaUsage, ALLOWED_MIME_RE, UPLOADS_ROOT } from '../lib/uploads.js';
+import { extractAccessFromQuery, hasRoomAccess } from '../lib/roomAccess.js';
 
 export async function filesRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.post<{ Params: { id: string } }>('/api/rooms/:id/files', async (request, reply) => {
@@ -11,12 +12,18 @@ export async function filesRoutes(fastify: FastifyInstance): Promise<void> {
     if (!room) return reply.code(404).send({ error: 'Room not found' });
     if (!room.isPersistent) return reply.code(400).send({ error: 'Temporary rooms do not support files' });
 
-    // membership stub — hardening Task 15 completa com checkTailscaleOrigin + token
-    const files = await request.files(); // fastify-multipart
+    // Membership: CREDENCIAIS via partes multipart 'inviteToken'/'password' (task 15).
+    // request.parts() yield fields E files; request.files() descartaria os campos.
+    const files = await request.parts(); // fastify-multipart
     const parts: Array<{ filename: string; mime: string; buffer: Buffer; fieldname: string }> = [];
+    const fields: Record<string, string> = {};
+    let fileCount = 0;
     let totalNew = 0;
     for await (const part of files) {
-      if (part.type !== 'file') continue;
+      if (part.type === 'field') {
+        fields[part.fieldname] = String(part.value ?? '');
+        continue;
+      }
       const buf = await part.toBuffer();
       if (buf.length > 15_000_000) return reply.code(413).send({ error: 'File too large. Max 15MB' });
       const mime = part.mimetype;
@@ -29,17 +36,26 @@ export async function filesRoutes(fastify: FastifyInstance): Promise<void> {
         if (isMismatch) return reply.code(400).send({ error: 'Magic bytes mismatch', detected, declared: mime });
       }
       parts.push({ filename: part.filename, mime, buffer: buf, fieldname: part.fieldname });
+      fileCount += 1;
       totalNew += buf.length;
     }
-    if (parts.length === 0) return reply.code(400).send({ error: 'Nenhum arquivo enviado' });
-    if (parts.length > 5) return reply.code(400).send({ error: 'Máx. 5 arquivos por mensagem' });
+    if (fileCount === 0) return reply.code(400).send({ error: 'Nenhum arquivo enviado' });
+
+    // Membership: salas protegidas exigem JWT do dono, inviteToken ou password
+    // via campo multipart. Salas públicas continuam abertas.
+    const creds = { userId: request.userId, inviteToken: fields.inviteToken, password: fields.password };
+    if (!(await hasRoomAccess(room, creds))) {
+      return reply.code(403).send({ error: 'Not a room member' });
+    }
+
+    if (fileCount > 5) return reply.code(400).send({ error: 'Máx. 5 arquivos por mensagem' });
 
     const quota = await getQuotaUsage(roomId);
     if (quota + totalNew > 200 * 1024 * 1024) return reply.code(413).send({ error: 'Quota exceeded' });
 
-    // cria ChatMessage para agrupar arquivos (content pode vir de field 'content')
-    const contentField = (request.body as Record<string, unknown>)?.content as string | undefined;
-    const content = contentField?.trim().slice(0, 500) ?? '';
+    // cria ChatMessage para agrupar arquivos (content vem do campo multipart 'content')
+    const contentField = fields.content ?? (request.body as Record<string, unknown>)?.content;
+    const content = (typeof contentField === 'string' ? contentField : '').trim().slice(0, 500) ?? '';
     const userId = (request as unknown as { userId?: string }).userId ?? null;
     const message = await prisma.chatMessage.create({ data: { roomId, content, authorId: userId } });
 
@@ -64,13 +80,22 @@ export async function filesRoutes(fastify: FastifyInstance): Promise<void> {
     const { fileId } = request.params;
     const file = await prisma.chatFile.findUnique({ where: { id: fileId } });
     if (!file) return reply.code(404).send({ error: 'File not found' });
+
+    // Membership: valida a sala do arquivo (e não um roomId arbitrário).
+    const room = await prisma.room.findUnique({ where: { id: file.roomId } });
+    if (!room) return reply.code(404).send({ error: 'Room not found' });
+    const creds = extractAccessFromQuery(request);
+    if (!(await hasRoomAccess(room, creds))) {
+      return reply.code(403).send({ error: 'Not a room member' });
+    }
+
     if (file.deletedAt && Date.now() - new Date(file.deletedAt).getTime() > 7 * 24 * 60 * 60 * 1000) {
       return reply.code(410).send({ error: 'Gone' });
     }
     const abs = path.resolve(process.cwd(), file.path);
-    const root = path.resolve(process.cwd(), 'uploads');
-    if (!abs.startsWith(root)) return reply.code(400).send({ error: 'Invalid path' });
-    // membership check stub
+    // sandbox restrito à pasta da sala: uploads/<roomId>/...
+    const roomRoot = path.resolve(UPLOADS_ROOT, file.roomId);
+    if (!abs.startsWith(roomRoot + path.sep)) return reply.code(400).send({ error: 'Invalid path' });
     reply.header('Content-Type', file.mime);
     reply.header('Content-Disposition', `attachment; filename="${file.filename}"`);
     reply.header('X-Content-Type-Options', 'nosniff');

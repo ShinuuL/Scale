@@ -171,6 +171,65 @@ ALLOWED_ORIGINS=http://localhost:3000,http://100.64.0.10:3000
 
 ---
 
+## Hardening: rede privada (tailnet only)
+
+O Scale assume que o servidor esta **apenas** na rede Tailscale — nunca exposto
+publicamente. Tres camadas garantem isso:
+
+| Camada | O que faz | Onde |
+|--------|-----------|------|
+| 1. Bind do host | A porta HTTPS do Caddy escuta so no IP Tailscale do host (nunca `0.0.0.0`) | `docker-compose.yml` (servico `caddy`) |
+| 2. Middleware | Backend responde **403 `Tailnet only`** para REST fora da rede privada | `backend/src/plugins/checkTailscale.ts` |
+| 3. ACL de sala | `GET/POST` de mensagens/arquivos exigem JWT do dono, `inviteToken` ou `password` em salas protegidas | `backend/src/lib/roomAccess.ts` |
+
+### Variaveis de hardening
+
+Defina no `.env` do servidor:
+
+```env
+# IP Tailscale do servidor (mesmo IP usado na camada 1)
+TAILSCALE_IP=100.64.0.10
+
+# FQDN MagicDNS (opcional): permite acesso se o Host header contiver esse nome
+TAILSCALE_HOST=desktop-sio88bu.tail-xxxxx.ts.net
+
+# Allowlist de origens (CORS + fallback do middleware)
+ALLOWED_ORIGINS=http://localhost:3000,http://100.64.0.10:3000,https://desktop-sio88bu.tail-xxxxx.ts.net:3443
+```
+
+### Como o middleware decide
+
+`checkTailscaleOrigin` permite o request se QUALQUER condicao valer:
+
+1. IP do cliente esta na CGNAT Tailscale (`100.64.0.0/10`) — com `trustProxy`,
+   `request.ip` ja resolve o `X-Forwarded-For` dos proxies (Caddy/Next.js);
+2. Header `Host` contem `TAILSCALE_HOST` (MagicDNS);
+3. Header `Origin` esta em `ALLOWED_ORIGINS`;
+4. `localhost` (dev / healthcheck do Docker) ou `NODE_ENV=test`.
+
+Caso contrario: `403 { "error": "Tailnet only" }`.
+
+> **Nota:** o container do Caddy roda em rede bridge, entao nao consegue bindar
+> o IP Tailscale do host (`100.64.0.0/10` nao existe nas interfaces internas).
+> Por isso o bind da porta HTTPS acontece no HOST (camada 1), via
+> `"${TAILSCALE_IP:-127.0.0.1}:3443:443"` no `docker-compose.yml`. O Caddyfile
+> documenta essa decisao.
+
+### Acesso de convidados (inviteToken) apos o hardening
+
+Em salas protegidas (`isPrivate` ou com senha), os endpoints REST de historico e
+arquivos agora exigem credencial:
+
+- `GET /api/rooms/:id/messages` — query `?inviteToken=<token>` (ou `?password=`);
+- `POST /api/rooms/:id/files` — campo multipart `inviteToken` (ou `password`);
+- `GET /api/files/:fileId` — query `?inviteToken=<token>` (valida a sala do arquivo).
+
+O frontend ja anexa o `inviteToken` da URL (`?token=`) automaticamente nos links
+de download, no "Carregar mais" e nos uploads. Dono autenticado passa pelo JWT
+(cookie HttpOnly) — nenhuma mudanca de URL necessaria.
+
+---
+
 ## Troubleshooting
 
 ### Firewall bloqueando conexao

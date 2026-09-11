@@ -58,6 +58,8 @@ export interface ChatPanelProps {
   isOwner: boolean;
   currentUserId: string | null;
   guestName: string;
+  /** inviteToken de sala protegida (guests) — usado nos links de download. */
+  inviteToken?: string;
 }
 
 export function ChatPanel({
@@ -68,6 +70,7 @@ export function ChatPanel({
   isOwner,
   currentUserId,
   guestName,
+  inviteToken,
 }: ChatPanelProps) {
   const isDesktop = useIsDesktop();
 
@@ -241,6 +244,7 @@ export function ChatPanel({
             isOwner={isOwner}
             onEdit={chat.editMessage}
             onDelete={chat.deleteMessage}
+            accessToken={inviteToken}
           />
         ))}
       </div>

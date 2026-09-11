@@ -50,6 +50,8 @@ export interface ChatMessageItemProps {
   currentPeers: string[];
   onEdit: (id: string, content: string) => void;
   onDelete: (id: string) => void;
+  /** inviteToken de sala protegida — anexado aos links de download (membership hardening). */
+  accessToken?: string;
 }
 
 const EDIT_WINDOW_MS = 15 * 60 * 1000;
@@ -66,6 +68,7 @@ export function ChatMessageItem({
   currentPeers,
   onEdit,
   onDelete,
+  accessToken,
 }: ChatMessageItemProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(message.content);
@@ -137,7 +140,11 @@ export function ChatMessageItem({
           {message.files.map((file) => (
             <li key={file.id}>
               <a
-                href={`/api/files/${file.id}`}
+                href={
+                  accessToken
+                    ? `/api/files/${file.id}?inviteToken=${encodeURIComponent(accessToken)}`
+                    : `/api/files/${file.id}`
+                }
                 target="_blank"
                 rel="noopener"
                 className="text-xs underline text-moss-400 hover:text-moss-300"

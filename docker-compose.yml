@@ -57,8 +57,12 @@ services:
     image: caddy:2-alpine
     profiles:
       - https
+    # Bind do HOST ao IP Tailscale (nunca 0.0.0.0): sem TAILSCALE_IP definido,
+    # cai para 127.0.0.1 (localhost-only). O :443 interno do container segue
+    # mapeado apenas para esta interface; o checkTailscaleOrigin do backend 403
+    # fora da tailnet. Veja o comentario no Caddyfile.
     ports:
-      - "3443:443"
+      - "${TAILSCALE_IP:-127.0.0.1}:3443:443"
     volumes:
       - ./certs:/certs:ro
       - ./Caddyfile:/etc/caddy/Caddyfile:ro

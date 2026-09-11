@@ -539,3 +539,84 @@ d3('chat:edit/delete', () => {
     alice.disconnect();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Task 14: hardening tailnet — checkTailscaleOrigin middleware
+// ---------------------------------------------------------------------------
+import { describe as d4, it as it4, beforeAll as ba4, afterAll as aa4 } from 'vitest';
+import { checkTailscaleOrigin, isInSubnet } from '../plugins/checkTailscale.js';
+
+d4('tailnet hardening', () => {
+  let app: Fastify.FastifyInstance;
+
+  ba4(async () => {
+    process.env.JWT_SECRET = 'test-secret-for-unit-tests';
+    process.env.ALLOWED_ORIGINS = 'http://localhost:3000';
+    process.env.TAILSCALE_HOST = 'host-dev.tail-abc123.ts.net';
+    process.env.NODE_ENV = 'production'; // vitest seta 'test'; aqui queremos sem bypass
+    app = Fastify({ logger: false, trustProxy: true });
+    app.addHook('onRequest', checkTailscaleOrigin);
+    app.get('/api/health', async () => ({ status: 'ok' }));
+    await app.ready();
+  });
+
+  aa4(async () => {
+    await app.close();
+    process.env.NODE_ENV = 'test';
+  });
+
+  it4('isInSubnet cobre a CGNAT 100.64.0.0/10', () => {
+    expect(isInSubnet('100.64.0.1', '100.64.0.0/10')).toBe(true);
+    expect(isInSubnet('100.127.255.255', '100.64.0.0/10')).toBe(true);
+    expect(isInSubnet('100.128.0.1', '100.64.0.0/10')).toBe(false);
+    expect(isInSubnet('8.8.8.8', '100.64.0.0/10')).toBe(false);
+    expect(isInSubnet('::1', '100.64.0.0/10')).toBe(false);
+  });
+
+  it4('rejeita IP público fora tailnet com 403', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/rooms/xxx/messages',
+      headers: { 'x-forwarded-for': '8.8.8.8' },
+      remoteAddress: '8.8.8.8',
+    });
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.payload).error).toMatch(/Tailnet only/i);
+  });
+
+  it4('permite IP da CGNAT tailnet (100.64.0.0/10)', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/health',
+      headers: { 'x-forwarded-for': '100.64.0.10' },
+      remoteAddress: '8.8.8.8', // com trustProxy o XFF tem precedência
+    });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it4('permite Host contendo TAILSCALE_HOST (MagicDNS)', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/health',
+      remoteAddress: '8.8.8.8',
+      headers: { host: 'host-dev.tail-abc123.ts.net:3443' },
+    });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it4('permite Origin na allowlist ALLOWED_ORIGINS', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/health',
+      remoteAddress: '8.8.8.8',
+      headers: { origin: 'http://localhost:3000' },
+    });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it4('permite localhost (healthcheck docker / dev)', async () => {
+    // remoteAddress default do inject é 127.0.0.1
+    const res = await app.inject({ method: 'GET', url: '/api/health' });
+    expect(res.statusCode).toBe(200);
+  });
+});

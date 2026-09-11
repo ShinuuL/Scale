@@ -7,6 +7,14 @@
 # Acessar https://<short-name>:3443 (ex: https://DESKTOP-SIE986U:3443) dispara
 # warning de certificado no browser, pois o SAN do cert nao inclui o short name.
 # RECOMENDADO: usar sempre o FQDN completo — https://desktop-sie986u.taile13b10.ts.net:3443
+#
+# Hardening (Etapa 5): Caddy NUNCA expoe 0.0.0.0. A exposicao externa do :443
+# interno e controlada no docker-compose.yml pelo bind do HOST ao IP Tailscale:
+#   ports: ["${TAILSCALE_IP:-127.0.0.1}:3443:443"]
+# O container em rede bridge nao consegue bindar o IP Tailscale do host
+# (100.64.0.0/10 nao existe nas interfaces do container), entao o enforcement
+# de "tailnet only" fica no socket do host + no middleware checkTailscaleOrigin
+# do backend (403 Tailnet only para REST fora da rede privada).
 
 :443 {
 	tls /certs/server.crt /certs/server.key

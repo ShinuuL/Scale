@@ -6,6 +6,7 @@ const envSchema = z.object({
   ALLOWED_ORIGINS: z.string().default('http://localhost:3000'),
   PORT: z.coerce.number().int().positive().default(4000),
   TAILSCALE_IP: z.string().optional(),
+  TAILSCALE_HOST: z.string().optional(),
   ENABLE_TURN: z
     .enum(['true', 'false'])
     .transform((v) => v === 'true')
