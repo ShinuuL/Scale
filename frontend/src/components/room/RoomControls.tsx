@@ -12,6 +12,12 @@ interface RoomControlsProps {
   onToggleScreenShare: () => void;
   onLeave: () => void;
   inviteLink?: string;
+  /** Unread messages count — badge shown only when chat is closed. */
+  chatUnread?: number;
+  /** Whether the chat panel is currently visible. */
+  showChat?: boolean;
+  /** Toggle chat panel open/close. */
+  onToggleChat?: () => void;
 }
 
 export function RoomControls({
@@ -23,6 +29,9 @@ export function RoomControls({
   onToggleScreenShare,
   onLeave,
   inviteLink,
+  chatUnread = 0,
+  showChat = false,
+  onToggleChat,
 }: RoomControlsProps) {
   const [copied, setCopied] = useState(false);
 
@@ -85,6 +94,25 @@ export function RoomControls({
         >
           <span aria-hidden="true">{copied ? '✓' : '🔗'}</span>
           <span className="hidden sm:inline">{copied ? 'Copiado' : 'Link'}</span>
+        </Button>
+      )}
+
+      {/* Chat toggle */}
+      {onToggleChat && (
+        <Button
+          variant={showChat ? 'primary' : 'secondary'}
+          onClick={onToggleChat}
+          aria-label={showChat ? 'Fechar chat' : 'Abrir chat'}
+          aria-pressed={showChat}
+          title={showChat ? 'Fechar chat' : 'Abrir chat'}
+        >
+          <span aria-hidden="true">💬</span>
+          <span className="hidden sm:inline">Chat</span>
+          {chatUnread > 0 && !showChat && (
+            <span className="badge bg-amber-500 text-forest-950">
+              {chatUnread > 99 ? '99+' : chatUnread}
+            </span>
+          )}
         </Button>
       )}
 

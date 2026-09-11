@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
+import type { ChatMessage } from '@/hooks/useChat';
 
 function getWsUrl(): string {
   if (typeof window !== 'undefined') {
@@ -25,6 +26,12 @@ export interface PeerInfo {
   guestName?: string;
 }
 
+export interface JoinRoomResult {
+  success: boolean;
+  peers: PeerInfo[];
+  history: ChatMessage[];
+}
+
 export interface UseSocketReturn {
   socket: Socket | null;
   connected: boolean;
@@ -32,7 +39,8 @@ export interface UseSocketReturn {
     roomId: string,
     guestName?: string,
     inviteToken?: string,
-  ) => Promise<{ success: boolean; peers: PeerInfo[] }>;
+    password?: string,
+  ) => Promise<JoinRoomResult>;
   leaveRoom: (roomId: string) => Promise<void>;
   emitOffer: (roomId: string, targetPeerId: string, offer: RTCSessionDescriptionInit) => Promise<void>;
   emitAnswer: (roomId: string, targetPeerId: string, answer: RTCSessionDescriptionInit) => Promise<void>;
@@ -120,7 +128,8 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
       roomId: string,
       guestNameArg?: string,
       inviteToken?: string,
-    ): Promise<{ success: boolean; peers: PeerInfo[] }> => {
+      password?: string,
+    ): Promise<JoinRoomResult> => {
       return new Promise((resolve, reject) => {
         const socket = socketRef.current;
         if (!socket) {
@@ -128,18 +137,29 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
           return;
         }
 
-        const payload: { roomId: string; inviteToken?: string; guestName?: string } = { roomId };
+        const payload: { roomId: string; inviteToken?: string; guestName?: string; password?: string } = {
+          roomId,
+        };
         if (inviteToken) payload.inviteToken = inviteToken;
+        if (password) payload.password = password;
         if (guestNameArg) payload.guestName = guestNameArg;
         else payload.guestName = guestName;
 
-        socket.emit('join-room', payload, (response: { success?: boolean; peers?: PeerInfo[]; error?: string }) => {
-          if (response.error) {
-            reject(new Error(response.error));
-            return;
-          }
-          resolve({ success: response.success ?? true, peers: response.peers ?? [] });
-        });
+        socket.emit(
+          'join-room',
+          payload,
+          (response: { success?: boolean; peers?: PeerInfo[]; history?: ChatMessage[]; error?: string }) => {
+            if (response.error) {
+              reject(new Error(response.error));
+              return;
+            }
+            resolve({
+              success: response.success ?? true,
+              peers: response.peers ?? [],
+              history: response.history ?? [],
+            });
+          },
+        );
       });
     },
     [guestName],

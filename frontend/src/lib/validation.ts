@@ -109,3 +109,26 @@ export const metricsSchema = z.object({
 });
 
 export type Metrics = z.infer<typeof metricsSchema>;
+
+// ─── Chat (Opção A) — mirror do backend para UX; server valida de novo ───
+export const chatMessageClientSchema = z
+  .string()
+  .trim()
+  .min(1, 'Mensagem não pode estar vazia')
+  .max(500, 'Máx. 500 caracteres');
+
+export const chatEditClientSchema = z
+  .string()
+  .trim()
+  .min(1, 'Mensagem não pode estar vazia')
+  .max(500, 'Máx. 500 caracteres');
+
+export const ALLOWED_MIME_CLIENT_RE =
+  /^(image\/.*|application\/pdf|text\/plain|audio\/.*|application\/zip)$/;
+
+export const fileClientSchema = z
+  .object({
+    file: z.instanceof(File),
+  })
+  .refine((f) => f.file.size <= 15_000_000, 'Máx. 15MB')
+  .refine((f) => ALLOWED_MIME_CLIENT_RE.test(f.file.type), 'Tipo não permitido');

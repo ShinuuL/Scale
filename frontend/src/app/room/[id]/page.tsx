@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback, useRef, use } from 'react';
 import Link from 'next/link';
 import { useSocket } from '@/hooks/useSocket';
 import { useWebRTC } from '@/hooks/useWebRTC';
+import { useChat } from '@/hooks/useChat';
+import { ChatPanel } from '@/components/ChatPanel';
 import { VideoGrid } from '@/components/room/VideoGrid';
 import { RoomControls } from '@/components/room/RoomControls';
 import { ParticipantList } from '@/components/room/ParticipantList';
@@ -23,6 +25,7 @@ interface RoomData {
     isPersistent: boolean;
     isPrivate: boolean;
     maxParticipants: number;
+    ownerId: string | null;
     inviteToken?: string;
     expiresAt: string | null;
     createdAt: string;
@@ -52,6 +55,32 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
   const [copiedTsLink, setCopiedTsLink] = useState(false);
 
   const socket = useSocket();
+  const chat = useChat(roomId, socket.socket);
+  const chatRef = useRef(chat);
+  chatRef.current = chat;
+
+  const [chatOpen, setChatOpen] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+  // Persist chatOpen em localStorage
+  useEffect(() => {
+    const key = `scale:chatOpen:${roomId}`;
+    const stored = window.localStorage.getItem(key);
+    if (stored === '1') setChatOpen(true);
+  }, [roomId]);
+
+  useEffect(() => {
+    const key = `scale:chatOpen:${roomId}`;
+    window.localStorage.setItem(key, chatOpen ? '1' : '0');
+  }, [chatOpen, roomId]);
+
+  // Identify current user (guest if 401)
+  useEffect(() => {
+    api
+      .getMe()
+      .then((res) => setCurrentUserId(res.user.id))
+      .catch(() => setCurrentUserId(null));
+  }, []);
 
   // Extract invite token from URL query params (client-side only)
   const urlInviteTokenRef = useRef<string | null>(null);
@@ -115,8 +144,12 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
   useEffect(() => {
     if (!socket.connected || joined) return;
 
-    socket.joinRoom(roomId, socket.guestName, inviteToken).then(({ peers: existingPeers }) => {
+    socket.joinRoom(roomId, socket.guestName, inviteToken).then(({ peers: existingPeers, history }) => {
       setJoined(true);
+      // Seed chat history (persistent rooms: last 200; temporary: FIFO buffer)
+      if (history.length > 0) {
+        chatRef.current.setMessages(history);
+      }
       // Initialize media
       webrtc.initMedia().then(() => {
         // For existing peers, we already received them via peer-joined events
@@ -217,6 +250,13 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
   // ─── Room UI ─────────────────────────────────────────────────
   const roomName = room?.room.name ?? 'Sala';
   const isPrivate = room?.room.isPrivate ?? false;
+
+  const isOwner = room?.room.ownerId != null && room?.room.ownerId === currentUserId;
+  // Nomes para o autocomplete de menções: quem está na sala agora (guestNames)
+  const currentPeers = [
+    socket.guestName,
+    ...Array.from(webrtc.peers.values()).map((p) => p.name),
+  ];
 
   return (
     <div className="h-screen flex flex-col">
@@ -325,6 +365,21 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
             />
           </aside>
         )}
+
+        {/* Chat panel */}
+        {chatOpen && (
+          <ChatPanel
+            roomId={roomId}
+            socket={socket.socket}
+            chat={chat}
+            currentPeers={currentPeers}
+            open={chatOpen}
+            onClose={() => setChatOpen(false)}
+            isOwner={isOwner}
+            currentUserId={currentUserId}
+            guestName={socket.guestName}
+          />
+        )}
       </div>
 
       {/* Controls */}
@@ -351,6 +406,9 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
               ? `${typeof window !== 'undefined' ? window.location.origin : ''}/room/${roomId}?token=${inviteToken}`
               : `${typeof window !== 'undefined' ? window.location.origin : ''}/room/${roomId}`
           }
+          chatUnread={chat.unread}
+          showChat={chatOpen}
+          onToggleChat={() => setChatOpen((prev) => !prev)}
         />
       </div>
     </div>
