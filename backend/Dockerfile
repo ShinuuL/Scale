@@ -18,6 +18,11 @@ RUN apk add --no-cache wget
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 appuser
 RUN mkdir -p /app/data && chown appuser:nodejs /app/data
 COPY --from=builder /app/backend/dist ./dist
+# Workspace-local deps that npm could not hoist into the root tree live in
+# backend/node_modules (e.g. @fastify/multipart + its fastify-plugin@5 while
+# the root tree uses fastify-plugin@6). Copy them beside dist/ so ESM
+# resolution from dist/*.js finds them without clobbering root versions.
+COPY --from=builder /app/backend/node_modules ./dist/node_modules
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/backend/prisma ./prisma
 COPY --from=builder /app/backend/package.json ./
