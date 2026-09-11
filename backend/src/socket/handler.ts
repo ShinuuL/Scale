@@ -1,5 +1,6 @@
 import type { Server as HttpServer } from 'http';
 import { Server, Socket } from 'socket.io';
+import bcrypt from 'bcryptjs';
 import { prisma } from '../lib/prisma.js';
 import { verifyToken } from '../lib/auth.js';
 import { isRateLimited, isChatRateLimited } from '../lib/rateLimit.js';
@@ -120,7 +121,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
         return;
       }
 
-      const { roomId, inviteToken } = parsed.data;
+      const { roomId, inviteToken, password } = parsed.data;
 
       try {
         const room = await prisma.room.findUnique({
@@ -142,8 +143,19 @@ export function createSocketServer(httpServer: HttpServer): Server {
           return;
         }
 
-        // Check invite token for private rooms
-        if (room.isPrivate && inviteToken !== room.inviteToken) {
+        // Access control: protected rooms accept a valid invite token OR the correct password
+        if (room.passwordHash) {
+          const hasValidInvite =
+            inviteToken !== undefined && inviteToken === room.inviteToken;
+          const hasValidPassword =
+            password !== undefined &&
+            (await bcrypt.compare(password, room.passwordHash));
+          if (!hasValidInvite && !hasValidPassword) {
+            callback?.({ error: 'Invalid invite token or password' });
+            return;
+          }
+        } else if (room.isPrivate && inviteToken !== room.inviteToken) {
+          // Check invite token for private rooms
           callback?.({ error: 'Invalid invite token' });
           return;
         }

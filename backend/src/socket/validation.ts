@@ -4,6 +4,7 @@ export const joinRoomSchema = z.object({
   roomId: z.string().uuid(),
   inviteToken: z.string().uuid().optional(),
   guestName: z.string().min(1).max(50).optional(),
+  password: z.string().min(8).max(128).optional(),
 });
 
 export const leaveRoomSchema = z.object({

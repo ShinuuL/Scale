@@ -15,6 +15,13 @@ async function buildApp() {
   return app;
 }
 
+// Unique email helper to avoid 409 conflicts across test runs
+let emailCounter = 0;
+function uniqueEmail(prefix: string): string {
+  emailCounter++;
+  return `${prefix}-${Date.now()}-${emailCounter}@test.com`;
+}
+
 describe('Room API', () => {
   let app: ReturnType<typeof buildApp> extends Promise<infer T> ? T : never;
 
@@ -23,6 +30,12 @@ describe('Room API', () => {
     process.env.NODE_ENV = 'test';
     app = await buildApp();
     await prisma.$connect();
+    // Clean up any leftover test data from previous runs
+    await prisma.chatFile.deleteMany({});
+    await prisma.chatMessage.deleteMany({});
+    await prisma.roomMember.deleteMany({});
+    await prisma.room.deleteMany({});
+    await prisma.user.deleteMany({});
   });
 
   afterAll(async () => {
@@ -126,5 +139,110 @@ describe('Room API', () => {
     for (const r of body.rooms) {
       expect(r.isPrivate).toBe(false);
     }
+  });
+
+  // --- Task 8: password bcrypt + rotate-invite ---
+
+  describe('password + rotate-invite', () => {
+    it('cria sala persistente com senha bcrypt e rotaciona invite só dono', async () => {
+      // 1. Register + login to get a token
+      const ownerEmail = uniqueEmail('owner-pw');
+      const regRes = await app.inject({
+        method: 'POST',
+        url: '/api/auth/register',
+        payload: { email: ownerEmail, password: 'pass12345', name: 'Owner PW' },
+      });
+      expect(regRes.statusCode).toBe(201);
+      const { token } = JSON.parse(regRes.payload);
+
+      // 2. Create persistent room with password (authenticated so ownerId is set)
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/rooms',
+        payload: { name: 'Privada', isPersistent: true, password: 'supersec8' },
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(res.statusCode).toBe(201);
+      const { room } = JSON.parse(res.payload);
+      expect(room.id).toBeDefined();
+      expect(room.passwordHash).toBeUndefined(); // must not be exposed in response
+
+      // 3. Owner rotates invite → 200 with new token
+      const rot = await app.inject({
+        method: 'POST',
+        url: `/api/rooms/${room.id}/rotate-invite`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(rot.statusCode).toBe(200);
+      const rotBody = JSON.parse(rot.payload);
+      expect(rotBody.inviteToken).toBeDefined();
+      expect(rotBody.inviteToken).not.toBe(room.inviteToken);
+
+      // 4. Guest (no auth / different user) → 403
+      const guestEmail = uniqueEmail('guest-pw');
+      const regGuest = await app.inject({
+        method: 'POST',
+        url: '/api/auth/register',
+        payload: { email: guestEmail, password: 'pass12345', name: 'Guest PW' },
+      });
+      const { token: guestToken } = JSON.parse(regGuest.payload);
+
+      const rotGuest = await app.inject({
+        method: 'POST',
+        url: `/api/rooms/${room.id}/rotate-invite`,
+        headers: { authorization: `Bearer ${guestToken}` },
+      });
+      expect(rotGuest.statusCode).toBe(403);
+    });
+
+    it('password curta <8 rejeita', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/rooms',
+        payload: { name: 'ShortPw', isPersistent: true, password: 'short' },
+      });
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('password only allowed for persistent rooms', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/rooms',
+        payload: { name: 'TempPw', isPersistent: false, password: 'supersec8' },
+      });
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('rotate-invite sem auth → 401', async () => {
+      const createRes = await app.inject({
+        method: 'POST',
+        url: '/api/rooms',
+        payload: { name: 'NoAuth', isPersistent: true },
+      });
+      const { room } = JSON.parse(createRes.payload);
+
+      const rot = await app.inject({
+        method: 'POST',
+        url: `/api/rooms/${room.id}/rotate-invite`,
+      });
+      expect(rot.statusCode).toBe(401);
+    });
+
+    it('rotate-invite sala inexistente → 404', async () => {
+      const ownerEmail404 = uniqueEmail('owner404');
+      const regRes = await app.inject({
+        method: 'POST',
+        url: '/api/auth/register',
+        payload: { email: ownerEmail404, password: 'pass12345', name: 'Owner 404' },
+      });
+      const { token } = JSON.parse(regRes.payload);
+
+      const rot = await app.inject({
+        method: 'POST',
+        url: '/api/rooms/00000000-0000-0000-0000-000000000000/rotate-invite',
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(rot.statusCode).toBe(404);
+    });
   });
 });

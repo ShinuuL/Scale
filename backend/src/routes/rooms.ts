@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
+import bcrypt from 'bcryptjs';
 import { prisma } from '../lib/prisma.js';
 
 const createRoomSchema = z.object({
@@ -9,6 +10,7 @@ const createRoomSchema = z.object({
   isPrivate: z.boolean().default(false),
   maxParticipants: z.number().int().min(2).max(8).default(8),
   ttlMinutes: z.number().int().min(1).max(1440).optional(), // 1 min to 24 hours
+  password: z.string().min(8).max(128).optional(),
 });
 
 export async function roomRoutes(fastify: FastifyInstance): Promise<void> {
@@ -22,8 +24,19 @@ export async function roomRoutes(fastify: FastifyInstance): Promise<void> {
       });
     }
 
-    const { name, isPersistent, isPrivate, maxParticipants, ttlMinutes } =
+    const { name, isPersistent, isPrivate, maxParticipants, ttlMinutes, password } =
       parsed.data;
+
+    // Password validation: only for persistent rooms, minimum 8 chars
+    let passwordHash: string | null = null;
+    if (password !== undefined) {
+      if (!isPersistent) {
+        return reply.code(400).send({
+          error: 'Password only allowed for persistent rooms',
+        });
+      }
+      passwordHash = await bcrypt.hash(password, 10);
+    }
 
     // Calculate expiresAt: only for non-persistent rooms
     let expiresAt: Date | null = null;
@@ -43,6 +56,7 @@ export async function roomRoutes(fastify: FastifyInstance): Promise<void> {
         inviteToken: uuidv4(),
         expiresAt,
         ownerId: request.userId ?? null,
+        passwordHash,
       },
       select: {
         id: true,
@@ -141,6 +155,49 @@ export async function roomRoutes(fastify: FastifyInstance): Promise<void> {
 
     return reply.send({ rooms: roomsPublic });
   });
+
+  // POST /api/rooms/:id/rotate-invite (owner only)
+  fastify.post<{ Params: { id: string } }>(
+    '/api/rooms/:id/rotate-invite',
+    { preHandler: [fastify.authenticate as never] },
+    async (request, reply) => {
+      const userId = request.userId;
+      if (!userId) {
+        return reply.code(401).send({ error: 'Authentication required' });
+      }
+
+      const { id } = request.params;
+
+      const room = await prisma.room.findUnique({
+        where: { id },
+        select: { id: true, ownerId: true },
+      });
+
+      if (!room) {
+        return reply.code(404).send({ error: 'Room not found' });
+      }
+
+      if (room.ownerId !== userId) {
+        return reply.code(403).send({ error: 'Only the room owner can rotate the invite' });
+      }
+
+      const newToken = uuidv4();
+      await prisma.room.update({
+        where: { id: room.id },
+        data: { inviteToken: newToken },
+      });
+
+      // Emit chat:system so connected peers know the invite was rotated
+      const io = (fastify as unknown as { io?: import('socket.io').Server }).io;
+      io?.to(room.id).emit('chat:system', {
+        roomId: room.id,
+        text: 'Convite rotacionado pelo dono',
+        kind: 'system',
+      });
+
+      return reply.send({ inviteToken: newToken });
+    },
+  );
 
   // DELETE /api/rooms/:id (owner only)
   fastify.delete<{ Params: { id: string } }>(
