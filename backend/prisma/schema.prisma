@@ -31,12 +31,57 @@ model Room {
   isPrivate        Boolean   @default(false)
   maxParticipants  Int       @default(8)
   inviteToken      String    @unique @default(uuid())
+  passwordHash     String?
   status           RoomStatus @default(ACTIVE)
   createdAt        DateTime  @default(now())
   expiresAt        DateTime?
 
   owner         User?         @relation(fields: [ownerId], references: [id], onDelete: SetNull)
   roomMembers   RoomMember[]
+  chatMessages  ChatMessage[]
+  chatFiles     ChatFile[]
+
+  @@index([isPersistent, status])
+  @@index([expiresAt])
+}
+
+model ChatMessage {
+  id          String    @id @default(uuid())
+  roomId      String
+  authorId    String?
+  guestName   String?
+  content     String
+  prevContent String?
+  editedAt    DateTime?
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  room  Room       @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  files ChatFile[]
+
+  @@index([roomId, createdAt])
+  @@index([roomId, deletedAt])
+  @@index([authorId])
+}
+
+model ChatFile {
+  id          String    @id @default(uuid())
+  roomId      String
+  messageId   String
+  filename    String
+  mime        String
+  size        Int
+  path        String
+  uploadedBy  String?
+  createdAt   DateTime  @default(now())
+  deletedAt   DateTime?
+
+  room    Room        @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  message ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([roomId])
+  @@index([messageId])
+  @@index([roomId, deletedAt])
 }
 
 model RoomMember {
