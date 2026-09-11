@@ -52,3 +52,35 @@ export const screenShareStateSchema = z.object({
 });
 
 export type ScreenShareStatePayload = z.infer<typeof screenShareStateSchema>;
+
+// --- Chat schemas (Opção A) — trim aplicado no handler (content.trim()) antes do safeParse ---
+
+export const chatMessageSchema = z.object({
+  roomId: z.string().uuid(),
+  content: z.string().min(1).max(500), // server valida após trim via handler
+  mentions: z.array(z.string().min(1).max(50)).max(8).optional(),
+});
+
+export const chatEditSchema = z.object({
+  roomId: z.string().uuid(),
+  messageId: z.string().uuid(),
+  content: z.string().min(1).max(500),
+});
+
+export const chatDeleteSchema = z.object({
+  roomId: z.string().uuid(),
+  messageId: z.string().uuid(),
+});
+
+export const fileMetaSchema = z.object({
+  roomId: z.string().uuid(),
+  messageId: z.string().uuid().optional(),
+  filename: z.string().min(1).max(255),
+  mime: z.string().min(3).max(127),
+  size: z.number().int().min(1).max(15_000_000),
+});
+
+export type ChatMessagePayload = z.infer<typeof chatMessageSchema>;
+export type ChatEditPayload = z.infer<typeof chatEditSchema>;
+export type ChatDeletePayload = z.infer<typeof chatDeleteSchema>;
+export type FileMetaPayload = z.infer<typeof fileMetaSchema>;
