@@ -16,4 +16,12 @@ describe('prisma chat models', () => {
     expect(msg.id).toBeDefined();
     expect(file.id).toBeDefined();
   });
+
+  it('apaga em cascata ChatMessage quando Room é deletada', async () => {
+    const room = await prisma.room.create({ data: { name: 'Temp Cascade', isPersistent: false } });
+    const msg = await prisma.chatMessage.create({ data: { roomId: room.id, content: 'hi' } });
+    await prisma.room.delete({ where: { id: room.id } });
+    const leftover = await prisma.chatMessage.findUnique({ where: { id: msg.id } });
+    expect(leftover).toBeNull();
+  });
 });
