@@ -11,6 +11,8 @@ import {
   iceCandidateSchema,
   screenShareStateSchema,
   chatMessageSchema,
+  chatEditSchema,
+  chatDeleteSchema,
 } from './validation.js';
 
 interface SocketUser {
@@ -186,10 +188,38 @@ export function createSocketServer(httpServer: HttpServer): Server {
           (p) => p.socketId !== socket.id,
         );
 
+        // Histórico de chat: 200 recentes se persistente (ASC), buffer FIFO se temporária
+        let history: Array<{
+          id: string;
+          content: string;
+          createdAt: Date;
+          deletedAt?: Date | null;
+          editedAt?: Date | null;
+        }> = [];
+        if (room.isPersistent) {
+          const recent = await prisma.chatMessage.findMany({
+            where: { roomId },
+            orderBy: { createdAt: 'desc' },
+            take: 200,
+            include: { files: true },
+          });
+          history = recent.reverse(); // entrega ASC conforme spec
+        } else {
+          history = (chatBuffers.get(roomId) ?? []).slice(-100);
+        }
+
         callback?.({
           success: true,
           peers: peersList,
           roomId,
+          history,
+        });
+
+        // emitir chat:system para a sala
+        socket.to(roomId).emit('chat:system', {
+          roomId,
+          text: `${user.name} entrou`,
+          kind: 'join',
         });
       } catch {
         callback?.({ error: 'Internal server error' });
@@ -414,6 +444,137 @@ export function createSocketServer(httpServer: HttpServer): Server {
       callback?.({ success: true, messageId: savedMsg.id });
     });
 
+    socket.on('chat:edit', async (data, callback) => {
+      if (
+        isRateLimited(`socket:${socket.id}`) ||
+        isChatRateLimited(`chat:${socket.id}`)
+      ) {
+        callback?.({ error: 'Rate limit exceeded. Max 5 messages/5s.' });
+        return;
+      }
+
+      // trim antes de validar para respeitar 1..500 após trim
+      const trimmed =
+        typeof data?.content === 'string'
+          ? { ...data, content: data.content.trim() }
+          : data;
+      const parsed = chatEditSchema.safeParse(trimmed);
+      if (!parsed.success) {
+        callback?.({ error: 'Invalid payload', details: parsed.error.flatten() });
+        return;
+      }
+
+      const { roomId, messageId, content } = parsed.data;
+
+      // membership
+      if (!roomPeers.get(roomId)?.has(socket.id)) {
+        callback?.({ error: 'Not in room' });
+        return;
+      }
+
+      const msg = await prisma.chatMessage.findUnique({
+        where: { id: messageId },
+      });
+      if (!msg || msg.roomId !== roomId) {
+        callback?.({ error: 'Message not found' });
+        return;
+      }
+      if (msg.deletedAt) {
+        callback?.({ error: 'Cannot edit deleted message' });
+        return;
+      }
+
+      const user: SocketUser = socket.data.user;
+      const isAuthor =
+        (msg.authorId && msg.authorId === user.userId) ||
+        (!msg.authorId && msg.guestName === (user.guestName ?? user.name));
+      if (!isAuthor) {
+        callback?.({ error: 'Not message author' });
+        return;
+      }
+
+      // Janela de edição: 15 minutos desde a criação
+      if (Date.now() - new Date(msg.createdAt).getTime() > 15 * 60 * 1000) {
+        callback?.({ error: 'Edit window expired' });
+        return;
+      }
+
+      const updated = await prisma.chatMessage.update({
+        where: { id: messageId },
+        data: { prevContent: msg.content, content, editedAt: new Date() },
+      });
+
+      io.to(roomId).emit('chat:edit', {
+        messageId,
+        content: updated.content,
+        prevContent: updated.prevContent,
+        editedAt: updated.editedAt,
+      });
+      callback?.({ success: true });
+    });
+
+    socket.on('chat:delete', async (data, callback) => {
+      if (
+        isRateLimited(`socket:${socket.id}`) ||
+        isChatRateLimited(`chat:${socket.id}`)
+      ) {
+        callback?.({ error: 'Rate limit exceeded. Max 5 messages/5s.' });
+        return;
+      }
+
+      const parsed = chatDeleteSchema.safeParse(data);
+      if (!parsed.success) {
+        callback?.({ error: 'Invalid payload', details: parsed.error.flatten() });
+        return;
+      }
+
+      const { roomId, messageId } = parsed.data;
+
+      // membership
+      if (!roomPeers.get(roomId)?.has(socket.id)) {
+        callback?.({ error: 'Not in room' });
+        return;
+      }
+
+      const [msg, room] = await Promise.all([
+        prisma.chatMessage.findUnique({ where: { id: messageId } }),
+        prisma.room.findUnique({ where: { id: roomId } }),
+      ]);
+      if (!msg || msg.roomId !== roomId) {
+        callback?.({ error: 'Message not found' });
+        return;
+      }
+      // idempotente
+      if (msg.deletedAt) {
+        callback?.({ success: true });
+        return;
+      }
+
+      const user: SocketUser = socket.data.user;
+      const isAuthor =
+        (msg.authorId && msg.authorId === user.userId) ||
+        (!msg.authorId && msg.guestName === (user.guestName ?? user.name));
+      const isOwner = room?.ownerId && room.ownerId === user.userId;
+      if (!isAuthor && !isOwner) {
+        callback?.({ error: 'Not authorized to delete' });
+        return;
+      }
+
+      const now = new Date();
+      await prisma.chatMessage.update({
+        where: { id: messageId },
+        data: { deletedAt: now, content: '[mensagem apagada]' },
+      });
+      // cascade soft em arquivos da mensagem
+      await prisma.chatFile.updateMany({
+        where: { messageId },
+        data: { deletedAt: now },
+      });
+
+      io.to(roomId).emit('chat:delete', { messageId, deletedAt: now });
+      callback?.({ success: true });
+    });
+
     socket.on('disconnect', () => {
       const roomId = socket.data.roomId as string | undefined;
       if (roomId) {
@@ -457,6 +618,14 @@ function handleLeaveRoom(
   } else {
     socket.to(roomId).emit('room:peer-left', {
       peerId: socket.id,
+    });
+    // chat:system leave para os demais peers
+    const userName =
+      (socket.data.user as SocketUser | undefined)?.name ?? 'Alguém';
+    socket.to(roomId).emit('chat:system', {
+      roomId,
+      text: `${userName} saiu`,
+      kind: 'leave',
     });
   }
 
