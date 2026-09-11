@@ -13,41 +13,50 @@ export async function filesRoutes(fastify: FastifyInstance): Promise<void> {
     if (!room) return reply.code(404).send({ error: 'Room not found' });
     if (!room.isPersistent) return reply.code(400).send({ error: 'Temporary rooms do not support files' });
 
-    // Membership: CREDENCIAIS via partes multipart 'inviteToken'/'password' (task 15).
-    // request.parts() yield fields E files; request.files() descartaria os campos.
+    // Membership ANTES de bufferizar (DoS hardening — critic): request.parts()
+    // yield fields E files; coletamos os fields (inviteToken/password) e só então,
+    // ao PRIMEIRO file part, validamos hasRoomAccess com room — sem toBuffer().
+    // Nosso client (useChat.uploadFiles) envia os fields de credencial ANTES dos
+    // files, então a ordem do multipart garante que a checagem vê os campos.
+    // Se o acesso falhar, retornamos 403 SEM consumir/bufferizar o stream.
     const files = await request.parts(); // fastify-multipart
     const parts: Array<{ filename: string; mime: string; buffer: Buffer; fieldname: string }> = [];
     const fields: Record<string, string> = {};
     let fileCount = 0;
     let totalNew = 0;
+    let membershipChecked = false;
     for await (const part of files) {
       if (part.type === 'field') {
         fields[part.fieldname] = String(part.value ?? '');
         continue;
       }
+
+      if (!membershipChecked) {
+        const creds = { userId: request.userId, inviteToken: fields.inviteToken, password: fields.password };
+        if (!(await hasRoomAccess(room, creds))) {
+          return reply.code(403).send({ error: 'Not a room member' });
+        }
+        membershipChecked = true;
+      }
+
       const buf = await part.toBuffer();
       if (buf.length > 15_000_000) return reply.code(413).send({ error: 'File too large. Max 15MB' });
       const mime = part.mimetype;
       if (!ALLOWED_MIME_RE.test(mime)) return reply.code(400).send({ error: 'Tipo não permitido', mime });
+      // Magic bytes ESTRITO (critic): se detectMagicBytes devolve um mime canônico
+      // e ele difere do declarado → 400. Isso bloqueia QUALQUER mismatch, incl.
+      // application/pdf com image/png declarado (o branch antigo de prefix-match
+      // deixava passar). text/plain não tem magic (detected null) → permitido pelo
+      // mime declarado.
       const detected = detectMagicBytes(buf);
-      // text/plain não tem magic — permite se mime é text/plain
-      if (detected && !mime.includes(detected.split('/')[0]) && detected !== mime) {
-        // permite image/png vs detected image/png exato; rejeita mismatch grosseiro ex: image/png com ZIP magic
-        const isMismatch = (detected === 'application/zip' && !mime.includes('zip')) || (detected.startsWith('image/') && !mime.startsWith('image/'));
-        if (isMismatch) return reply.code(400).send({ error: 'Magic bytes mismatch', detected, declared: mime });
+      if (detected !== null && detected !== mime) {
+        return reply.code(400).send({ error: 'Magic bytes mismatch', detected, declared: mime });
       }
       parts.push({ filename: part.filename, mime, buffer: buf, fieldname: part.fieldname });
       fileCount += 1;
       totalNew += buf.length;
     }
     if (fileCount === 0) return reply.code(400).send({ error: 'Nenhum arquivo enviado' });
-
-    // Membership: salas protegidas exigem JWT do dono, inviteToken ou password
-    // via campo multipart. Salas públicas continuam abertas.
-    const creds = { userId: request.userId, inviteToken: fields.inviteToken, password: fields.password };
-    if (!(await hasRoomAccess(room, creds))) {
-      return reply.code(403).send({ error: 'Not a room member' });
-    }
 
     if (fileCount > 5) return reply.code(400).send({ error: 'Máx. 5 arquivos por mensagem' });
 

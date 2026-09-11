@@ -311,6 +311,20 @@ describe('REST files', () => {
     });
     expect(mismatch.statusCode).toBe(400);
 
+    // strict magic (critic): declared image/png, content PDF → 400. O branch
+    // antigo de prefix-match (mime.includes) deixava este caso passar.
+    const pdfContent = await app.inject({
+      method: 'POST',
+      url: `/api/rooms/${persistRoomId}/files`,
+      ...multipartBody([
+        { filename: 'evil.png', contentType: 'image/png', content: PDF },
+      ]),
+    });
+    expect(pdfContent.statusCode).toBe(400);
+    expect(JSON.parse(pdfContent.payload).error).toMatch(/Magic bytes mismatch/i);
+    expect(JSON.parse(pdfContent.payload).detected).toBe('application/pdf');
+    expect(JSON.parse(pdfContent.payload).declared).toBe('image/png');
+
     // quota 200MB
     const quotaRoom = await prisma.room.create({
       data: { name: 'REST Quota', isPersistent: true },
@@ -528,6 +542,53 @@ describe('REST membership hardening', () => {
       ),
     });
     expect(withToken.statusCode).toBe(201);
+  });
+
+  it('files POST: 403 sem creds; 201 com password field', async () => {
+    const noCreds = await app.inject({
+      method: 'POST',
+      url: `/api/rooms/${passRoomId}/files`,
+      ...multipartBody([
+        { filename: 'a.png', contentType: 'image/png', content: PNG },
+      ]),
+    });
+    expect(noCreds.statusCode).toBe(403);
+
+    const withPass = await app.inject({
+      method: 'POST',
+      url: `/api/rooms/${passRoomId}/files`,
+      ...multipartBody(
+        [{ filename: 'b.png', contentType: 'image/png', content: PNG }],
+        { password: 'segredo123' },
+      ),
+    });
+    expect(withPass.statusCode).toBe(201);
+  });
+
+  it('magic bytes ESTRITO: pdf content com image/png declarado → 400 e vice-versa', async () => {
+    // declared image/png, content PDF (mesmo com inviteToken válido → 400)
+    const pngClaimed = await app.inject({
+      method: 'POST',
+      url: `/api/rooms/${privateRoomId}/files`,
+      ...multipartBody(
+        [{ filename: 'fake.png', contentType: 'image/png', content: PDF }],
+        { inviteToken: privateToken },
+      ),
+    });
+    expect(pngClaimed.statusCode).toBe(400);
+    expect(JSON.parse(pngClaimed.payload).error).toMatch(/Magic bytes mismatch/i);
+
+    // declared application/pdf, content PNG → 400 (mismatch simétrico)
+    const pdfClaimed = await app.inject({
+      method: 'POST',
+      url: `/api/rooms/${privateRoomId}/files`,
+      ...multipartBody(
+        [{ filename: 'fake.pdf', contentType: 'application/pdf', content: PNG }],
+        { inviteToken: privateToken },
+      ),
+    });
+    expect(pdfClaimed.statusCode).toBe(400);
+    expect(JSON.parse(pdfClaimed.payload).declared).toBe('application/pdf');
   });
 
   it('GET /files/:fileId: 403 sem creds ou token de outra sala; 200 com token da sala', async () => {

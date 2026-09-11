@@ -30,6 +30,8 @@ interface RoomData {
     expiresAt: string | null;
     createdAt: string;
     status: string;
+    /** Sala persistente protegida por senha (passwordHash presente) — pedir senha no join. */
+    hasPassword?: boolean;
   };
 }
 
@@ -53,6 +55,9 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
   const [tailscaleIp, setTailscaleIp] = useState<string | null>(null);
   const [copiedFlag, setCopiedFlag] = useState(false);
   const [copiedTsLink, setCopiedTsLink] = useState(false);
+  // Senha de sala protegida por password (fluxo password do critic). Fica SÓ em
+  // estado — nunca em localStorage (segredo efêmero por sessão de navegação).
+  const [roomPassword, setRoomPassword] = useState('');
 
   // Extract invite token from URL query params (client-side only)
   const urlInviteTokenRef = useRef<string | null>(null);
@@ -65,7 +70,7 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
   const inviteToken = urlInviteTokenRef.current ?? room?.room.inviteToken ?? undefined;
 
   const socket = useSocket();
-  const chat = useChat(roomId, socket.socket, inviteToken);
+  const chat = useChat(roomId, socket.socket, inviteToken, roomPassword.trim() || undefined);
   const chatRef = useRef(chat);
   chatRef.current = chat;
 
@@ -140,11 +145,21 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
     fetchRoom();
   }, [roomId]);
 
+  // Sala protegida por senha exige senha antes do join — a menos que haja
+  // inviteToken na URL (guest com link) ou o dono autenticado por JWT.
+  const isRoomOwner =
+    room?.room.ownerId != null && room?.room.ownerId === currentUserId;
+  const requiresPassword = Boolean(
+    room?.room.hasPassword && !inviteToken && !isRoomOwner,
+  );
+
   // Join room when connected
   useEffect(() => {
     if (!socket.connected || joined) return;
+    // Espera a senha ser fornecida (gate abaixo) antes de tentar o join.
+    if (requiresPassword && roomPassword.trim().length === 0) return;
 
-    socket.joinRoom(roomId, socket.guestName, inviteToken).then(({ peers: existingPeers, history }) => {
+    socket.joinRoom(roomId, socket.guestName, inviteToken, roomPassword.trim() || undefined).then(({ peers: existingPeers, history }) => {
       setJoined(true);
       // Seed chat history (persistent rooms: last 200; temporary: FIFO buffer)
       if (history.length > 0) {
@@ -160,7 +175,7 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
     }).catch((err) => {
       setError(err.message || 'Falha ao entrar na sala');
     });
-  }, [socket.connected, roomId, socket, joined, webrtc, inviteToken]);
+  }, [socket.connected, roomId, socket, joined, webrtc, inviteToken, requiresPassword, roomPassword]);
 
   // Handle leave
   const handleLeave = useCallback(async () => {
@@ -243,6 +258,46 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
             Criar Nova Sala
           </Button>
         </div>
+      </div>
+    );
+  }
+
+  // ─── Gate de senha ────────────────────────────────────────────
+  // Sala persistente protegida por password e o usuário ainda não forneceu a
+  // senha (nem veio com inviteToken, nem é o dono). A senha entra por estado,
+  // dispara o join effect acima e nunca vai para localStorage.
+  if (requiresPassword && !joined) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (roomPassword.trim().length >= 8) {
+              setRoomPassword(roomPassword.trim());
+            }
+          }}
+          className="w-full max-w-md bg-forest-950/60 border border-white/10 rounded-2xl p-6 space-y-4"
+        >
+          <div className="text-4xl">🔒</div>
+          <h1 className="text-xl font-semibold text-white">Sala protegida por senha</h1>
+          <p className="text-sm text-slate-400">
+            Esta sala exige a senha definida pelo dono para entrar. A senha não é
+            salva no navegador.
+          </p>
+          <input
+            type="password"
+            value={roomPassword}
+            onChange={(e) => setRoomPassword(e.target.value)}
+            placeholder="Senha da sala"
+            aria-label="Senha da sala"
+            minLength={8}
+            required
+            className="w-full rounded bg-white/10 p-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-moss-500"
+          />
+          <Button type="submit" size="md" disabled={roomPassword.trim().length < 8}>
+            Entrar na sala
+          </Button>
+        </form>
       </div>
     );
   }
@@ -379,6 +434,7 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
             currentUserId={currentUserId}
             guestName={socket.guestName}
             inviteToken={inviteToken}
+            password={roomPassword.trim() || undefined}
           />
         )}
       </div>

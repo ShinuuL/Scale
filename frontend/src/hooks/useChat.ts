@@ -61,13 +61,14 @@ function playMentionSound(): void {
  * mantém paginação (GET /api/rooms/:id/messages, cursor 50) e upload
  * (POST /api/rooms/:id/files). `unread` só incrementa quando o painel está fechado.
  *
- * `accessToken` (inviteToken/password de salas protegidas) é anexado aos REST
- * calls para satisfazer o membership check server-side (hardening Task 15).
+ * `accessToken` (inviteToken) e `password` de salas protegidas são anexados aos
+ * REST calls para satisfazer o membership check server-side (hardening Task 15).
  */
 export function useChat(
   roomId: string,
   socket: Socket | null,
   accessToken?: string,
+  password?: string,
 ): ChatApi {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [hasMore, setHasMore] = useState(true);
@@ -76,10 +77,15 @@ export function useChat(
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const isOpenRef = useRef(false);
   const accessTokenRef = useRef<string | undefined>(undefined);
+  const passwordRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     accessTokenRef.current = accessToken;
   }, [accessToken]);
+
+  useEffect(() => {
+    passwordRef.current = password;
+  }, [password]);
 
   const setOpen = useCallback((open: boolean) => {
     isOpenRef.current = open;
@@ -180,6 +186,7 @@ export function useChat(
       const params = new URLSearchParams({ limit: '50' });
       if (nextCursor) params.set('cursor', nextCursor);
       if (accessTokenRef.current) params.set('inviteToken', accessTokenRef.current);
+      if (passwordRef.current) params.set('password', passwordRef.current);
       const res = await fetch(`/api/rooms/${roomId}/messages?${params.toString()}`, { credentials: 'include' });
       const data = (await res.json()) as { messages: ChatMessage[]; nextCursor: string | null };
       if (res.ok) {
@@ -198,6 +205,7 @@ export function useChat(
       const trimmedContent = content?.trim();
       if (trimmedContent) form.append('content', trimmedContent.slice(0, 500));
       if (accessTokenRef.current) form.append('inviteToken', accessTokenRef.current);
+      if (passwordRef.current) form.append('password', passwordRef.current);
       files.slice(0, 5).forEach((file) => form.append('files', file));
       const res = await fetch(`/api/rooms/${roomId}/files`, {
         method: 'POST',

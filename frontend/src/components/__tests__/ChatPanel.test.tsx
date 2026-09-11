@@ -253,6 +253,43 @@ describe('useChat (Task 9/10)', () => {
     expect(body.get('content')).toBe('legenda');
     expect(body.getAll('files')).toHaveLength(2);
   });
+
+  it('loadMore anexa password na query quando fornecida (sala protegida)', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue({
+        ok: true,
+        json: async () => ({ messages: [baseMessage({ id: 'old-1', content: 'antiga' })], nextCursor: null }),
+      });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { socket } = createMockSocket();
+    const { result } = renderHook(() => useChat(ROOM_ID, socket, undefined, 'segredo123'));
+
+    await act(() => result.current.loadMore());
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/rooms/${ROOM_ID}/messages?limit=50&password=segredo123`,
+      { credentials: 'include' },
+    );
+  });
+
+  it('uploadFiles inclui campo password no FormData quando fornecida', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ files: [], messageId: 'm-pass' }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { socket } = createMockSocket();
+    const { result } = renderHook(() => useChat(ROOM_ID, socket, undefined, 'segredo123'));
+
+    await act(() =>
+      result.current.uploadFiles([new File(['a'], 'a.txt', { type: 'text/plain' })], 'leg'),
+    );
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = init.body as FormData;
+    expect(body.get('password')).toBe('segredo123');
+  });
 });
 
 describe('ChatMessageItem (Task 10)', () => {
@@ -376,6 +413,22 @@ describe('ChatMessageItem (Task 10)', () => {
     const link = container.querySelector('a[href="/api/files/f-1"]');
     expect(link).toBeTruthy();
     expect(link?.textContent).toContain('doc.pdf');
+  });
+
+  it('renderiza link de arquivo com password na query (sala protegida por senha)', () => {
+    const { container } = render(
+      <ChatMessageItem
+        message={baseMessage({
+          content: 'arquivo protegido',
+          files: [{ id: 'f-pw', filename: 'secret.pdf', mime: 'application/pdf', size: 4096 }],
+        })}
+        {...itemProps}
+        password="segredo123"
+      />
+    );
+    const link = container.querySelector('a[href*="password=segredo123"]');
+    expect(link).toBeTruthy();
+    expect(link?.getAttribute('href')).toBe('/api/files/f-pw?password=segredo123');
   });
 });
 

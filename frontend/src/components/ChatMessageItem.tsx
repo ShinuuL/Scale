@@ -52,6 +52,8 @@ export interface ChatMessageItemProps {
   onDelete: (id: string) => void;
   /** inviteToken de sala protegida — anexado aos links de download (membership hardening). */
   accessToken?: string;
+  /** senha de sala protegida por password — alternativa ao inviteToken nos links de download. */
+  password?: string;
 }
 
 const EDIT_WINDOW_MS = 15 * 60 * 1000;
@@ -69,6 +71,7 @@ export function ChatMessageItem({
   onEdit,
   onDelete,
   accessToken,
+  password,
 }: ChatMessageItemProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(message.content);
@@ -143,7 +146,9 @@ export function ChatMessageItem({
                 href={
                   accessToken
                     ? `/api/files/${file.id}?inviteToken=${encodeURIComponent(accessToken)}`
-                    : `/api/files/${file.id}`
+                    : password
+                      ? `/api/files/${file.id}?password=${encodeURIComponent(password)}`
+                      : `/api/files/${file.id}`
                 }
                 target="_blank"
                 rel="noopener"

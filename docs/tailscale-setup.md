@@ -178,8 +178,10 @@ publicamente. Tres camadas garantem isso:
 
 | Camada | O que faz | Onde |
 |--------|-----------|------|
-| 1. Bind do host | A porta HTTPS do Caddy escuta so no IP Tailscale do host (nunca `0.0.0.0`) | `docker-compose.yml` (servico `caddy`) |
+| 1a. Bind no container | Caddy escuta **somente** no IP Tailscale via `bind {$TAILSCALE_IP}` (ou 127.0.0.1 se vazio) | `Caddyfile` (variavel `{$TAILSCALE_IP}`) |
+| 1b. Bind no host | Docker mapeia porta `"$TAILSCALE_IP:3443:443"` no host, reforçando o bind | `docker-compose.yml` (servico `caddy`) |
 | 2. Middleware | Backend responde **403 `Tailnet only`** para REST fora da rede privada | `backend/src/plugins/checkTailscale.ts` |
+| 2b. Socket.io | `io.use` middleware rejeita conexoes Socket.io de IPs publicos com `connect_error "Tailnet only"` | `backend/src/socket/handler.ts` |
 | 3. ACL de sala | `GET/POST` de mensagens/arquivos exigem JWT do dono, `inviteToken` ou `password` em salas protegidas | `backend/src/lib/roomAccess.ts` |
 
 ### Variaveis de hardening
@@ -209,11 +211,15 @@ ALLOWED_ORIGINS=http://localhost:3000,http://100.64.0.10:3000,https://desktop-si
 
 Caso contrario: `403 { "error": "Tailnet only" }`.
 
-> **Nota:** o container do Caddy roda em rede bridge, entao nao consegue bindar
-> o IP Tailscale do host (`100.64.0.0/10` nao existe nas interfaces internas).
-> Por isso o bind da porta HTTPS acontece no HOST (camada 1), via
-> `"${TAILSCALE_IP:-127.0.0.1}:3443:443"` no `docker-compose.yml`. O Caddyfile
-> documenta essa decisao.
+> **Nota (bridge Docker e o `bind` do Caddy):** o container do Caddy roda em rede
+> bridge, entao nao enxerga a interface Tailscale do host (`100.64.0.0/10` nao
+> existe internamente). O `bind {$TAILSCALE_IP}` do Caddyfile resolve o endereco
+> CORRETO via DNS apenas se o IP estiver acessivel dentro do container. Para o
+> perfil `https` recomendado, mantemos o enforce no HOST (camada 1b, porta
+> mapeada so no IP Tailscale) + middlewares (camadas 2/2b) — o Caddyfile usa o
+> mesmo placeholder `{$TAILSCALE_IP}` e o `docker-compose.yml` repassa
+> `TAILSCALE_IP` ao container via `environment:`; se `TAILSCALE_IP` nao for
+> definido, ambos caem para `127.0.0.1` (localhost-only, sem exposicao).
 
 ### Acesso de convidados (inviteToken) apos o hardening
 

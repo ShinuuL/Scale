@@ -63,6 +63,8 @@ services:
     # fora da tailnet. Veja o comentario no Caddyfile.
     ports:
       - "${TAILSCALE_IP:-127.0.0.1}:3443:443"
+    environment:
+      - TAILSCALE_IP=${TAILSCALE_IP:-127.0.0.1}
     volumes:
       - ./certs:/certs:ro
       - ./Caddyfile:/etc/caddy/Caddyfile:ro

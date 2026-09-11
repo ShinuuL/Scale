@@ -91,6 +91,7 @@ export async function roomRoutes(fastify: FastifyInstance): Promise<void> {
         createdAt: true,
         status: true,
         ownerId: true,
+        passwordHash: true,
       },
     });
 
@@ -106,10 +107,21 @@ export async function roomRoutes(fastify: FastifyInstance): Promise<void> {
     // Don't expose inviteToken unless requester is the owner
     const isOwner = request.userId && room.ownerId === request.userId;
 
+    // passwordHash nunca é exposto; expomos apenas o flag hasPassword para a UI
+    // decidir se deve pedir a senha antes do join (fluxo password do critic).
     return reply.send({
       room: {
-        ...room,
+        id: room.id,
+        name: room.name,
+        isPersistent: room.isPersistent,
+        isPrivate: room.isPrivate,
+        maxParticipants: room.maxParticipants,
         inviteToken: isOwner ? room.inviteToken : undefined,
+        expiresAt: room.expiresAt,
+        createdAt: room.createdAt,
+        status: room.status,
+        ownerId: room.ownerId,
+        hasPassword: room.passwordHash !== null,
       },
     });
   });

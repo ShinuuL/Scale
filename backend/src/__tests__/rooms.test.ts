@@ -102,6 +102,10 @@ describe('Room API', () => {
     const body = JSON.parse(response.payload);
     expect(body.room.name).toBe('Details Room');
     expect(body.room.isPersistent).toBe(true);
+    // Sala sem senha → hasPassword false (flag para o gate de password da UI).
+    // passwordHash nunca aparece na resposta.
+    expect(body.room.hasPassword).toBe(false);
+    expect(body.room.passwordHash).toBeUndefined();
   });
 
   it('GET /api/rooms/:id returns 404 for nonexistent room', async () => {
@@ -166,6 +170,18 @@ describe('Room API', () => {
       const { room } = JSON.parse(res.payload);
       expect(room.id).toBeDefined();
       expect(room.passwordHash).toBeUndefined(); // must not be exposed in response
+      // POST /api/rooms não expõe hasPassword — o flag é do GET /:id (a UI do
+      // room page consome GET). A asserção está no GET abaixo.
+
+      // GET da sala mostra hasPassword true sem expor hash
+      const getRes = await app.inject({
+        method: 'GET',
+        url: `/api/rooms/${room.id}`,
+      });
+      expect(getRes.statusCode).toBe(200);
+      const getBody = JSON.parse(getRes.payload);
+      expect(getBody.room.hasPassword).toBe(true);
+      expect(getBody.room.passwordHash).toBeUndefined();
 
       // 3. Owner rotates invite → 200 with new token
       const rot = await app.inject({

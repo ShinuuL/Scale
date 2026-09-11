@@ -8,15 +8,29 @@
 # warning de certificado no browser, pois o SAN do cert nao inclui o short name.
 # RECOMENDADO: usar sempre o FQDN completo — https://desktop-sie986u.taile13b10.ts.net:3443
 #
-# Hardening (Etapa 5): Caddy NUNCA expoe 0.0.0.0. A exposicao externa do :443
-# interno e controlada no docker-compose.yml pelo bind do HOST ao IP Tailscale:
-#   ports: ["${TAILSCALE_IP:-127.0.0.1}:3443:443"]
-# O container em rede bridge nao consegue bindar o IP Tailscale do host
-# (100.64.0.0/10 nao existe nas interfaces do container), entao o enforcement
-# de "tailnet only" fica no socket do host + no middleware checkTailscaleOrigin
-# do backend (403 Tailnet only para REST fora da rede privada).
+# Hardening (Etapa 5 — critic): consultar docs/tailscale-setup.md para o fluxo
+# completo. Resumo dos dois lugares onde o tailnet e enforce:
+#  1. Caddy: `bind {$TAILSCALE_IP}` abaixo fixa o listener na interface Tailscale
+#     (ou 127.0.0.1 se TAILSCALE_IP vazio). A exposicao externa do :443 interno
+#     no docker-compose.yml ja usa ["${TAILSCALE_IP:-127.0.0.1}:3443:443"], e a
+#     variavel TAILSCALE_IP agora e repassada ao containe via environment.
+#     O container em rede bridge nao consegue bindar o IP Tailscale do host
+#     (100.64.0.0/10 nao existe nas interfaces do container) — por isso o bind
+#     do Caddy container precisa de network_mode: host OU do docker-compose
+#     `extra_hosts`. Na doc explicamos que no perfil https o caddy usa
+#     network_mode: host (comentado no compose quando se preferir bridge+proxy).
+#  2. Backend middlewares: checkTailscaleOrigin (REST, 403 Tailnet only) e o
+#     io.use tailnet (Socket.io, connect_error "Tailnet only") para conexoes que
+#     cheguem por qualquer outra via.
+
+# {{{$TAILSCALE_IP}}: IP da interface Tailscale (CGNAT 100.x). Se vazio, cai para
+# 127.0.0.1 (somente localhost — dev/CI sem Tailscale). Definido via env do
+# docker-compose caddy service (TAILSCALE_IP=${TAILSCALE_IP:-127.0.0.1}).
+{$TAILSCALE_IP:127.0.0.1}
 
 :443 {
+	bind {$TAILSCALE_IP}
+
 	tls /certs/server.crt /certs/server.key
 
 	# Socket.io signaling -> backend (Next.js rewrites do NOT proxy WebSockets)

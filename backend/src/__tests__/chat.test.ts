@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import bcrypt from 'bcryptjs';
 import { prisma } from '../lib/prisma.js';
 
 describe('chat validation', () => {
@@ -538,6 +539,52 @@ d3('chat:edit/delete', () => {
 
     alice.disconnect();
   });
+
+  it3('join-room com senha: sem creds → erro; com password ou inviteToken → success', async () => {
+    const passRoom = await prisma.room.create({
+      data: {
+        name: 'Join Pass',
+        isPersistent: true,
+        passwordHash: bcrypt.hashSync('segredo123', 10),
+      },
+    });
+
+    function joinWithCreds(
+      client: Socket,
+      roomId: string,
+      creds: Record<string, unknown> = {},
+    ): Promise<Record<string, unknown>> {
+      return new Promise((resolve) => {
+        client.emit('join-room', { roomId, ...creds }, (resp: Record<string, unknown>) => resolve(resp));
+      });
+    }
+
+    // sem credencial → rejeitado
+    const noCredsClient = await connectClient('NoCreds');
+    const noCreds = await joinWithCreds(noCredsClient, passRoom.id);
+    expect(noCreds.error).toMatch(/Invalid invite token or password/i);
+
+    // com password correto → success
+    const passClient = await connectClient('PassUser');
+    const withPass = await joinWithCreds(passClient, passRoom.id, { password: 'segredo123' });
+    expect(withPass.success).toBe(true);
+
+    // com senha errada → rejeitado
+    const wrongClient = await connectClient('WrongPass');
+    const wrong = await joinWithCreds(wrongClient, passRoom.id, { password: 'errada123' });
+    expect(wrong.error).toMatch(/Invalid invite token or password/i);
+    wrongClient.disconnect();
+
+    // com inviteToken → success
+    const tokenClient = await connectClient('TokenUser');
+    const withToken = await joinWithCreds(tokenClient, passRoom.id, { inviteToken: passRoom.inviteToken });
+    expect(withToken.success).toBe(true);
+
+    noCredsClient.disconnect();
+    passClient.disconnect();
+    tokenClient.disconnect();
+    await prisma.room.delete({ where: { id: passRoom.id } }).catch(() => {});
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -545,6 +592,7 @@ d3('chat:edit/delete', () => {
 // ---------------------------------------------------------------------------
 import { describe as d4, it as it4, beforeAll as ba4, afterAll as aa4 } from 'vitest';
 import { checkTailscaleOrigin, isInSubnet } from '../plugins/checkTailscale.js';
+import { resetEnv } from '../lib/env.js';
 
 d4('tailnet hardening', () => {
   let app: Fastify.FastifyInstance;
@@ -554,6 +602,10 @@ d4('tailnet hardening', () => {
     process.env.ALLOWED_ORIGINS = 'http://localhost:3000';
     process.env.TAILSCALE_HOST = 'host-dev.tail-abc123.ts.net';
     process.env.NODE_ENV = 'production'; // vitest seta 'test'; aqui queremos sem bypass
+    // getEnv() cacheia em nível de módulo — a suíte d2/d3 (socket) já chamou
+    // createSocketServer e populou o cache SEM TAILSCALE_HOST. resetEnv garante
+    // que checkTailscaleOrigin re-leia o process.env atualizado nesse suite.
+    resetEnv();
     app = Fastify({ logger: false, trustProxy: true });
     app.addHook('onRequest', checkTailscaleOrigin);
     app.get('/api/health', async () => ({ status: 'ok' }));
@@ -563,6 +615,7 @@ d4('tailnet hardening', () => {
   aa4(async () => {
     await app.close();
     process.env.NODE_ENV = 'test';
+    resetEnv();
   });
 
   it4('isInSubnet cobre a CGNAT 100.64.0.0/10', () => {
@@ -618,5 +671,65 @@ d4('tailnet hardening', () => {
     // remoteAddress default do inject é 127.0.0.1
     const res = await app.inject({ method: 'GET', url: '/api/health' });
     expect(res.statusCode).toBe(200);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Socket.io tailnet barrier — middleware io.use equivalente ao checkTailscaleOrigin
+// ---------------------------------------------------------------------------
+import { describe as d5, it as it5, beforeAll as ba5, afterAll as aa5 } from 'vitest';
+
+d5('socket tailnet hardening', () => {
+  let app5: Fastify.FastifyInstance;
+  let httpServer5: HttpServer;
+  let port5: number;
+
+  ba5(async () => {
+    process.env.JWT_SECRET = 'test-secret-for-unit-tests';
+    process.env.ALLOWED_ORIGINS = 'http://localhost:3000';
+    process.env.NODE_ENV = 'production'; // sem bypass (vitest default é 'test')
+    resetEnv();
+
+    app5 = Fastify({ logger: false });
+    await app5.listen({ port: 0, host: '127.0.0.1' });
+    httpServer5 = app5.server;
+    const addr5 = httpServer5.address();
+    if (addr5 && typeof addr5 === 'object') port5 = addr5.port;
+    createSocketServer(httpServer5);
+  });
+
+  aa5(async () => {
+    await app5?.close();
+    process.env.NODE_ENV = 'test';
+    resetEnv();
+  });
+
+  function connect5(extraHeaders: Record<string, string> = {}): Promise<Socket> {
+    return new Promise((resolve, reject) => {
+      const client = ioClient(`http://127.0.0.1:${port5}`, {
+        transports: ['websocket'],
+        extraHeaders,
+      });
+      client.on('connect', () => resolve(client));
+      client.on('connect_error', (err) => reject(err));
+    });
+  }
+
+  it5('rejeita handshake com XFF público (8.8.8.8) → Tailnet only', async () => {
+    await expect(connect5({ 'x-forwarded-for': '8.8.8.8' })).rejects.toThrow(
+      /Tailnet only/i,
+    );
+  });
+
+  it5('permite handshake com XFF na CGNAT tailnet (100.64.0.10)', async () => {
+    const client = await connect5({ 'x-forwarded-for': '100.64.0.10' });
+    expect(client.id).toBeDefined();
+    client.disconnect();
+  });
+
+  it5('permite localhost (remoteAddress 127.0.0.1) mesmo em production', async () => {
+    const client = await connect5();
+    expect(client.id).toBeDefined();
+    client.disconnect();
   });
 });

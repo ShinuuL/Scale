@@ -10,5 +10,11 @@ export default defineConfig({
     env: {
       DATABASE_URL: 'file:./data.db',
     },
+    // Os arquivos de teste compartilham o mesmo SQLite local e vários fazem
+    // deleteMany global (rooms/messages/files) no beforeAll. Em paralelo, esse
+    // wipe cruza com salas criadas pela suíte socket/chat e gera flakiness
+    // ("Room not found", "Not in room"). Rodar em worker único serializa os
+    // arquivos e torna o gate determinístico.
+    fileParallelism: false,
   },
 });

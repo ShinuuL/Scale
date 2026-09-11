@@ -10,7 +10,7 @@ function ipToInt(ip: string): number | null {
 }
 
 /** Normaliza formas comuns de IPv6: `::1` → `127.0.0.1` e remove prefixo IPv4-mapped. */
-function normalizeIp(ip: string): string {
+export function normalizeIp(ip: string): string {
   const trimmed = ip.trim();
   if (trimmed === '::1') return '127.0.0.1';
   if (trimmed.startsWith('::ffff:')) return trimmed.slice(7);
