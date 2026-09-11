@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
 import { Banner } from '@/components/ui/Banner';
+import { Logo } from '@/components/ui/Logo';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { ToastProvider, useToast } from '@/components/ui/Toast';
 import { TailscaleWizard } from '@/components/onboarding/TailscaleWizard';
@@ -361,7 +362,9 @@ function HomePageInner() {
   if (!mounted) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-pulse-soft text-brand-400 text-lg">Scale 🐉</div>
+        <div className="animate-pulse-soft text-brand-400 text-lg">
+          <Logo variant="full" />
+        </div>
       </div>
     );
   }
@@ -388,7 +391,7 @@ function HomePageInner() {
       <header className="sticky top-0 z-30 border-b border-white/5 bg-slate-950/80 backdrop-blur-xl">
         <div className="max-w-3xl mx-auto px-4 h-14 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2 group">
-            <span className="text-xl">🐉</span>
+            <Logo variant="mark" size={28} />
             <span className="text-base font-bold tracking-tight text-white group-hover:text-brand-300 transition-colors">
               Scale
             </span>

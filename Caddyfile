@@ -1,6 +1,12 @@
-# Caddyfile for Concord HTTPS via Tailscale cert
+# Caddyfile for Scale HTTPS via Tailscale cert
 # Usage: docker compose --profile https up --build
 # Requires certs/server.crt + certs/server.key (see certs/README.md)
+#
+# TLS: o certificado Tailscale (gerado com `tailscale cert <fqdn>` e copiado para
+# certs/) cobre APENAS o FQDN completo, ex: desktop-sie986u.taile13b10.ts.net.
+# Acessar https://<short-name>:3443 (ex: https://DESKTOP-SIE986U:3443) dispara
+# warning de certificado no browser, pois o SAN do cert nao inclui o short name.
+# RECOMENDADO: usar sempre o FQDN completo — https://desktop-sie986u.taile13b10.ts.net:3443
 
 :443 {
 	tls /certs/server.crt /certs/server.key

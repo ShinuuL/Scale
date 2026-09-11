@@ -1,4 +1,6 @@
-# Scale 🐉 — Escamas de Dragão
+# Scale
+
+![Scale logo](./frontend/public/logo.png)
 
 **P2P mesh 2-8 via Tailscale** — Sistema de videochamadas P2P com escamas de dragão. Sala de voz e tela compartilhada via Tailscale. Suporta 2-8 participantes, salas temporárias e persistentes, com wizard de onboarding.
 

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import type { Metrics } from '@/lib/validation';
 import { Badge } from '@/components/ui/Badge';
+import { Logo } from '@/components/ui/Logo';
 
 const REFRESH_MS = 10_000;
 
@@ -221,7 +222,10 @@ export default function MetricsPage() {
 
         {/* Footer */}
         <footer className="text-xs text-slate-600 text-center pt-4">
-          Scale 🐉 · P2P Video Calls · escamas de dragão · mesh 2–8 participantes
+          <span className="inline-flex items-center gap-1.5 align-middle">
+            <Logo variant="mark" size={16} /> Scale
+          </span>
+          {' · '}P2P Video Calls · escamas de dragão · mesh 2–8 participantes
         </footer>
       </div>
     </main>

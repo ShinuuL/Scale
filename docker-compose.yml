@@ -68,6 +68,14 @@ services:
         condition: service_healthy
       frontend:
         condition: service_healthy
+    healthcheck:
+      # Caddy admin API (localhost:2019) responde 200 com a config carregada.
+      # Não depende do certificado, evitando false-negative se o cert expirar.
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:2019/config/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     restart: unless-stopped
     networks:
       - scale

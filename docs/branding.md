@@ -45,12 +45,25 @@
 
 ## Ícone
 
-O 🐉 (emoji dragão) é o ícone do Scale. Usado em:
+O ícone do Scale é o **S escamado** em PNG: gradiente **azul → roxo** (`#3b82f6 → #8b5cf6 → #7c3aed`), escamas sobrepostas e **3 nós brancos** conectados por uma linha curva fina — os peers da mesh. O PNG (`frontend/public/logo.png`, 512×512, fundo transparente) é a **fonte da verdade**. O `logo.svg` existe apenas como fallback vetorial extra e **nunca é referenciado** na aplicação.
 
-- Título: `# Scale 🐉`
-- Dashboard de métricas
-- Wizard de onboarding
-- Loading states
+### Formatos
+
+| Arquivo | Uso |
+|---------|-----|
+| `logo.png` (512×512) | Master — usado pelo componente `<Logo />` (variants `mark`/`full`) |
+| `favicon.ico` (32×32) | Favicon do browser |
+| `favicon-32x32.png` / `favicon-16x16.png` | Favicons PNG (com e sem hint de tamanho) |
+| `apple-touch-icon.png` (180×180) | Home screen iOS |
+| `icon-192.png` / `icon-512.png` | Ícones PWA |
+| `og-image.png` (1200×630) | Open Graph / compartilhamento social |
+
+### Uso
+
+- **Mark** (somente o S): header, footer, status — `<Logo variant="mark" size={28} />`
+- **Full** (S + wordmark "Scale"): loading states — `<Logo variant="full" />`
+- **Wordmark** (somente texto "Scale"): espaços compactos — `<Logo variant="wordmark" />`
+- O emoji 🐉 **não** é mais usado como ícone — apenas o PNG escamado.
 
 ## Princípios de Design
 

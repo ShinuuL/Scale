@@ -13,3 +13,4 @@ coverage/
 .turbo/
 *.tsbuildinfo
 certs/
+init.md

@@ -358,6 +358,27 @@ npx next dev --experimental-https --port 3000
 | HTTP (rede Tailscale) | `http://100.x.x.x:3000` |
 | HTTPS via Caddy | `https://<host>.tailnet.ts.net:3443` |
 
+### Short name vs FQDN (acesso HTTPS)
+
+O certificado Tailscale cobre **apenas o FQDN completo** (`<host>.tailnet.ts.net`).
+Acessar o Caddy por short name (`https://desktop-sie986u:3443`) dispara warning
+de certificado no browser, pois o SAN do cert nao inclui o short name.
+
+**Regra:** para HTTPS, use sempre o FQDN completo:
+
+```
+https://desktop-sie986u.taile13b10.ts.net:3443
+```
+
+Acesso HTTP por short name (`http://desktop-sie986u:3000` ou `http://DESKTOP-SIE986U:3000`)
+funciona normalmente, mas a origem precisa estar em `ALLOWED_ORIGINS`. Como
+alguns clientes não normalizam o caso do host, inclua **ambos** os formatos
+(maiusculo e minusculo) no `.env` (formato comma-separated, sem espacos):
+
+```env
+ALLOWED_ORIGINS=http://localhost:3000,http://100.119.215.105:3000,http://DESKTOP-SIE986U:3000,http://desktop-sie986u:3000,https://desktop-sie986u.taile13b10.ts.net:3443
+```
+
 ### Renovacao de certificados
 
 Os certificados Tailscale duram **90 dias**. Para renovar:
