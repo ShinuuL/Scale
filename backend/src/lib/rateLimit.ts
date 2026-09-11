@@ -46,3 +46,31 @@ export function isRateLimited(key: string): boolean {
 export function resetRateLimit(key: string): void {
   store.delete(key);
 }
+
+// --- Chat rate limit (janela isolada 5 msgs / 5s — não colide com 30/s de signal) ---
+
+const CHAT_WINDOW_MS = 5_000;
+const CHAT_MAX = 5;
+const chatStore = new Map<string, RateLimitEntry>();
+
+export function isChatRateLimited(key: string): boolean {
+  const now = Date.now();
+  const entry = chatStore.get(key);
+
+  if (!entry || now > entry.resetAt) {
+    chatStore.set(key, { count: 1, resetAt: now + CHAT_WINDOW_MS });
+    return false;
+  }
+
+  entry.count++;
+
+  if (entry.count > CHAT_MAX) {
+    return true;
+  }
+
+  return false;
+}
+
+export function resetChatRateLimit(key: string): void {
+  chatStore.delete(key);
+}

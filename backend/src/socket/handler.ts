@@ -2,7 +2,7 @@ import type { Server as HttpServer } from 'http';
 import { Server, Socket } from 'socket.io';
 import { prisma } from '../lib/prisma.js';
 import { verifyToken } from '../lib/auth.js';
-import { isRateLimited } from '../lib/rateLimit.js';
+import { isRateLimited, isChatRateLimited } from '../lib/rateLimit.js';
 import {
   joinRoomSchema,
   leaveRoomSchema,
@@ -10,6 +10,7 @@ import {
   answerSchema,
   iceCandidateSchema,
   screenShareStateSchema,
+  chatMessageSchema,
 } from './validation.js';
 
 interface SocketUser {
@@ -31,6 +32,20 @@ const emptyTimers = new Map<string, NodeJS.Timeout>();
 
 const MAX_PARTICIPANTS = 8;
 const EMPTY_ROOM_TTL_MS = 5 * 60 * 1000; // 5 minutos vazia → apaga (temporárias)
+
+// --- Chat (Opção A) — buffer FIFO ~100 por sala temporária ---
+
+export interface ChatMessageRow {
+  id: string;
+  roomId: string;
+  content: string;
+  authorId: string | null;
+  guestName?: string;
+  createdAt: Date;
+}
+
+export const chatBuffers = new Map<string, Array<ChatMessageRow>>();
+const CHAT_BUFFER_LIMIT = 100;
 
 // Snapshot imutável de roomId → nº de peers conectados (para /api/metrics)
 export function getRoomPeersSnapshot(): Map<string, number> {
@@ -306,6 +321,99 @@ export function createSocketServer(httpServer: HttpServer): Server {
       callback?.({ success: true });
     });
 
+    socket.on('chat:message', async (data, callback) => {
+      if (
+        isRateLimited(`socket:${socket.id}`) ||
+        isChatRateLimited(`chat:${socket.id}`)
+      ) {
+        callback?.({ error: 'Rate limit exceeded. Max 5 messages/5s.' });
+        return;
+      }
+
+      // trim antes de validar para respeitar 1..500 após trim
+      const trimmed =
+        typeof data?.content === 'string'
+          ? { ...data, content: data.content.trim() }
+          : data;
+      const parsed = chatMessageSchema.safeParse(trimmed);
+      if (!parsed.success) {
+        callback?.({ error: 'Invalid payload', details: parsed.error.flatten() });
+        return;
+      }
+
+      const { roomId, content, mentions } = parsed.data;
+
+      // membership
+      const peers = roomPeers.get(roomId);
+      if (!peers?.has(socket.id)) {
+        callback?.({ error: 'Not in room', details: { roomId } });
+        return;
+      }
+
+      // room existe e ACTIVE
+      const room = await prisma.room.findUnique({ where: { id: roomId } });
+      if (!room || room.status !== 'ACTIVE') {
+        callback?.({ error: 'Room not found' });
+        return;
+      }
+      if (room.expiresAt && new Date(room.expiresAt) < new Date()) {
+        callback?.({ error: 'Room has expired' });
+        return;
+      }
+
+      // mentions intersect
+      const peersNames = new Set(Array.from(peers.values()).map((p) => p.name));
+      const rawMentions = mentions ?? [];
+      // extrai via regex se cliente não enviou mentions (defesa)
+      if (rawMentions.length === 0) {
+        const mentionRegex = /@(\w[\w .-]{0,49})/g;
+        let m: RegExpExecArray | null;
+        while ((m = mentionRegex.exec(content)) !== null) {
+          rawMentions.push(m[1]);
+        }
+      }
+      const intersected = rawMentions.filter((n) => peersNames.has(n)).slice(0, 8);
+
+      const user: SocketUser = socket.data.user;
+      let savedMsg: ChatMessageRow;
+      if (room.isPersistent) {
+        const created = await prisma.chatMessage.create({
+          data: {
+            roomId,
+            content,
+            authorId: user.userId,
+            guestName: user.guestName ?? user.name,
+          },
+        });
+        savedMsg = created as ChatMessageRow;
+      } else {
+        const id = crypto.randomUUID();
+        savedMsg = {
+          id,
+          roomId,
+          content,
+          authorId: user.userId,
+          guestName: user.guestName,
+          createdAt: new Date(),
+        };
+        const buf = chatBuffers.get(roomId) ?? [];
+        buf.push(savedMsg);
+        if (buf.length > CHAT_BUFFER_LIMIT) buf.shift(); // FIFO
+        chatBuffers.set(roomId, buf);
+      }
+
+      io.to(roomId).emit('chat:message', savedMsg);
+      // fan-out mention
+      for (const name of intersected) {
+        for (const [sid, peer] of peers.entries()) {
+          if (peer.name === name) {
+            io.to(sid).emit('chat:mention', { messageId: savedMsg.id, roomId });
+          }
+        }
+      }
+      callback?.({ success: true, messageId: savedMsg.id });
+    });
+
     socket.on('disconnect', () => {
       const roomId = socket.data.roomId as string | undefined;
       if (roomId) {
@@ -337,6 +445,7 @@ function handleLeaveRoom(
           const room = await prisma.room.findUnique({ where: { id: roomId } });
           if (room && !room.isPersistent) {
             await prisma.room.delete({ where: { id: roomId } });
+            chatBuffers.delete(roomId);
             console.log(`[rooms] Auto-deleted empty temp room ${roomId} after 5min`);
           }
         } catch (e) {
