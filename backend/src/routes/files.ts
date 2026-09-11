@@ -4,6 +4,7 @@ import path from 'node:path';
 import { prisma } from '../lib/prisma.js';
 import { sanitizeFilename, detectMagicBytes, saveFile, getQuotaUsage, ALLOWED_MIME_RE, UPLOADS_ROOT } from '../lib/uploads.js';
 import { extractAccessFromQuery, hasRoomAccess } from '../lib/roomAccess.js';
+import { addChatFilesBytes, incQuotaExceeded } from '../lib/metrics.js';
 
 export async function filesRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.post<{ Params: { id: string } }>('/api/rooms/:id/files', async (request, reply) => {
@@ -51,7 +52,10 @@ export async function filesRoutes(fastify: FastifyInstance): Promise<void> {
     if (fileCount > 5) return reply.code(400).send({ error: 'Máx. 5 arquivos por mensagem' });
 
     const quota = await getQuotaUsage(roomId);
-    if (quota + totalNew > 200 * 1024 * 1024) return reply.code(413).send({ error: 'Quota exceeded' });
+    if (quota + totalNew > 200 * 1024 * 1024) {
+      incQuotaExceeded();
+      return reply.code(413).send({ error: 'Quota exceeded' });
+    }
 
     // cria ChatMessage para agrupar arquivos (content vem do campo multipart 'content')
     const contentField = fields.content ?? (request.body as Record<string, unknown>)?.content;
@@ -68,6 +72,7 @@ export async function filesRoutes(fastify: FastifyInstance): Promise<void> {
       });
       createdFiles.push(cf);
     }
+    addChatFilesBytes(totalNew);
 
     // broadcast como chat:message
     const io = (fastify as unknown as { io?: import('socket.io').Server }).io;

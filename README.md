@@ -166,6 +166,21 @@ Dashboard simples em `http://localhost:3000/metrics` com cards (uptime, salas, p
 
 Proxy do backend: `curl -H "Authorization: Bearer $MCP_TOKEN" http://localhost:4001/mcp/metrics`.
 
+## Testes
+
+### Vitest (unit/integration)
+
+- **Backend** (`npm run test --workspace backend`): 53+ testes — chat socket (message/edit/delete/rate/mentions/history), REST messages paginadas, files multipart (magic bytes, quota, GC, sandbox), uploads lib, tailnet hardening, rooms/password/rotate-invite, signaling e métricas `scale_chat_*`.
+- **Frontend** (`npm run test --workspace frontend`): 28+ testes — validação cliente, `useChat` (unread, edit/delete, mention audio, loadMore, upload), `ChatMessageItem` (linkify, highlight, XSS, ações) e `ChatPanel` (role=log, Enter/Shift+Enter, contador 500, autocomplete `@`, chips, loadMore, drawer mobile).
+
+### GET /api/metrics — formato Prometheus
+
+O endpoint aceita `Accept: text/plain` ou `?format=prometheus` e responde texto Prometheus (`scale_uptime_seconds`, `scale_rooms_total`, `scale_rooms_active`, `scale_peers_total`, `scale_chat_messages_total{room_type=...}`, `scale_chat_edits_total`, `scale_chat_deletes_total`, `scale_chat_files_bytes_total`, `scale_chat_quota_exceeded_total`).
+
+### Playwright E2E — follow-up pendente
+
+A suíte E2E Playwright (`npm run test:e2e`, prevista no `AGENTS.md`) ainda não foi implementada e é um follow-up **não-bloqueante** pós-chat (spec §8.2). Quando criada, deve cobrir: fluxo completo create room → join → chat send/edit/delete, upload de arquivos e hardening tailnet (403 fora da rede). Enquanto isso, os fluxos de chat são cobertos pelos testes Vitest acima e pelos testes de integração Socket.io do backend.
+
 ## Comandos
 
 ```bash

@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import { prisma } from '../lib/prisma.js';
 import { verifyToken } from '../lib/auth.js';
 import { isRateLimited, isChatRateLimited } from '../lib/rateLimit.js';
+import { incChatMessages, incChatEdits, incChatDeletes } from '../lib/metrics.js';
 import {
   joinRoomSchema,
   leaveRoomSchema,
@@ -443,6 +444,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
         if (buf.length > CHAT_BUFFER_LIMIT) buf.shift(); // FIFO
         chatBuffers.set(roomId, buf);
       }
+      incChatMessages(room.isPersistent ? 'persistent' : 'temporary');
 
       io.to(roomId).emit('chat:message', savedMsg);
       // fan-out mention
@@ -515,6 +517,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
         where: { id: messageId },
         data: { prevContent: msg.content, content, editedAt: new Date() },
       });
+      incChatEdits();
 
       io.to(roomId).emit('chat:edit', {
         messageId,
@@ -582,6 +585,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
         where: { messageId },
         data: { deletedAt: now },
       });
+      incChatDeletes();
 
       io.to(roomId).emit('chat:delete', { messageId, deletedAt: now });
       callback?.({ success: true });
