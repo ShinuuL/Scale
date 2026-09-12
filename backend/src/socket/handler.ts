@@ -3,8 +3,7 @@ import { Server, Socket } from 'socket.io';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../lib/prisma.js';
 import { verifyToken } from '../lib/auth.js';
-import { getEnv } from '../lib/env.js';
-import { isInSubnet, normalizeIp } from '../plugins/checkTailscale.js';
+import { isTailnetAllowed, normalizeIp } from '../plugins/checkTailscale.js';
 import { isRateLimited, isChatRateLimited } from '../lib/rateLimit.js';
 import { incChatMessages, incChatEdits, incChatDeletes } from '../lib/metrics.js';
 import {
@@ -75,15 +74,14 @@ export function createSocketServer(httpServer: HttpServer): Server {
   });
 
   // Tailnet barrier (critic item 6): Socket.io exige a mesma regra do
-  // checkTailscaleOrigin do REST — permitido quando:
-  //   1. IP do cliente na CGNAT Tailscale (100.64.0.0/10) — x-forwarded-for do
-  //      proxy (Caddy/Next) tem precedência, igual ao REST com trustProxy;
-  //   2. `Host` contém `TAILSCALE_HOST` (MagicDNS);
-  //   3. `Origin` está na allowlist `ALLOWED_ORIGINS`;
-  //   4. localhost (dev / healthcheck) ou NODE_ENV=test (mesma checagem do REST).
+  // checkTailscaleOrigin do REST (isTailnetAllowed) — permitido quando:
+  //   1. IP privado/loopback/CGNAT (LAN, bridge do Docker, tailnet);
+  //   2. `Host` interno do compose/rewrite (backend:4000, localhost:3000…);
+  //   3. `Host` contém `TAILSCALE_HOST` (MagicDNS);
+  //   4. `Origin` está na allowlist `ALLOWED_ORIGINS`;
+  //   5. NODE_ENV=test.
   // Fora isso → connect_error "Tailnet only" (o REST responde 403 equivalente).
   io.use((socket, next) => {
-    const env = getEnv();
     const rawIp =
       socket.handshake.headers['x-forwarded-for'] ??
       socket.handshake.address ??
@@ -91,23 +89,8 @@ export function createSocketServer(httpServer: HttpServer): Server {
     const ip = normalizeIp(String(rawIp).split(',')[0]);
     const host = socket.handshake.headers.host ?? '';
     const origin = socket.handshake.headers.origin ?? '';
-    const allowed = (env.ALLOWED_ORIGINS ?? '')
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
-    const tailscaleHost = env.TAILSCALE_HOST;
 
-    if (isInSubnet(ip, '100.64.0.0/10')) return next();
-    if (tailscaleHost && host.includes(tailscaleHost)) return next();
-    if (origin && allowed.includes(origin)) return next();
-    if (
-      ip === '127.0.0.1' ||
-      ip === '::1' ||
-      ip.startsWith('127.') ||
-      process.env.NODE_ENV === 'test'
-    ) {
-      return next();
-    }
+    if (isTailnetAllowed({ ip, host, origin })) return next();
     return next(new Error('Tailnet only'));
   });
 

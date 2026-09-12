@@ -672,6 +672,18 @@ d4('tailnet hardening', () => {
     const res = await app.inject({ method: 'GET', url: '/api/health' });
     expect(res.statusCode).toBe(200);
   });
+
+  it4('permite Docker bridge 172.18.x + host interno backend:4000 (rewrite Next.js)', async () => {
+    // frontend container → backend:4000: IP da bridge do Docker + Host interno,
+    // sem Origin (fetch server-to-server). Antes: 403 Tailnet only.
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/health',
+      remoteAddress: '172.18.0.5',
+      headers: { 'x-forwarded-for': '172.18.0.5', host: 'backend:4000' },
+    });
+    expect(res.statusCode).toBe(200);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -729,6 +741,12 @@ d5('socket tailnet hardening', () => {
 
   it5('permite localhost (remoteAddress 127.0.0.1) mesmo em production', async () => {
     const client = await connect5();
+    expect(client.id).toBeDefined();
+    client.disconnect();
+  });
+
+  it5('permite handshake com XFF Docker bridge (172.18.0.5)', async () => {
+    const client = await connect5({ 'x-forwarded-for': '172.18.0.5' });
     expect(client.id).toBeDefined();
     client.disconnect();
   });
