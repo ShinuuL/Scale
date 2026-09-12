@@ -305,6 +305,10 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
   // ─── Room UI ─────────────────────────────────────────────────
   const roomName = room?.room.name ?? 'Sala';
   const isPrivate = room?.room.isPrivate ?? false;
+  const inviteLink =
+    isPrivate && inviteToken
+      ? `${typeof window !== 'undefined' ? window.location.origin : ''}/room/${roomId}?token=${inviteToken}`
+      : `${typeof window !== 'undefined' ? window.location.origin : ''}/room/${roomId}`;
 
   const isOwner = room?.room.ownerId != null && room?.room.ownerId === currentUserId;
   // Nomes para o autocomplete de menções: quem está na sala agora (guestNames)
@@ -397,15 +401,16 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
       )}
 
       {/* Main content */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex min-h-0 overflow-hidden">
         {/* Video grid */}
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
           <VideoGrid
             peers={webrtc.peers}
             localStream={webrtc.localStream}
             localScreenStream={webrtc.localScreenStream}
             isMuted={webrtc.isMuted}
             localName={socket.guestName}
+            inviteLink={inviteLink}
           />
         </div>
 
@@ -458,11 +463,7 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
             toast(webrtc.isScreenSharing ? 'Compartilhamento de tela iniciado' : 'Compartilhamento de tela encerrado', 'info');
           }}
           onLeave={handleLeave}
-          inviteLink={
-            isPrivate && inviteToken
-              ? `${typeof window !== 'undefined' ? window.location.origin : ''}/room/${roomId}?token=${inviteToken}`
-              : `${typeof window !== 'undefined' ? window.location.origin : ''}/room/${roomId}`
-          }
+          inviteLink={inviteLink}
           chatUnread={chat.unread}
           showChat={chatOpen}
           onToggleChat={() => setChatOpen((prev) => !prev)}
