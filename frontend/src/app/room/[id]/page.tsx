@@ -177,9 +177,22 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
     });
   }, [socket.connected, roomId, socket, joined, webrtc, inviteToken, requiresPassword, roomPassword]);
 
-  // Handle leave
-  const handleLeave = useCallback(async () => {
-    await socket.leaveRoom(roomId);
+  // Aviso não bloqueante quando o socket desconecta (ex.: handshake rejeitado
+  // pelo tailnet barrier, backend caiu, rede instável). Nada de bloquear a UI:
+  // o join effect acima retoma sozinho no 'reconnect' do socket.
+  useEffect(() => {
+    if (!socket.connected && !loading) {
+      toast('Desconectado — tentando reconectar...', 'error');
+    }
+  }, [socket.connected, loading, toast]);
+
+  // Handle leave — resiliente: nunca fica bloqueado aguardando o servidor.
+  // Se o socket estiver desconectado (ou o backend não responder), o emit não
+  // é acknowledgeado e o antigo `await` travava a navegação para sempre. Agora
+  // notifica o servidor em background (o hook tem timeout próprio) e navega
+  // imediatamente; o cleanup de mídia é síncrono.
+  const handleLeave = useCallback(() => {
+    socket.leaveRoom(roomId).catch(() => {});
     webrtc.cleanupMedia();
     window.location.href = '/';
   }, [socket, roomId, webrtc]);

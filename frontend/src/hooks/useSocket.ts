@@ -172,7 +172,16 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
         resolve();
         return;
       }
-      socket.emit('leave-room', { roomId }, () => resolve());
+      // Fallback por timeout: se o socket existir mas estiver desconectado (ou
+      // o servidor não responder), o callback do emit nunca dispara e a Promise
+      // ficaria pendente para sempre — travando o `await leaveRoom` na UI.
+      // 1500ms é mais que suficiente para o ack normal em rede local/tailnet.
+      const done = (): void => resolve();
+      const timer = setTimeout(done, 1500);
+      socket.emit('leave-room', { roomId }, () => {
+        clearTimeout(timer);
+        resolve();
+      });
     });
   }, []);
 
