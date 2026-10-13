@@ -96,10 +96,16 @@ docker compose --profile mcp up --build --abort-on-container-exit
 
 ### Não incluído (por agora)
 - Gravação de chamadas
-- Chat de texto
-- Partilha de arquivos
 - Suporte a múltiplos dispositivos por usuário
 - Escalabilidade além de 8 peers
+
+### Já incluído (implementado e testado)
+- Chat de texto em sala (persistente e temporária) com menções `@`, edição
+  (janela de 15 min) e exclusão pelo autor
+- Partilha de arquivos no chat: até 5 por mensagem, 15 MB por arquivo,
+  allowlist de MIME (`image/*`, `application/pdf`, `text/plain`, `audio/*`,
+  `application/zip`), validação por magic bytes e quota de 200 MB por sala
+- Upload bloqueado em sala temporária (apenas persistente aceita arquivos)
 
 ## Requisitos de Infra
 
