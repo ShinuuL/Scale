@@ -74,3 +74,33 @@ export function isChatRateLimited(key: string): boolean {
 export function resetChatRateLimit(key: string): void {
   chatStore.delete(key);
 }
+
+// --- Criacao de salas (janela isolada 10 salas / 5s por IP) ---
+// POST /api/rooms grava uma sala (e um uuid) no SQLite a cada chamada. Sem
+// limite, um cliente automatico enche o banco e a listagem publica de salas.
+
+const ROOM_CREATE_WINDOW_MS = 5_000;
+const ROOM_CREATE_MAX = 10;
+const roomCreateStore = new Map<string, RateLimitEntry>();
+
+export function isRoomCreateRateLimited(key: string): boolean {
+  const now = Date.now();
+  const entry = roomCreateStore.get(key);
+
+  if (!entry || now > entry.resetAt) {
+    roomCreateStore.set(key, { count: 1, resetAt: now + ROOM_CREATE_WINDOW_MS });
+    return false;
+  }
+
+  entry.count++;
+
+  if (entry.count > ROOM_CREATE_MAX) {
+    return true;
+  }
+
+  return false;
+}
+
+export function resetRoomCreateRateLimit(key: string): void {
+  roomCreateStore.delete(key);
+}

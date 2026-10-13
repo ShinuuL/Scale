@@ -4,6 +4,7 @@ import Fastify from 'fastify';
 import { io as ioClient, Socket } from 'socket.io-client';
 import { prisma } from '../lib/prisma.js';
 import { createSocketServer } from '../socket/handler.js';
+import { metricsRoutes } from '../routes/metrics.js';
 
 async function buildApp() {
   const app = Fastify({ logger: false });
@@ -22,6 +23,7 @@ describe('Socket.io Handler', () => {
     process.env.ALLOWED_ORIGINS = 'http://localhost:3000';
 
     app = await buildApp();
+    await app.register(metricsRoutes);
     await prisma.$connect();
 
     // Create a room for tests
@@ -107,6 +109,71 @@ describe('Socket.io Handler', () => {
 
     client1.disconnect();
     client2.disconnect();
+  });
+
+  it('ack de join-room entrega peers no shape publico `peerId` (nunca `socketId`)', async () => {
+    const roomId = (app as unknown as Record<string, string>).testRoomId;
+    const client1 = await connectClient();
+    const client2 = await connectClient();
+
+    // client1 ja esta na sala
+    await new Promise<void>((resolve) => {
+      client1.emit('join-room', { roomId }, () => resolve());
+    });
+
+    const joinedPromise = new Promise<Record<string, unknown>>((resolve) => {
+      client1.on('room:peer-joined', (data: Record<string, unknown>) => resolve(data));
+    });
+
+    // client2 entra e recebe a lista de quem ja estava
+    const ack = await new Promise<Record<string, unknown>>((resolve) => {
+      client2.emit('join-room', { roomId }, (response: Record<string, unknown>) => resolve(response));
+    });
+    const peers = ack.peers as Array<Record<string, unknown>>;
+    expect(Array.isArray(peers)).toBe(true);
+
+    const peerJoined = await joinedPromise;
+    expect(typeof peerJoined.peerId).toBe('string');
+    expect(peerJoined.peerId).not.toBe('');
+    // o evento anuncia o RECEM-CHEGADO (client2)
+    expect(peerJoined.peerId).toBe(client2.id);
+
+    // O novato tem que achar client1 pelo MESMO id que o evento
+    // 'room:peer-joined' publica. Antes este ack mandava `socketId`, e o
+    // front recebia `peer.peerId === undefined` em `connectToPeers`: a malha
+    // so convergia quando o peer mais antigo iniciava a offer (metade das
+    // vezes), causando desconexao silenciosa entre participantes.
+    const match = peers.filter((p) => p.peerId === client1.id);
+    expect(match).toHaveLength(1);
+    expect(match[0].name).toBe('TestUser');
+    expect(match[0].userId).toBeNull();
+    expect(peers.every((p) => !('socketId' in p))).toBe(true);
+
+    client1.disconnect();
+    client2.disconnect();
+  });
+
+  it('GET /api/metrics nao vaza roomId (peers vem como contagens)', async () => {
+    const roomId = (app as unknown as Record<string, string>).testRoomId;
+    const client = await connectClient();
+    await new Promise<void>((resolve) => {
+      client.emit('join-room', { roomId }, () => resolve());
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/api/metrics' });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.payload) as {
+      peers: { total: number; perRoom: number[]; byRoom?: unknown };
+    };
+
+    expect(body.peers.total).toBeGreaterThanOrEqual(1);
+    expect(body.peers.perRoom.reduce((sum, n) => sum + n, 0)).toBe(body.peers.total);
+    // o contrato antigo (mapa roomId -> count) nao pode voltar
+    expect(body.peers.byRoom).toBeUndefined();
+    // e o uuid da sala nao pode aparecer em NENHUM lugar do payload
+    expect(res.payload).not.toContain(roomId);
+
+    client.disconnect();
   });
 
   it('rejects join to nonexistent room', async () => {

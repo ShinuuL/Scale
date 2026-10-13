@@ -87,9 +87,7 @@ export default function MetricsPage() {
   }, []);
 
   const roomBreaks = metrics
-    ? Object.entries(metrics.peers.byRoom)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 12)
+    ? [...metrics.peers.perRoom].sort((a, b) => b - a).slice(0, 12)
     : [];
 
   return (
@@ -193,14 +191,14 @@ export default function MetricsPage() {
             </div>
           ) : (
             <ul className="space-y-2">
-              {roomBreaks.map(([roomId, count]) => (
+              {roomBreaks.map((count, index) => (
                 <li
-                  key={roomId}
+                  key={index}
                   className="glass-subtle p-4 rounded-xl flex items-center justify-between gap-3"
                 >
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-slate-200 font-mono truncate">
-                      {roomId}
+                    <p className="text-sm font-medium text-slate-200 truncate">
+                      Sala {index + 1}
                     </p>
                     <p className="text-xs text-slate-500">
                       Sala de videochamada

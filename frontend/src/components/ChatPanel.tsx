@@ -130,7 +130,7 @@ export function ChatPanel({
 
     const mentions = extractMentions(input, currentPeers);
     if (selectedFiles.length > 0) {
-      void chat.uploadFiles(selectedFiles, input).catch(() => {});
+      void chat.uploadFiles(selectedFiles, input, guestName).catch(() => {});
     } else {
       chat.sendMessage(input, mentions);
     }
@@ -139,7 +139,7 @@ export function ChatPanel({
     setShowMention(false);
     setFiltered([]);
     setActiveOption(-1);
-  }, [input, selectedFiles, currentPeers, chat]);
+  }, [input, selectedFiles, currentPeers, chat, guestName]);
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLTextAreaElement>) => {

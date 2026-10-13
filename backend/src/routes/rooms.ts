@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../lib/prisma.js';
+import { isRoomCreateRateLimited } from '../lib/rateLimit.js';
 
 const createRoomSchema = z.object({
   name: z.string().min(3).max(50),
@@ -16,6 +17,15 @@ const createRoomSchema = z.object({
 export async function roomRoutes(fastify: FastifyInstance): Promise<void> {
   // POST /api/rooms
   fastify.post('/api/rooms', async (request, reply) => {
+    // Anti-flood: cada chamada cria uma sala persistida. `request.ip` e o IP
+    // real do cliente (trustProxy: true — ver server.ts), entao funciona
+    // tambem atras do proxy /api do Next.
+    if (isRoomCreateRateLimited(`room-create:${request.ip}`)) {
+      return reply
+        .code(429)
+        .send({ error: 'Too many rooms created. Try again in a few seconds.' });
+    }
+
     const parsed = createRoomSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({

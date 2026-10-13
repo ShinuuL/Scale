@@ -218,10 +218,22 @@ export function createSocketServer(httpServer: HttpServer): Server {
           guestName: user.guestName,
         });
 
-        // Send current peers list to the new joiner
-        const peersList = Array.from(peers.values()).filter(
-          (p) => p.socketId !== socket.id,
-        );
+        // Send current peers list to the new joiner.
+        //
+        // O wire usa `peerId` (mesmo shape de `room:peer-joined` e dos eventos
+        // `signal:*` que trafegam `targetPeerId`/`fromPeerId`). O mapa interno
+        // guarda `socketId`, então a conversão para o nome público acontece
+        // aqui. Sem isso o cliente recebia `socketId` e lia `peer.peerId` como
+        // `undefined` em `connectToPeers`, travando a malha sempre que o peer
+        // mais antigo não era o que iniciava a offer.
+        const peersList = Array.from(peers.values())
+          .filter((p) => p.socketId !== socket.id)
+          .map((p) => ({
+            peerId: p.socketId,
+            userId: p.userId,
+            name: p.name,
+            guestName: p.guestName,
+          }));
 
         // Histórico de chat: 200 recentes se persistente (ASC), buffer FIFO se temporária
         let history: Array<{

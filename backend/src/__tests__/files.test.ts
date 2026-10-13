@@ -382,6 +382,54 @@ describe('REST files', () => {
     expect(getRes.headers['x-content-type-options']).toBe('nosniff');
   });
 
+  it('grava o autor do upload (guestName) na mensagem do arquivo', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/rooms/${persistRoomId}/files`,
+      ...multipartBody(
+        [{ filename: 'com-autor.zip', contentType: 'application/zip', content: ZIP }],
+        { guestName: 'Guest-ab12', content: 'segue o pacote' },
+      ),
+    });
+    expect(res.statusCode).toBe(201);
+    const messageId = (JSON.parse(res.payload) as { messageId: string }).messageId;
+    const msg = await prisma.chatMessage.findUnique({ where: { id: messageId } });
+    // sem isto a UI cai no fallback 'Anon' (ChatMessageItem.tsx:84)
+    expect(msg?.guestName).toBe('Guest-ab12');
+    expect(msg?.content).toBe('segue o pacote');
+  });
+
+  it('guestName em branco vira null em vez de string vazia', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/rooms/${persistRoomId}/files`,
+      ...multipartBody(
+        [{ filename: 'sem-autor.zip', contentType: 'application/zip', content: ZIP }],
+        { guestName: '   ' },
+      ),
+    });
+    expect(res.statusCode).toBe(201);
+    const messageId = (JSON.parse(res.payload) as { messageId: string }).messageId;
+    const msg = await prisma.chatMessage.findUnique({ where: { id: messageId } });
+    expect(msg?.guestName).toBeNull();
+  });
+
+  it('guestName fora do limite e rejeitado (nao grava lixo)', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/rooms/${persistRoomId}/files`,
+      ...multipartBody(
+        [{ filename: 'longo.zip', contentType: 'application/zip', content: ZIP }],
+        { guestName: 'x'.repeat(200) },
+      ),
+    });
+    expect(res.statusCode).toBe(201);
+    const messageId = (JSON.parse(res.payload) as { messageId: string }).messageId;
+    const msg = await prisma.chatMessage.findUnique({ where: { id: messageId } });
+    // .max(40) falha a validacao -> fallback null
+    expect(msg?.guestName).toBeNull();
+  });
+
   it('GET 410 após GC (> 7d deletedAt)', async () => {
     const room = await prisma.room.create({
       data: { name: 'REST GC', isPersistent: true },

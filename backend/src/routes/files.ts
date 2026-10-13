@@ -1,10 +1,22 @@
 import type { FastifyInstance } from 'fastify';
 import fs from 'node:fs';
 import path from 'node:path';
+import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { sanitizeFilename, detectMagicBytes, saveFile, getQuotaUsage, ALLOWED_MIME_RE, UPLOADS_ROOT } from '../lib/uploads.js';
 import { extractAccessFromQuery, hasRoomAccess } from '../lib/roomAccess.js';
 import { addChatFilesBytes, incQuotaExceeded } from '../lib/metrics.js';
+
+/**
+ * Nome de exibicao do autor do upload.
+ *
+ * O upload de arquivo e HTTP, nao Socket.io, entao o servidor nao tem como
+ * derivar quem subiu (convidados nao tem identidade). O nome vem do cliente,
+ * exatamente como ja acontece no handshake do socket (`handshake.auth.guestName`
+ * — ver handler.ts:116), mantendo o mesmo modelo de confianca. Aqui ele apenas
+ * e validado/truncado para nao virar lixo no banco.
+ */
+const guestNameFieldSchema = z.string().trim().min(1).max(40);
 
 export async function filesRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.post<{ Params: { id: string } }>('/api/rooms/:id/files', async (request, reply) => {
@@ -70,7 +82,13 @@ export async function filesRoutes(fastify: FastifyInstance): Promise<void> {
     const contentField = fields.content ?? (request.body as Record<string, unknown>)?.content;
     const content = (typeof contentField === 'string' ? contentField : '').trim().slice(0, 500) ?? '';
     const userId = (request as unknown as { userId?: string }).userId ?? null;
-    const message = await prisma.chatMessage.create({ data: { roomId, content, authorId: userId } });
+    // Autor do upload: sem guestName a mensagem cai no fallback 'Anon' de
+    // ChatMessageItem.tsx:84 e o autor do arquivo se perde na UI.
+    const guestNameParsed = guestNameFieldSchema.safeParse(fields.guestName ?? '');
+    const guestName = guestNameParsed.success ? guestNameParsed.data : null;
+    const message = await prisma.chatMessage.create({
+      data: { roomId, content, authorId: userId, guestName },
+    });
 
     const createdFiles = [];
     for (const p of parts) {

@@ -80,6 +80,33 @@ describe('Room API', () => {
     expect(body.error).toBe('Validation failed');
   });
 
+  it('POST /api/rooms e limitado por IP (429 no flood, sem afetar outro IP)', async () => {
+    const floodIp = '203.0.113.77';
+    const create = (remoteAddress: string, name: string) =>
+      app.inject({
+        method: 'POST',
+        url: '/api/rooms',
+        remoteAddress,
+        payload: { name, isPersistent: false },
+      });
+
+    const results = [];
+    for (let i = 0; i < 11; i += 1) {
+      results.push(await create(floodIp, `Flood ${i}`));
+    }
+
+    // 10 passam dentro da janela de 5s; a 11a e barrada
+    expect(results.slice(0, 10).map((r) => r.statusCode)).toEqual(Array(10).fill(201));
+    expect(results[10].statusCode).toBe(429);
+    expect(JSON.parse(results[10].payload)).toMatchObject({
+      error: 'Too many rooms created. Try again in a few seconds.',
+    });
+
+    // o balde e por IP: outro cliente continua criando normalmente
+    const other = await create('203.0.113.78', 'Outro cliente');
+    expect(other.statusCode).toBe(201);
+  });
+
   it('GET /api/rooms/:id returns room details', async () => {
     // Create a room first
     const createRes = await app.inject({

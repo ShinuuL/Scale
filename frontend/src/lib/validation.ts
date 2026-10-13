@@ -97,7 +97,8 @@ export const metricsSchema = z.object({
   }),
   peers: z.object({
     total: z.number(),
-    byRoom: z.record(z.string(), z.number()),
+    // Contagens por sala SEM identificadores (o roomId da acesso a sala).
+    perRoom: z.array(z.number()),
   }),
   memory: z.object({
     rss: z.number(),

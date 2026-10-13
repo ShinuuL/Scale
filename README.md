@@ -147,14 +147,15 @@ Endpoint publico (sem auth) que expoe metricas de operacao em JSON:
 {
   "uptimeSeconds": 3600,
   "rooms": { "total": 12, "active": 5, "withPeers": 2 },
-  "peers": { "total": 4, "byRoom": { "room-uuid": 2 } },
+  "peers": { "total": 4, "perRoom": [2] },
   "memory": { "rss": 41943040, "heapTotal": 33554432, "heapUsed": 20971520, "external": 1048576 },
   "version": "0.1.0"
 }
 ```
 
 - `rooms.total` / `rooms.active`: contagens via Prisma.
-- `rooms.withPeers` e `peers`: snapshot do signaling (Socket.io) — salas com participantes conectados agora.
+- `rooms.withPeers` e `peers.total` / `peers.perRoom`: snapshot do signaling (Socket.io) — salas com participantes conectados agora. `perRoom` traz **apenas as contagens** por sala: o `roomId` (uuid que dá acesso à sala) nunca sai deste endpoint público.
+- `POST /api/rooms` é limitado a 10 salas / 5s por IP (429 acima disso).
 - `memory`: `process.memoryUsage()` em bytes.
 - `version`: versao do pacote backend.
 

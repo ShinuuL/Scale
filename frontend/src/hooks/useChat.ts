@@ -37,7 +37,7 @@ export interface ChatApi {
   editMessage: (messageId: string, content: string) => void;
   deleteMessage: (messageId: string) => void;
   loadMore: () => Promise<void>;
-  uploadFiles: (files: File[], content?: string) => Promise<void>;
+  uploadFiles: (files: File[], content?: string, guestName?: string) => Promise<void>;
   markRead: () => void;
   setOpen: (open: boolean) => void;
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
@@ -200,10 +200,14 @@ export function useChat(
   }, [roomId, nextCursor, hasMore, isLoadingHistory]);
 
   const uploadFiles = useCallback(
-    async (files: File[], content?: string) => {
+    async (files: File[], content?: string, guestName?: string) => {
       const form = new FormData();
       const trimmedContent = content?.trim();
       if (trimmedContent) form.append('content', trimmedContent.slice(0, 500));
+      // O backend e quem monta a mensagem: sem o nome aqui o autor do arquivo
+      // aparece como "Anon" (ChatMessageItem.tsx). Vai ANTES dos arquivos para
+      // que a checagem de membership do servidor ja veja os campos.
+      if (guestName) form.append('guestName', guestName);
       if (accessTokenRef.current) form.append('inviteToken', accessTokenRef.current);
       if (passwordRef.current) form.append('password', passwordRef.current);
       files.slice(0, 5).forEach((file) => form.append('files', file));

@@ -23,13 +23,17 @@ export async function metricsRoutes(fastify: FastifyInstance): Promise<void> {
       const byRoom = getRoomPeersSnapshot();
       let withPeers = 0;
       let peerTotal = 0;
-      const byRoomJson: Record<string, number> = {};
+      // Contagens de peers por sala SEM identificadores: o roomId e o uuid que
+      // da acesso a sala. Num endpoint publico ele permitiria enumerar e entrar
+      // em salas ativas, entao so os numeros saem daqui.
+      const perRoom: number[] = [];
 
-      for (const [roomId, count] of byRoom) {
+      for (const [, count] of byRoom) {
         if (count > 0) withPeers += 1;
         peerTotal += count;
-        byRoomJson[roomId] = count;
+        if (count > 0) perRoom.push(count);
       }
+      perRoom.sort((a, b) => b - a);
 
       const wantsPrometheus =
         (request.headers.accept ?? '').includes('text/plain') ||
@@ -57,7 +61,7 @@ export async function metricsRoutes(fastify: FastifyInstance): Promise<void> {
         },
         peers: {
           total: peerTotal,
-          byRoom: byRoomJson,
+          perRoom,
         },
         memory: getMemoryUsage(),
         version: getVersion(),

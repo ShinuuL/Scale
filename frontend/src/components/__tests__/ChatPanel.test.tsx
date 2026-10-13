@@ -567,7 +567,13 @@ describe('ChatPanel (Task 10)', () => {
     // envia: uploadFiles recebe o restante
     typeMessage('com arquivos');
     fireEvent.keyDown(screen.getByPlaceholderText('Escreva uma mensagem...'), { key: 'Enter' });
-    expect(chat.uploadFiles).toHaveBeenCalledWith([expect.objectContaining({ name: 'dados.zip' })], 'com arquivos');
+    expect(chat.uploadFiles).toHaveBeenCalledWith(
+      [expect.objectContaining({ name: 'dados.zip' })],
+      'com arquivos',
+      // o nome vai junto no upload para o backend gravar o autor da mensagem
+      // (sem isso o arquivo aparece como "Anon" para os outros)
+      'Me',
+    );
     expect(chat.sendMessage).not.toHaveBeenCalled();
   });
 
