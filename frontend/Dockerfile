@@ -6,6 +6,15 @@ COPY frontend/package.json ./frontend/
 RUN npm install --workspace=frontend
 COPY frontend ./frontend
 COPY package.json ./
+# Injetados pelo docker-compose (build.args). O Next inlina NEXT_PUBLIC_* no
+# bundle do browser em BUILD time, entao precisam existir nesta etapa —
+# caso contrario a imagem cai nos defaults de next.config.js.
+ARG NEXT_PUBLIC_BACKEND_PORT=4000
+ARG NEXT_PUBLIC_BACKEND_URL=http://localhost:4000
+ARG NEXT_PUBLIC_WS_URL=http://localhost:4000
+ENV NEXT_PUBLIC_BACKEND_PORT=${NEXT_PUBLIC_BACKEND_PORT}
+ENV NEXT_PUBLIC_BACKEND_URL=${NEXT_PUBLIC_BACKEND_URL}
+ENV NEXT_PUBLIC_WS_URL=${NEXT_PUBLIC_WS_URL}
 RUN npm run build --workspace=frontend
 
 # ---- run stage ----
