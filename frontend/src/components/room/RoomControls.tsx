@@ -7,6 +7,8 @@ interface RoomControlsProps {
   isMuted: boolean;
   isDeafened: boolean;
   isScreenSharing: boolean;
+  /** Desabilita os controles de mídia (socket desconectado ou mediaError). O botão Sair continua ativo. */
+  controlsDisabled?: boolean;
   onToggleMute: () => void;
   onToggleDeafen: () => void;
   onToggleScreenShare: () => void;
@@ -24,6 +26,7 @@ export function RoomControls({
   isMuted,
   isDeafened,
   isScreenSharing,
+  controlsDisabled = false,
   onToggleMute,
   onToggleDeafen,
   onToggleScreenShare,
@@ -52,6 +55,7 @@ export function RoomControls({
       <Button
         variant={isMuted ? 'danger' : 'secondary'}
         onClick={onToggleMute}
+        disabled={controlsDisabled}
         aria-label={isMuted ? 'Ativar microfone' : 'Desativar microfone'}
         aria-pressed={!isMuted}
         title={isMuted ? 'Ativar microfone' : 'Desativar microfone'}
@@ -64,6 +68,7 @@ export function RoomControls({
       <Button
         variant={isDeafened ? 'danger' : 'secondary'}
         onClick={onToggleDeafen}
+        disabled={controlsDisabled}
         aria-label={isDeafened ? 'Ativar áudio' : 'Desativar áudio'}
         aria-pressed={!isDeafened}
         title={isDeafened ? 'Ativar áudio' : 'Desativar áudio'}
@@ -76,6 +81,7 @@ export function RoomControls({
       <Button
         variant={isScreenSharing ? 'primary' : 'secondary'}
         onClick={onToggleScreenShare}
+        disabled={controlsDisabled}
         aria-label={isScreenSharing ? 'Parar compartilhar tela' : 'Compartilhar tela'}
         aria-pressed={isScreenSharing}
         title={isScreenSharing ? 'Parar compartilhar tela' : 'Compartilhar tela'}

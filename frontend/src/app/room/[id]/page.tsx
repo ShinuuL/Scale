@@ -153,7 +153,12 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
     room?.room.hasPassword && !inviteToken && !isRoomOwner,
   );
 
-  // Join room when connected
+  // Join room when connected. `initMedia`/`connectToPeers` são useCallback
+  // estáveis do useWebRTC — destruturados aqui para o effect não depender da
+  // identidade do objeto `webrtc` (memoizado, mas muda quando peers/mídia
+  // mudam, o que causaria re-execução/loop antes do join).
+  const { initMedia, connectToPeers } = webrtc;
+
   useEffect(() => {
     if (!socket.connected || joined) return;
     // Espera a senha ser fornecida (gate abaixo) antes de tentar o join.
@@ -165,17 +170,21 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
       if (history.length > 0) {
         chatRef.current.setMessages(history);
       }
-      // Initialize media
-      webrtc.initMedia().then(() => {
-        // For existing peers, we already received them via peer-joined events
-        // The WebRTC hook handles creating offers when we join
-        // But existing peers need to be connected to us
-        // The socket handler already sent them peer-joined events
+      // Inicializa a mídia e, em seguida, conecta aos peers que JÁ estavam na
+      // sala (existingPeers do ack de join-room). O novato também inicia
+      // offers (mesh bidirecional): não depende apenas do room:peer-joined
+      // enviado pelos antigos — se esse evento se perder, o mesh ainda se
+      // forma. A dedupe interna (peersRef + regra de socket id menor) evita
+      // offers duplicadas/glare com os offers vindos do outro lado.
+      initMedia().then(() => {
+        if (existingPeers.length > 0) {
+          void connectToPeers(existingPeers);
+        }
       });
     }).catch((err) => {
       setError(err.message || 'Falha ao entrar na sala');
     });
-  }, [socket.connected, roomId, socket, joined, webrtc, inviteToken, requiresPassword, roomPassword]);
+  }, [socket.connected, roomId, socket, joined, initMedia, connectToPeers, inviteToken, requiresPassword, roomPassword]);
 
   // Aviso não bloqueante quando o socket desconecta (ex.: handshake rejeitado
   // pelo tailnet barrier, backend caiu, rede instável). Nada de bloquear a UI:
@@ -185,6 +194,13 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
       toast('Desconectado — tentando reconectar...', 'error');
     }
   }, [socket.connected, loading, toast]);
+
+  // Diagnóstico rápido no console: estado do socket x peers x mídia.
+  useEffect(() => {
+    console.debug(
+      `[Room] socket.connected=${socket.connected} peers=${webrtc.peers.size} mediaError=${webrtc.mediaError ?? 'none'}`,
+    );
+  }, [socket.connected, webrtc.peers.size, webrtc.mediaError]);
 
   // Handle leave — resiliente: nunca fica bloqueado aguardando o servidor.
   // Se o socket estiver desconectado (ou o backend não responder), o emit não
@@ -413,6 +429,20 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
         </div>
       )}
 
+      {/* Banner extra quando initMedia falhou SEM ser contexto inseguro
+          (permissão negada/indisponível em https) — o banner inseguro acima já
+          cobre o caso isInsecureContext. */}
+      {!isInsecureContext && webrtc.mediaError && (
+        <div className="mx-4 mt-3">
+          <Banner
+            variant="warning"
+            icon="🎤"
+            title="Microfone indisponível"
+            description="O navegador bloqueou o acesso ao microfone (permissão negada ou contexto inseguro). A chamada segue funcionando; participantes com áudio habilitado falam normalmente."
+          />
+        </div>
+      )}
+
       {/* Main content */}
       <div className="flex-1 flex min-h-0 overflow-hidden">
         {/* Video grid */}
@@ -463,17 +493,32 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
           isMuted={webrtc.isMuted}
           isDeafened={webrtc.isDeafened}
           isScreenSharing={webrtc.isScreenSharing}
+          controlsDisabled={!socket.connected || Boolean(webrtc.mediaError)}
           onToggleMute={() => {
-            webrtc.toggleMute();
-            toast(webrtc.isMuted ? 'Microfone ativado' : 'Microfone silenciado', 'info');
+            // toggleMute retorna o NOVO estado (boolean) ou null quando não há
+            // stream local — evita ler isMuted stale logo após o toggle.
+            const result = webrtc.toggleMute();
+            if (result === null) {
+              toast('Microfone indisponível em conexão insegura — use HTTPS', 'error');
+            } else {
+              toast(result ? 'Microfone silenciado' : 'Microfone ativado', 'info');
+            }
           }}
           onToggleDeafen={() => {
-            webrtc.toggleDeafen();
-            toast(webrtc.isDeafened ? 'Áudio restaurado' : 'Áudio silenciado', 'info');
+            const result = webrtc.toggleDeafen();
+            if (result === null) {
+              toast('Nenhum participante na sala para silenciar', 'info');
+            } else {
+              toast(result ? 'Áudio silenciado' : 'Áudio restaurado', 'info');
+            }
           }}
           onToggleScreenShare={async () => {
-            await webrtc.toggleScreenShare();
-            toast(webrtc.isScreenSharing ? 'Compartilhamento de tela iniciado' : 'Compartilhamento de tela encerrado', 'info');
+            const result = await webrtc.toggleScreenShare();
+            if (result === null) {
+              toast('Compartilhamento de tela indisponível em conexão insegura — use HTTPS', 'error');
+            } else {
+              toast(result ? 'Compartilhamento de tela iniciado' : 'Compartilhamento de tela encerrado', 'info');
+            }
           }}
           onLeave={handleLeave}
           inviteLink={inviteLink}

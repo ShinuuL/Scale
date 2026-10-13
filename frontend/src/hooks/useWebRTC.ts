@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useCallback, useState } from 'react';
-import type { UseSocketReturn } from './useSocket';
+import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
+import type { UseSocketReturn, PeerInfo } from './useSocket';
 
 export interface PeerConnection {
   peerId: string;
@@ -23,11 +23,32 @@ export interface UseWebRTCHReturn {
   isDeafened: boolean;
   isScreenSharing: boolean;
   audioMuted: boolean;
-  toggleMute: () => void;
-  toggleDeafen: () => void;
-  toggleScreenShare: () => Promise<void>;
+  /** Erro de mídia (ex.: 'insecure-context', 'getUserMedia-unavailable', 'NotAllowedError'). null = ok. */
+  mediaError: string | null;
+  /**
+   * Alterna mute e retorna o NOVO estado (true = mudo) para feedback imediato
+   * na UI sem ler estado stale; retorna `null` quando não há stream local
+   * (contexto inseguro / permissão negada).
+   */
+  toggleMute: () => boolean | null;
+  /**
+   * Alterna deafen e retorna o NOVO estado (true = surdo); retorna `null`
+   * quando não há peers para silenciar.
+   */
+  toggleDeafen: () => boolean | null;
+  /**
+   * Alterna screen share. Retorna `true` (compartilhando) / `false` (parou) ou
+   * `null` quando bloqueado (contexto inseguro / getDisplayMedia indisponível).
+   */
+  toggleScreenShare: () => Promise<boolean | null>;
   initMedia: () => Promise<void>;
   cleanupMedia: () => void;
+  /**
+   * Inicia offers para peers que já estavam na sala (existingPeers do ack de
+   * join-room). Mesh bidirecional: não depende só do room:peer-joined enviado
+   * pelos antigos — se esse evento se perder, o novato ainda conecta.
+   */
+  connectToPeers: (peers: PeerInfo[]) => Promise<void>;
 }
 
 const DEFAULT_ICE_SERVERS: RTCConfiguration = {
@@ -88,6 +109,7 @@ export function useWebRTC(
   const [isDeafened, setIsDeafened] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [audioMuted, setAudioMuted] = useState(false);
+  const [mediaError, setMediaError] = useState<string | null>(null);
   const peersMetaRef = useRef<Map<string, PeerMeta>>(new Map());
   const iceConfigRef = useRef<RTCConfiguration>(DEFAULT_ICE_SERVERS);
   const iceRestartStateRef = useRef<Map<string, IceRestartState>>(new Map());
@@ -292,11 +314,84 @@ export function useWebRTC(
     [roomId, socketHook, broadcastPeersUpdate, attemptIceRestart, resetIceRestartState],
   );
 
+  // ─── Regra determinística de quem inicia o offer ─────────────
+  // O mesh agora é bidirecional (novato também oferece). Para cada par de
+  // peers, exatamente UM lado deve criar a offer — senão ambos criam PCs com
+  // ofertas pendentes e a negociação colide (glare). Regra: o socket id MENOR
+  // inicia; ambos os lados calculam a mesma comparação (conhecem o próprio id
+  // e o do outro via signaling).
+  const shouldInitiate = useCallback(
+    (remotePeerId: string): boolean => {
+      const myId = socketHook.socket?.id;
+      if (!myId) return false;
+      return myId < remotePeerId;
+    },
+    [socketHook],
+  );
+
+  // ─── Conectar a peers já presentes (existingPeers) ───────────
+  // O backend entrega a lista de peers no ack de `join-room`. O novato inicia
+  // a negociação com eles também (mesh bidirecional), em vez de depender
+  // apenas do `room:peer-joined` dos antigos. Dedupe via peersRef + regra
+  // shouldInitiate evitam PC duplicado e glare.
+  const connectToPeers = useCallback(
+    async (peerInfos: PeerInfo[]): Promise<void> => {
+      for (const peer of peerInfos) {
+        if (peersRef.current.has(peer.peerId)) {
+          console.debug('[WebRTC] connectToPeers: already connected to', peer.peerId);
+          continue;
+        }
+        if (peersRef.current.size >= MAX_PEERS) {
+          console.warn('[WebRTC] connectToPeers: max peers reached, ignoring', peer.peerId);
+          break;
+        }
+        if (!shouldInitiate(peer.peerId)) {
+          console.debug('[WebRTC] connectToPeers: waiting for offer from', peer.peerId);
+          continue;
+        }
+        const meta: PeerMeta = {
+          peerId: peer.peerId,
+          userId: peer.userId,
+          name: peer.name,
+        };
+        peersMetaRef.current.set(peer.peerId, meta);
+        const pc = createPeerConnection(peer.peerId, meta);
+        try {
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          await socketHook.emitOffer(roomId, peer.peerId, offer);
+          console.debug('[WebRTC] sent offer to existing peer', peer.peerId);
+        } catch (err) {
+          console.error(`[WebRTC] failed to negotiate with existing peer ${peer.peerId}:`, err);
+        }
+      }
+      broadcastPeersUpdate();
+    },
+    [roomId, socketHook, createPeerConnection, broadcastPeersUpdate, shouldInitiate],
+  );
+
   // ─── Initialize media (audio only for MVP) ───────────────────
   const initMedia = useCallback(async (): Promise<void> => {
-    // getUserMedia exige contexto seguro (https ou localhost); http://100.x é inseguro no browser
+    // getUserMedia exige contexto seguro (https ou localhost). Em
+    // http://100.x o objeto navigator.mediaDevices?getUserMedia EXISTE, mas a
+    // chamada rejeita com NotAllowedError porque window.isSecureContext é
+    // false — detectamos antes e avisamos em vez de falhar em silêncio.
+    if (typeof window !== 'undefined' && !window.isSecureContext) {
+      console.warn(
+        `[WebRTC] initMedia: contexto inseguro (http fora do localhost em ${window.location.host}) — getUserMedia bloqueado. ` +
+          'Acesse via https:// ou ative chrome://flags/#unsafely-treat-insecure-origin-as-secure',
+      );
+      setMediaError('insecure-context');
+      setIsMuted(true);
+      setAudioMuted(true);
+      return;
+    }
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-      console.warn('getUserMedia indisponível: acesse via https ou localhost, ou ative chrome://flags/#unsafely-treat-insecure-origin-as-secure para http://100.119.215.105:3000');
+      console.warn(
+        '[WebRTC] initMedia: getUserMedia indisponível — acesse via https ou localhost, ou ative ' +
+          'chrome://flags/#unsafely-treat-insecure-origin-as-secure',
+      );
+      setMediaError('getUserMedia-unavailable');
       setIsMuted(true);
       setAudioMuted(true);
       return;
@@ -306,26 +401,32 @@ export function useWebRTC(
         audio: true,
         video: false,
       });
-    localStreamRef.current = stream;
-    setLocalStream(stream);
-    setIsMuted(false);
-    setAudioMuted(false);
+      localStreamRef.current = stream;
+      setLocalStream(stream);
+      setIsMuted(false);
+      setAudioMuted(false);
+      setMediaError(null);
 
-    // Add audio track to all existing peer connections (PCs may have been
-    // created before media was available)
-    const audioTrack = stream.getAudioTracks()[0];
-    if (audioTrack) {
-      peersRef.current.forEach((pc) => {
-        const audioSender = pc.connection.getSenders().find((s) => s.track?.kind === 'audio');
-        if (audioSender) {
-          audioSender.replaceTrack(audioTrack);
-        } else {
-          pc.connection.addTrack(audioTrack, stream);
-        }
-      });
-    }
-  } catch (err) {
+      // Add audio track to all existing peer connections (PCs may have been
+      // created before media was available)
+      const audioTrack = stream.getAudioTracks()[0];
+      if (audioTrack) {
+        peersRef.current.forEach((pc) => {
+          const audioSender = pc.connection.getSenders().find((s) => s.track?.kind === 'audio');
+          if (audioSender) {
+            audioSender.replaceTrack(audioTrack);
+          } else {
+            pc.connection.addTrack(audioTrack, stream);
+          }
+        });
+      }
+    } catch (err) {
+      const e = err as { name?: string; message?: string };
+      console.warn(
+        `[WebRTC] initMedia falhou: name=${e.name ?? 'unknown'}, message=${e.message ?? String(err)}`,
+      );
       console.error('Failed to get user media:', err);
+      setMediaError(e.name ?? 'getUserMedia-error');
       // Continue without audio
       setIsMuted(true);
       setAudioMuted(true);
@@ -361,29 +462,41 @@ export function useWebRTC(
   }, [broadcastPeersUpdate]);
 
   // ─── Toggle mute ──────────────────────────────────────────────
-  const toggleMute = useCallback(() => {
-    if (!localStreamRef.current) return;
-    const audioTrack = localStreamRef.current.getAudioTracks()[0];
-    if (audioTrack) {
-      audioTrack.enabled = !audioTrack.enabled;
-      const nowMuted = !audioTrack.enabled;
-      setIsMuted(nowMuted);
-      setAudioMuted(nowMuted);
-
-      // Update all peer connections
-      peersRef.current.forEach((pc) => {
-        const sender = pc.connection
-          .getSenders()
-          .find((s) => s.track?.kind === 'audio');
-        if (sender && audioTrack) {
-          sender.replaceTrack(audioTrack);
-        }
-      });
+  const toggleMute = useCallback((): boolean | null => {
+    if (!localStreamRef.current) {
+      console.warn('[WebRTC] toggleMute: no local stream (insecure context?)');
+      return null;
     }
+    const audioTrack = localStreamRef.current.getAudioTracks()[0];
+    if (!audioTrack) {
+      console.warn('[WebRTC] toggleMute: no audio track on local stream');
+      return null;
+    }
+    audioTrack.enabled = !audioTrack.enabled;
+    const nowMuted = !audioTrack.enabled;
+    setIsMuted(nowMuted);
+    setAudioMuted(nowMuted);
+
+    // Update all peer connections
+    peersRef.current.forEach((pc) => {
+      const sender = pc.connection
+        .getSenders()
+        .find((s) => s.track?.kind === 'audio');
+      if (sender && audioTrack) {
+        sender.replaceTrack(audioTrack);
+      }
+    });
+
+    // Retorna o NOVO estado para a UI dar feedback sem ler estado stale.
+    return nowMuted;
   }, []);
 
   // ─── Toggle deafen (mute remote audio) ────────────────────────
-  const toggleDeafen = useCallback(() => {
+  const toggleDeafen = useCallback((): boolean | null => {
+    if (peersRef.current.size === 0) {
+      console.warn('[WebRTC] toggleDeafen: no peers to deafen');
+      return null;
+    }
     const newDeafened = !isDeafened;
     setIsDeafened(newDeafened);
     peersRef.current.forEach((pc) => {
@@ -393,10 +506,11 @@ export function useWebRTC(
         });
       }
     });
+    return newDeafened;
   }, [isDeafened]);
 
   // ─── Toggle screen share ──────────────────────────────────────
-  const toggleScreenShare = useCallback(async () => {
+  const toggleScreenShare = useCallback(async (): Promise<boolean | null> => {
     if (isScreenSharing) {
       console.debug('[WebRTC] stopping screen share');
       // Stop sharing
@@ -427,13 +541,21 @@ export function useWebRTC(
           console.error(`[WebRTC] renegotiation (screen-off) failed for ${peerId}:`, err);
         }
       }
-      return;
+      return false;
     }
 
-    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getDisplayMedia) {
-      console.warn('getDisplayMedia indisponível: acesse via https ou localhost');
+    if (typeof window !== 'undefined' && !window.isSecureContext) {
+      console.warn(
+        '[WebRTC] toggleScreenShare: contexto inseguro — getDisplayMedia bloqueado. ' +
+          'Acesse via https:// ou ative chrome://flags/#unsafely-treat-insecure-origin-as-secure',
+      );
       setIsScreenSharing(false);
-      return;
+      return null;
+    }
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getDisplayMedia) {
+      console.warn('[WebRTC] toggleScreenShare: getDisplayMedia indisponível — acesse via https ou localhost');
+      setIsScreenSharing(false);
+      return null;
     }
     try {
       const screenStream = await navigator.mediaDevices.getDisplayMedia({
@@ -500,9 +622,11 @@ export function useWebRTC(
       };
 
       broadcastPeersUpdate();
+      return true;
     } catch (err) {
       console.error('Screen share failed:', err);
       setIsScreenSharing(false);
+      return false;
     }
   }, [isScreenSharing, broadcastPeersUpdate, roomId, socketHook]);
 
@@ -510,8 +634,18 @@ export function useWebRTC(
   useEffect(() => {
     const handlePeerJoined = async (peer: { peerId: string; userId: string | null; name: string }) => {
       console.debug('[WebRTC] room:peer-joined', peer.peerId, peer.name);
+      if (peersRef.current.has(peer.peerId)) {
+        console.debug('[WebRTC] room:peer-joined: peer already known — skipping duplicate offer', peer.peerId);
+        return;
+      }
       if (peersRef.current.size >= MAX_PEERS) {
         console.warn('Max peers reached, ignoring new peer');
+        return;
+      }
+      if (!shouldInitiate(peer.peerId)) {
+        // Regra determinística: o socket id menor oferece. Se não somos nós,
+        // o outro lado vai nos mandar a offer — não criar PC para não colidir.
+        console.debug('[WebRTC] room:peer-joined: waiting for offer from', peer.peerId);
         return;
       }
 
@@ -524,10 +658,14 @@ export function useWebRTC(
 
       // We are the existing peer — create offer to the new peer
       const pc = createPeerConnection(peer.peerId, meta);
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      socketHook.emitOffer(roomId, peer.peerId, offer);
-      console.debug('[WebRTC] sent offer to', peer.peerId);
+      try {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        await socketHook.emitOffer(roomId, peer.peerId, offer);
+        console.debug('[WebRTC] sent offer to', peer.peerId);
+      } catch (err) {
+        console.error(`[WebRTC] failed to offer to ${peer.peerId}:`, err);
+      }
       broadcastPeersUpdate();
     };
 
@@ -552,6 +690,11 @@ export function useWebRTC(
 
       let existing = peersRef.current.get(data.fromPeerId);
       const isNew = !existing;
+
+      // True quando o branch de glare (perfect negotiation, lado polite) já
+      // aplicou a offer remota — evita aplicar 2x no fluxo comum abaixo.
+      let remoteOfferApplied = false;
+
       if (isNew) {
         existing = {
           peerId: data.fromPeerId,
@@ -564,10 +707,55 @@ export function useWebRTC(
           videoMuted: false,
           isScreenSharing: false,
         };
+      } else if (existing && existing.connection.signalingState !== 'stable') {
+        // Glare / colisão de offers: já há negociação pendente com este peer
+        // (nossa offer de screen-share ou ICE restart aguardando answer, por
+        // exemplo). Descartar a offer remota cegamente quebraria renegociação
+        // legítima — aplicamos o "perfect negotiation": o lado POLITE (socket
+        // id menor, shouldInitiate === true) abandona a própria offer e aceita
+        // a remota; o lado IMPOLITE mantém a própria offer e ignora a
+        // colidente. A atribuição é consistente entre os dois lados porque
+        // ambos conhecem os dois socket ids.
+        if (existing.connection.signalingState === 'closed') {
+          return;
+        }
+        const glarePc = existing.connection;
+        if (shouldInitiate(data.fromPeerId)) {
+          // Polite: aceitar a offer remota. Browsers modernos fazem rollback
+          // implícito da nossa offer ao chamar setRemoteDescription(offer); se
+          // o browser for antigo e lançar InvalidStateError, fazemos rollback
+          // explícito e tentamos de novo.
+          console.debug(
+            '[WebRTC] signal:offer: glare (polite) — rolling back our offer to accept from',
+            data.fromPeerId,
+            glarePc.signalingState,
+          );
+          try {
+            await glarePc.setRemoteDescription(new RTCSessionDescription(data.offer));
+          } catch (err) {
+            const glareErr = err as { name?: string };
+            if (glareErr?.name !== 'InvalidStateError') {
+              throw err;
+            }
+            await glarePc.setRemoteDescription({ type: 'rollback' } as RTCSessionDescriptionInit);
+            await glarePc.setRemoteDescription(new RTCSessionDescription(data.offer));
+          }
+          remoteOfferApplied = true;
+        } else {
+          // Impolite: manter nossa offer — a offer recebida é colidente/anômala.
+          console.debug(
+            '[WebRTC] signal:offer: glare (impolite) — keeping our offer with',
+            data.fromPeerId,
+            glarePc.signalingState,
+          );
+          return;
+        }
       }
 
       const pc = existing!.connection;
-      await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+      if (!remoteOfferApplied) {
+        await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+      }
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
       socketHook.emitAnswer(roomId, data.fromPeerId, answer);
@@ -634,7 +822,7 @@ export function useWebRTC(
       unsubIce();
       unsubScreenShare();
     };
-  }, [roomId, socketHook, createPeerConnection, cleanupPeer, broadcastPeersUpdate]);
+  }, [roomId, socketHook, createPeerConnection, cleanupPeer, broadcastPeersUpdate, shouldInitiate]);
 
   // ─── Socket reconnection: re-join room so signaling keeps working ──
   // When the socket.io connection drops (e.g. backend restart / network blip)
@@ -661,18 +849,40 @@ export function useWebRTC(
     };
   }, [cleanupMedia]);
 
-  return {
-    peers,
-    localStream,
-    localScreenStream,
-    isMuted,
-    isDeafened,
-    isScreenSharing,
-    audioMuted,
-    toggleMute,
-    toggleDeafen,
-    toggleScreenShare,
-    initMedia,
-    cleanupMedia,
-  };
+  // Retorno memoizado: identidade estável enquanto peers/streams/estados não
+  // mudam. Consumidores (page.tsx) podem depender dele sem loops de render.
+  return useMemo<UseWebRTCHReturn>(
+    () => ({
+      peers,
+      localStream,
+      localScreenStream,
+      isMuted,
+      isDeafened,
+      isScreenSharing,
+      audioMuted,
+      mediaError,
+      toggleMute,
+      toggleDeafen,
+      toggleScreenShare,
+      initMedia,
+      cleanupMedia,
+      connectToPeers,
+    }),
+    [
+      peers,
+      localStream,
+      localScreenStream,
+      isMuted,
+      isDeafened,
+      isScreenSharing,
+      audioMuted,
+      mediaError,
+      toggleMute,
+      toggleDeafen,
+      toggleScreenShare,
+      initMedia,
+      cleanupMedia,
+      connectToPeers,
+    ],
+  );
 }

@@ -14,3 +14,15 @@ coverage/
 *.tsbuildinfo
 certs/
 init.md
+
+# Uploads de chat (dados de runtime, recriados sob demanda por uploads.ts)
+backend/uploads/
+uploads/
+
+# Playwright
+test-results/
+playwright-report/
+playwright/.cache/
+
+# Superpowers (estado local das sessoes de brainstorm)
+.superpowers/

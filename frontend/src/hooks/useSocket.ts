@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { io, Socket } from 'socket.io-client';
 import type { ChatMessage } from '@/hooks/useChat';
 
@@ -17,7 +17,6 @@ function getWsUrl(): string {
   }
   return process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:4000';
 }
-const WS_URL = getWsUrl();
 
 export interface PeerInfo {
   peerId: string;
@@ -59,6 +58,9 @@ export interface UseSocketReturn {
 
 export function useSocket(guestNameOverride?: string): UseSocketReturn {
   const socketRef = useRef<Socket | null>(null);
+  // Socket em estado (não só ref): consumidores re-renderizam quando ele muda e
+  // o objeto retornado pelo hook tem identidade estável (via useMemo abaixo).
+  const [socket, setSocket] = useState<Socket | null>(null);
   const [connected, setConnected] = useState(false);
   const [guestName, setGuestName] = useState(guestNameOverride ?? `Guest-${Math.random().toString(36).slice(2, 6)}`);
   const callbacksRef = useRef({
@@ -72,53 +74,80 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
   });
 
   useEffect(() => {
-    const socket = io(WS_URL, {
+    // getWsUrl() é avaliado AQUI dentro do effect (e não no escopo do módulo):
+    // `window.location` só tem o valor certo no cliente, e um import do módulo é
+    // avaliado uma única vez. Assim o signaling acompanha o host de acesso
+    // (localhost, IP Tailscale ou Caddy HTTPS) em cada conexão.
+    const wsUrl = getWsUrl();
+    const sock = io(wsUrl, {
       auth: { guestName },
       transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionAttempts: 10,
       reconnectionDelay: 1000,
+      timeout: 20000,
     });
 
-    socket.on('connect', () => setConnected(true));
-    socket.on('disconnect', () => setConnected(false));
+    sock.on('connect', () => {
+      setConnected(true);
+      console.debug('[Socket] connected', sock.id, wsUrl);
+    });
 
-    socket.on('room:peer-joined', (data: PeerInfo) => {
+    sock.on('disconnect', (reason: string) => {
+      setConnected(false);
+      console.debug('[Socket] disconnected', reason);
+    });
+
+    // CORS / tailnet barrier / backend fora do ar: sem este handler o badge fica
+    // "Desconectado" sem nenhum motivo visível no console.
+    sock.on('connect_error', (err: Error) => {
+      console.error('[Socket] connect_error', err.message, err);
+      setConnected(false);
+    });
+
+    sock.on('room:peer-joined', (data: PeerInfo) => {
       callbacksRef.current.peerJoined.forEach((cb) => cb(data));
     });
 
-    socket.on('room:peer-left', (data: { peerId: string }) => {
+    sock.on('room:peer-left', (data: { peerId: string }) => {
       callbacksRef.current.peerLeft.forEach((cb) => cb(data));
     });
 
-    socket.on('signal:offer', (data: { fromPeerId: string; userId: string | null; name: string; offer: RTCSessionDescriptionInit }) => {
+    sock.on('signal:offer', (data: { fromPeerId: string; userId: string | null; name: string; offer: RTCSessionDescriptionInit }) => {
       callbacksRef.current.signalOffer.forEach((cb) => cb(data));
     });
 
-    socket.on('signal:answer', (data: { fromPeerId: string; userId: string | null; name: string; answer: RTCSessionDescriptionInit }) => {
+    sock.on('signal:answer', (data: { fromPeerId: string; userId: string | null; name: string; answer: RTCSessionDescriptionInit }) => {
       callbacksRef.current.signalAnswer.forEach((cb) => cb(data));
     });
 
-    socket.on('signal:ice-candidate', (data: { fromPeerId: string; userId: string | null; candidate: RTCIceCandidateInit }) => {
+    sock.on('signal:ice-candidate', (data: { fromPeerId: string; userId: string | null; candidate: RTCIceCandidateInit }) => {
       callbacksRef.current.signalIceCandidate.forEach((cb) => cb(data));
     });
 
-    socket.on('signal:screen-share-state', (data: { fromPeerId: string; isScreenSharing: boolean }) => {
+    sock.on('signal:screen-share-state', (data: { fromPeerId: string; isScreenSharing: boolean }) => {
       callbacksRef.current.screenShareState.forEach((cb) => cb(data));
     });
 
-    // Fired after the socket.io manager successfully re-establishes the
-    // connection (socket.id may have changed). Consumers use this to re-join
-    // the room and recover signaling state.
-    socket.on('reconnect', () => {
+    // Reconexão: no socket.io v4 o evento 'reconnect' vive no Manager
+    // (sock.io.on), NÃO no Socket — `socket.on('reconnect')` nunca dispara.
+    // Registramos ambos por compatibilidade.
+    sock.io.on('reconnect', () => {
+      console.debug('[Socket] manager reconnect');
+      callbacksRef.current.reconnect.forEach((cb) => cb());
+    });
+    sock.on('reconnect', () => {
+      console.debug('[Socket] reconnect (legacy)');
       callbacksRef.current.reconnect.forEach((cb) => cb());
     });
 
-    socketRef.current = socket;
+    socketRef.current = sock;
+    setSocket(sock);
 
     return () => {
-      socket.disconnect();
+      sock.disconnect();
       socketRef.current = null;
+      setSocket(null);
       setConnected(false);
     };
   }, [guestName]);
@@ -132,7 +161,7 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
     ): Promise<JoinRoomResult> => {
       return new Promise((resolve, reject) => {
         const socket = socketRef.current;
-        if (!socket) {
+        if (!socket || !socket.connected) {
           reject(new Error('Socket not connected'));
           return;
         }
@@ -189,7 +218,9 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
     (roomId: string, targetPeerId: string, offer: RTCSessionDescriptionInit): Promise<void> => {
       return new Promise((resolve, reject) => {
         const socket = socketRef.current;
-        if (!socket) return reject(new Error('Socket not connected'));
+        if (!socket || !socket.connected) {
+          return reject(new Error('Socket not connected'));
+        }
         socket.emit(
           'signal:offer',
           { roomId, targetPeerId, offer },
@@ -207,7 +238,9 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
     (roomId: string, targetPeerId: string, answer: RTCSessionDescriptionInit): Promise<void> => {
       return new Promise((resolve, reject) => {
         const socket = socketRef.current;
-        if (!socket) return reject(new Error('Socket not connected'));
+        if (!socket || !socket.connected) {
+          return reject(new Error('Socket not connected'));
+        }
         socket.emit(
           'signal:answer',
           { roomId, targetPeerId, answer },
@@ -225,7 +258,9 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
     (roomId: string, targetPeerId: string, candidate: RTCIceCandidate): Promise<void> => {
       return new Promise((resolve, reject) => {
         const socket = socketRef.current;
-        if (!socket) return reject(new Error('Socket not connected'));
+        if (!socket || !socket.connected) {
+          return reject(new Error('Socket not connected'));
+        }
         socket.emit(
           'signal:ice-candidate',
           {
@@ -252,7 +287,9 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
     (roomId: string, targetPeerId: string, isScreenSharing: boolean): Promise<void> => {
       return new Promise((resolve, reject) => {
         const socket = socketRef.current;
-        if (!socket) return reject(new Error('Socket not connected'));
+        if (!socket || !socket.connected) {
+          return reject(new Error('Socket not connected'));
+        }
         socket.emit(
           'signal:screen-share-state',
           { roomId, targetPeerId, isScreenSharing },
@@ -322,23 +359,48 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
     };
   }, []);
 
-  return {
-    socket: socketRef.current,
-    connected,
-    joinRoom,
-    leaveRoom,
-    emitOffer,
-    emitAnswer,
-    emitIceCandidate,
-    onPeerJoined,
-    onPeerLeft,
-    onSignalOffer,
-    onSignalAnswer,
-    onSignalIceCandidate,
-    emitScreenShareState,
-    onScreenShareState,
-    onReconnect,
-    guestName,
-    setGuestName,
-  };
+  // Retorno memoizado: a identidade do objeto `socketHook` só muda quando um
+  // dep realmente muda (socket novo, connected flip, guestName). Consumidores
+  // (useWebRTC, page.tsx, useChat) dependem dele sem recriar listeners a cada
+  // render.
+  return useMemo<UseSocketReturn>(
+    () => ({
+      socket,
+      connected,
+      joinRoom,
+      leaveRoom,
+      emitOffer,
+      emitAnswer,
+      emitIceCandidate,
+      onPeerJoined,
+      onPeerLeft,
+      onSignalOffer,
+      onSignalAnswer,
+      onSignalIceCandidate,
+      emitScreenShareState,
+      onScreenShareState,
+      onReconnect,
+      guestName,
+      setGuestName,
+    }),
+    [
+      socket,
+      connected,
+      guestName,
+      joinRoom,
+      leaveRoom,
+      emitOffer,
+      emitAnswer,
+      emitIceCandidate,
+      onPeerJoined,
+      onPeerLeft,
+      onSignalOffer,
+      onSignalAnswer,
+      onSignalIceCandidate,
+      emitScreenShareState,
+      onScreenShareState,
+      onReconnect,
+      setGuestName,
+    ],
+  );
 }
