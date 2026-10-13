@@ -51,7 +51,7 @@ npm run lint
 npm run build
 
 # 3. Docker Compose config válido (profile mcp)
-docker compose config --profile mcp
+docker compose --profile mcp config
 
 # 4. Build e up dos containers (quando aplicável)
 docker compose --profile mcp up --build --abort-on-container-exit
