@@ -5,17 +5,23 @@ import { io, Socket } from 'socket.io-client';
 import type { ChatMessage } from '@/hooks/useChat';
 
 function getWsUrl(): string {
+  // Porta do backend para HTTP simples. Exposta como variável (default 4000)
+  // porque o backend pode rodar em outra porta — ver .env (PORT).
+  // Deliberadamente NAO usamos uma URL fixa aqui: o hostname vem de
+  // window.location para que acesso remoto (Tailscale/IP) continue valendo.
+  const port = process.env.NEXT_PUBLIC_BACKEND_PORT || '4000';
+
   if (typeof window !== 'undefined') {
     // On HTTPS pages (Tailscale cert via Caddy), signaling must stay on the same
-    // origin: Caddy proxies /socket.io to the backend. Mixed http(s)://host:4000
+    // origin: Caddy proxies /socket.io to the backend. Mixed http(s)://host:port
     // would be blocked by the browser.
     if (window.location.protocol === 'https:') {
       return window.location.origin;
     }
-    // Plain HTTP (default): connect straight to the backend port, as before.
-    return `${window.location.protocol}//${window.location.hostname}:4000`;
+    // Plain HTTP (default): connect straight to the backend port.
+    return `${window.location.protocol}//${window.location.hostname}:${port}`;
   }
-  return process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:4000';
+  return process.env.NEXT_PUBLIC_WS_URL || `http://localhost:${port}`;
 }
 
 export interface PeerInfo {
