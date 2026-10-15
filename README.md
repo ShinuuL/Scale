@@ -141,7 +141,19 @@ NODE_ENV=development
 
 ### GET /api/metrics (backend)
 
-Endpoint publico (sem auth) que expoe metricas de operacao em JSON:
+Requer autenticacao (JWT): cookie `token` (enviado pelo browser) ou header
+`Authorization: Bearer <jwt>` (uso programatico/CLI). Sem credencial responde
+**401** e nao expoe contagem alguma. O JWT sai de `POST /api/auth/login`:
+
+```bash
+JWT=$(curl -s -X POST http://localhost:4100/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"voce@exemplo.com","password":"sua-senha"}' | jq -r .token)
+
+curl -s -H "Authorization: Bearer $JWT" http://localhost:4100/api/metrics | jq .
+```
+
+Resposta (JSON):
 
 ```json
 {
@@ -154,33 +166,49 @@ Endpoint publico (sem auth) que expoe metricas de operacao em JSON:
 ```
 
 - `rooms.total` / `rooms.active`: contagens via Prisma.
-- `rooms.withPeers` e `peers.total` / `peers.perRoom`: snapshot do signaling (Socket.io) — salas com participantes conectados agora. `perRoom` traz **apenas as contagens** por sala: o `roomId` (uuid que dá acesso à sala) nunca sai deste endpoint público.
+- `rooms.withPeers` e `peers.total` / `peers.perRoom`: snapshot do signaling (Socket.io) — salas com participantes conectados agora. `perRoom` traz **apenas as contagens** por sala: o `roomId` (uuid que dá acesso à sala) nunca sai deste endpoint.
 - `POST /api/rooms` é limitado a 10 salas / 5s por IP (429 acima disso).
 - `memory`: `process.memoryUsage()` em bytes.
 - `version`: versao do pacote backend.
 
 ### GET /metrics (frontend)
 
-Dashboard simples em `http://localhost:3000/metrics` com cards (uptime, salas, peers, memoria) e auto-refresh a cada 10s. Consome `/api/metrics` via proxy same-origin do Next.js.
+Dashboard em `http://localhost:3000/metrics` com cards (uptime, salas, peers, memoria) e auto-refresh a cada 10s. Consome `/api/metrics` via proxy same-origin do Next.js. Como o endpoint exige JWT, **sem sessao a pagina mostra "Requer login"** (com link para `/login`) em vez de quebrar.
 
 ### GET /mcp/metrics (MCP server, profile `mcp`)
 
-Proxy do backend: `curl -H "Authorization: Bearer $MCP_TOKEN" http://localhost:4001/mcp/metrics`.
+Proxy do backend com dois tokens distintos:
+
+- `MCP_TOKEN`: quem chama o MCP (`curl -H "Authorization: Bearer $MCP_TOKEN" http://localhost:4001/mcp/metrics`).
+- `BACKEND_TOKEN`: JWT que o MCP usa para chamar `/api/metrics` no backend (o MCP nao tem sessao). Gere com um login normal e exporte antes de subir o compose. Sem ele, `/mcp/metrics` responde **503** com instrucao (nao vaza metrica nem inventa token).
 
 ## Testes
 
 ### Vitest (unit/integration)
 
-- **Backend** (`npm run test --workspace backend`): 53+ testes — chat socket (message/edit/delete/rate/mentions/history), REST messages paginadas, files multipart (magic bytes, quota, GC, sandbox), uploads lib, tailnet hardening, rooms/password/rotate-invite, signaling e métricas `scale_chat_*`.
-- **Frontend** (`npm run test --workspace frontend`): 28+ testes — validação cliente, `useChat` (unread, edit/delete, mention audio, loadMore, upload), `ChatMessageItem` (linkify, highlight, XSS, ações) e `ChatPanel` (role=log, Enter/Shift+Enter, contador 500, autocomplete `@`, chips, loadMore, drawer mobile).
+- **Backend** (`npm run test --workspace backend`): **71 testes** — chat socket (message/edit/delete/rate/mentions/history), REST messages paginadas, files multipart (magic bytes, quota, GC, sandbox), uploads lib, tailnet hardening, rooms/password/rotate-invite, signaling e métricas `scale_chat_*` (inclui auth de `/api/metrics`: 401 sem credencial, 401 com token invalido, 200 com cookie/Bearer).
+- **Frontend** (`npm run test --workspace frontend`): **42 testes** — validação cliente, `useSocket` (connect_error, onReconnect/isConnected), `useChat` (unread, edit/delete, mention audio, loadMore, upload), `useWebRTC`, `ChatMessageItem` (linkify, highlight, XSS, ações) e `ChatPanel` (role=log, Enter/Shift+Enter, contador 500, autocomplete `@`, chips, loadMore, drawer mobile).
 
 ### GET /api/metrics — formato Prometheus
 
 O endpoint aceita `Accept: text/plain` ou `?format=prometheus` e responde texto Prometheus (`scale_uptime_seconds`, `scale_rooms_total`, `scale_rooms_active`, `scale_peers_total`, `scale_chat_messages_total{room_type=...}`, `scale_chat_edits_total`, `scale_chat_deletes_total`, `scale_chat_files_bytes_total`, `scale_chat_quota_exceeded_total`).
 
-### Playwright E2E — follow-up pendente
+### Playwright E2E
 
-A suíte E2E Playwright (`npm run test:e2e`, prevista no `AGENTS.md`) ainda não foi implementada e é um follow-up **não-bloqueante** pós-chat (spec §8.2). Quando criada, deve cobrir: fluxo completo create room → join → chat send/edit/delete, upload de arquivos e hardening tailnet (403 fora da rede). Enquanto isso, os fluxos de chat são cobertos pelos testes Vitest acima e pelos testes de integração Socket.io do backend.
+A suíte E2E (`npm run test:e2e`, `e2e/*.spec.ts`) cobre o fluxo de chat ponta a
+ponta com **dois contextos de browser reais (P2P)**, além de acessibilidade e
+reconexão:
+
+- chat: criar sala → dois peers → mensagem em tempo real, edição/exclusão, menções, histórico e upload.
+- **reconexão**: o WebSocket de um peer é derrubado de propósito; quando volta, o
+  peer precisa **re-entrar na sala** (o socketId muda e o servidor já não o tem) —
+  o teste valida o re-join pelo caminho funcional (mensagem entregue ao outro peer).
+- acessibilidade: contraste WCAG AA e clipping das páginas públicas e da sala.
+
+Nota: use `context.setOffline()` com cuidado em testes de queda — o cliente só
+declara a conexão morta depois de `pingInterval + pingTimeout` (85s com a config
+do backend), então o teste fecharia por timeout. Um proxy do próprio WebSocket
+(rode o socket e feche-o quando quiser) torna o cenário deterministico e rápido.
 
 ## Comandos
 

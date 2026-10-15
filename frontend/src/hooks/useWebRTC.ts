@@ -94,11 +94,7 @@ interface PeerMeta {
 export function useWebRTC(
   socketHook: UseSocketReturn,
   roomId: string,
-  inviteToken?: string,
 ): UseWebRTCHReturn {
-  const inviteTokenRef = useRef<string | undefined>(inviteToken);
-  inviteTokenRef.current = inviteToken; // keep fresh without re-running effects
-
   const peersRef = useRef<Map<string, PeerConnection>>(new Map());
   const [peers, setPeers] = useState<Map<string, PeerConnection>>(new Map());
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -372,6 +368,13 @@ export function useWebRTC(
 
   // ─── Initialize media (audio only for MVP) ───────────────────
   const initMedia = useCallback(async (): Promise<void> => {
+    // Idempotente: no re-join (socket reconectou) a mídia já está pronta; um
+    // segundo getUserMedia criaria outra stream e substituiria a faixa dos PCs
+    // existentes, além de desmutar quem mutou de propósito.
+    const existing = localStreamRef.current;
+    if (existing?.getAudioTracks().some((t) => t.readyState === 'live')) {
+      return;
+    }
     // getUserMedia exige contexto seguro (https ou localhost). Em
     // http://100.x o objeto navigator.mediaDevices?getUserMedia EXISTE, mas a
     // chamada rejeita com NotAllowedError porque window.isSecureContext é
@@ -824,23 +827,12 @@ export function useWebRTC(
     };
   }, [roomId, socketHook, createPeerConnection, cleanupPeer, broadcastPeersUpdate, shouldInitiate]);
 
-  // ─── Socket reconnection: re-join room so signaling keeps working ──
-  // When the socket.io connection drops (e.g. backend restart / network blip)
-  // the backend removes us from the room on disconnect. Re-emit join-room
-  // with the same roomId + token so other peers can re-establish their
-  // WebRTC connections (they get room:peer-joined again).
-  useEffect(() => {
-    const rejoinRoom = async () => {
-      console.debug('[WebRTC] socket reconnected — re-joining room', roomId);
-      try {
-        await socketHook.joinRoom(roomId, socketHook.guestName, inviteTokenRef.current);
-      } catch (err) {
-        console.error('[WebRTC] re-join after socket reconnect failed:', err);
-      }
-    };
-    const unsubReconnect = socketHook.onReconnect(rejoinRoom);
-    return unsubReconnect;
-  }, [roomId, socketHook]);
+  // ─── Reconexão do socket ────────────────────────────────────────────────
+  // O re-join após queda vive na página da sala (room/[id]/page.tsx,
+  // `performJoin` em socket.onReconnect): só ela tem a senha da sala, o
+  // histórico do chat, o estado `joined` e o `connectToPeers` que refaz a
+  // malha. Aqui não re-joinamos para não emitir `join-room` duas vezes
+  // (o que duplicaria room:peer-joined e a mensagem de sistema "entrou").
 
   // Cleanup on unmount
   useEffect(() => {

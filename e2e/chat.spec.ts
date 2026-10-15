@@ -340,4 +340,45 @@ test.describe('chat da sala', () => {
     expect(upload.status()).toBe(403);
     expect(await upload.json()).toMatchObject({ error: 'Not a room member' });
   });
+
+  test('reconexao: peer que cai volta para a sala e a malha se restabelece', async ({ browser }) => {
+    const a = await peer(browser);
+    // Proxy transparente do WebSocket de A, para derrubar a conexao na hora.
+    // `context.setOffline(true)` NAO serve aqui: com a rede emudecida o cliente
+    // so declara a conexao morta depois de pingInterval + pingTimeout
+    // (25000 + 60000 no backend, handler.ts:72-73) — medido na pratica: 85s.
+    // Fechar o WebSocket routeado derruba na hora e de forma deterministica.
+    let socketDeA: { close: () => Promise<void> } | null = null;
+    await a.page.routeWebSocket(/socket\.io/, (ws) => {
+      socketDeA = ws;
+      ws.connectToServer(); // mensagens seguem sendo encaminhadas normalmente
+    });
+
+    const roomId = await createRoom(a.page, { isPersistent: true });
+    await joinAndOpenChat(a.page, roomId);
+
+    const b = await peer(browser);
+    await joinAndOpenChat(b.page, roomId);
+    await expect(participants(b.page)).toHaveCount(2, { timeout: 20_000 });
+
+    // Derruba o socket de A: o servidor perde o peer (handler.ts:628 ->
+    // handleLeaveRoom -> room:peer-left) e o cliente entra em reconexao.
+    expect(socketDeA, 'websocket de A nao foi roteado').not.toBeNull();
+    await socketDeA!.close();
+    await expect(a.page.getByText('Desconectado', { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(participants(b.page)).toHaveCount(1, { timeout: 15_000 });
+
+    // O cliente reconecta com OUTRO socketId: o servidor nao tem mais este peer
+    // na sala. So o re-join (room/[id]/page.tsx, listener de socket.onReconnect)
+    // o traz de volta — sem ele, o toHaveCount(2) abaixo estoura.
+    await expect(a.page.getByText('Conectado', { exact: true })).toBeVisible({ timeout: 20_000 });
+    await expect(participants(b.page)).toHaveCount(2, { timeout: 20_000 });
+
+    // Prova funcional: o backend recusa chat:message de socket fora da sala
+    // ("Not in room", handler.ts:426) — a mensagem so chega se o re-join
+    // realmente aconteceu no servidor.
+    const text = `pos-reconnect-${Date.now()}`;
+    await sendMessage(a.page, text);
+    await expect(messageWith(b.page, text)).toBeVisible({ timeout: 15_000 });
+  });
 });

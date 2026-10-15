@@ -72,3 +72,69 @@ describe('useSocket — handler connect_error', () => {
     expect(result.current.connected).toBe(false);
   });
 });
+
+describe('useSocket — onReconnect', () => {
+  it('dispara no segundo connect (reconexão), não no primeiro', () => {
+    const { result } = renderHook(() => useSocket());
+    const onReconnect = vi.fn();
+
+    act(() => {
+      result.current.onReconnect(onReconnect);
+    });
+
+    // Primeiro connect: entrar na sala, não é reconexão.
+    act(() => {
+      socketHandlers.get('connect')?.(undefined);
+    });
+    expect(onReconnect).not.toHaveBeenCalled();
+
+    // Queda e volta: o namespace 'connect' dispara de novo.
+    act(() => {
+      socketHandlers.get('disconnect')?.('transport close');
+    });
+    act(() => {
+      socketHandlers.get('connect')?.(undefined);
+    });
+    expect(onReconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('NÃO registra o evento reconnect do Manager (emissão antes do ack do CONNECT)', () => {
+    const { result } = renderHook(() => useSocket());
+    const onReconnect = vi.fn();
+    act(() => {
+      result.current.onReconnect(onReconnect);
+    });
+
+    act(() => {
+      managerHandlers.get('reconnect')?.();
+    });
+    expect(onReconnect).not.toHaveBeenCalled();
+    expect(managerHandlers.has('reconnect')).toBe(false);
+  });
+
+  it('isConnected() lê o estado vivo do socket, não o estado do React', () => {
+    const { result } = renderHook(() => useSocket());
+
+    // O mock nasce com connected=true mas o estado do React ainda não recebeu
+    // o evento 'connect' — exatamente o cenário do re-join (callback disparado
+    // fora do ciclo de render).
+    expect(result.current.connected).toBe(false);
+    expect(result.current.isConnected()).toBe(true);
+  });
+
+  it('unsubscribe para de notificar', () => {
+    const { result } = renderHook(() => useSocket());
+    const onReconnect = vi.fn();
+    let unsub: () => void = () => {};
+    act(() => {
+      unsub = result.current.onReconnect(onReconnect);
+      socketHandlers.get('connect')?.(undefined);
+    });
+    act(() => {
+      unsub();
+      socketHandlers.get('disconnect')?.('transport close');
+      socketHandlers.get('connect')?.(undefined);
+    });
+    expect(onReconnect).not.toHaveBeenCalled();
+  });
+});

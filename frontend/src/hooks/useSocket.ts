@@ -40,6 +40,12 @@ export interface JoinRoomResult {
 export interface UseSocketReturn {
   socket: Socket | null;
   connected: boolean;
+  /**
+   * Estado vivo da conexão, lido direto do socket (não do estado do React).
+   * Use dentro de callbacks que rodam fora do ciclo de render — ex.: o re-join
+   * disparado no instante da reconexão, quando `connected` ainda não re-renderizou.
+   */
+  isConnected: () => boolean;
   joinRoom: (
     roomId: string,
     guestName?: string,
@@ -64,6 +70,9 @@ export interface UseSocketReturn {
 
 export function useSocket(guestNameOverride?: string): UseSocketReturn {
   const socketRef = useRef<Socket | null>(null);
+  // Marca se ESTE socket já conectou alguma vez — o primeiro connect não é
+  // reconexão (não deve disparar os callbacks de `onReconnect`).
+  const hadConnectedRef = useRef(false);
   // Socket em estado (não só ref): consumidores re-renderizam quando ele muda e
   // o objeto retornado pelo hook tem identidade estável (via useMemo abaixo).
   const [socket, setSocket] = useState<Socket | null>(null);
@@ -85,6 +94,7 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
     // avaliado uma única vez. Assim o signaling acompanha o host de acesso
     // (localhost, IP Tailscale ou Caddy HTTPS) em cada conexão.
     const wsUrl = getWsUrl();
+    hadConnectedRef.current = false;
     const sock = io(wsUrl, {
       auth: { guestName },
       transports: ['websocket', 'polling'],
@@ -94,9 +104,18 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
       timeout: 20000,
     });
 
+    // O namespace 'connect' dispara no primeiro connect E em toda reconexão — e
+    // só nele `sock.connected` é true. NÃO use o evento 'reconnect' do Manager
+    // (sock.io.on): ele dispara antes do ack do CONNECT, quando emits ainda
+    // falham com "Socket not connected" (o namespace não está conectado) — era
+    // por isso que o re-join após queda nunca acontecia.
     sock.on('connect', () => {
       setConnected(true);
       console.debug('[Socket] connected', sock.id, wsUrl);
+      if (hadConnectedRef.current) {
+        callbacksRef.current.reconnect.forEach((cb) => cb());
+      }
+      hadConnectedRef.current = true;
     });
 
     sock.on('disconnect', (reason: string) => {
@@ -135,17 +154,8 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
       callbacksRef.current.screenShareState.forEach((cb) => cb(data));
     });
 
-    // Reconexão: no socket.io v4 o evento 'reconnect' vive no Manager
-    // (sock.io.on), NÃO no Socket — `socket.on('reconnect')` nunca dispara.
-    // Registramos ambos por compatibilidade.
-    sock.io.on('reconnect', () => {
-      console.debug('[Socket] manager reconnect');
-      callbacksRef.current.reconnect.forEach((cb) => cb());
-    });
-    sock.on('reconnect', () => {
-      console.debug('[Socket] reconnect (legacy)');
-      callbacksRef.current.reconnect.forEach((cb) => cb());
-    });
+    // Reconexão: ver o handler de 'connect' acima. Os consumidores recebem o
+    // aviso por `onReconnect` já com o socket conectado (podem emitir na hora).
 
     socketRef.current = sock;
     setSocket(sock);
@@ -157,6 +167,10 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
       setConnected(false);
     };
   }, [guestName]);
+
+  // Lê o socket atual direto do ref (sempre atualizado) em vez do estado
+  // `connected`, que pode estar um render atrás em callbacks de socket.
+  const isConnected = useCallback((): boolean => socketRef.current?.connected === true, []);
 
   const joinRoom = useCallback(
     (
@@ -373,6 +387,7 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
     () => ({
       socket,
       connected,
+      isConnected,
       joinRoom,
       leaveRoom,
       emitOffer,
@@ -392,6 +407,7 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
     [
       socket,
       connected,
+      isConnected,
       guestName,
       joinRoom,
       leaveRoom,

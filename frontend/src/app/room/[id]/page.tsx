@@ -97,7 +97,7 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
       .catch(() => setCurrentUserId(null));
   }, []);
 
-  const webrtc = useWebRTC(socket, roomId, inviteToken);
+  const webrtc = useWebRTC(socket, roomId);
 
   // Detect insecure context (HTTP on non-localhost) — blocks getUserMedia
   useEffect(() => {
@@ -159,8 +159,16 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
   // mudam, o que causaria re-execução/loop antes do join).
   const { initMedia, connectToPeers } = webrtc;
 
-  useEffect(() => {
-    if (!socket.connected || joined) return;
+  /**
+   * Entra na sala e forma a malha. Usado no primeiro join E no reconnect:
+   * quando o socket cai, o backend perde o peer (o socketId muda na volta),
+   * então sem re-join o participante fica fantasma — some da lista dos outros
+   * e nenhum sinal/chat chega mais para ele. `initMedia` é idempotente.
+   */
+  const performJoin = useCallback((): void => {
+    // `isConnected()` lê o socket vivo: no re-join a reconexão acontece fora do
+    // ciclo de render, então o estado `socket.connected` ainda seria o antigo.
+    if (!socket.isConnected()) return;
     // Espera a senha ser fornecida (gate abaixo) antes de tentar o join.
     if (requiresPassword && roomPassword.trim().length === 0) return;
 
@@ -184,11 +192,31 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
     }).catch((err) => {
       setError(err.message || 'Falha ao entrar na sala');
     });
-  }, [socket.connected, roomId, socket, joined, initMedia, connectToPeers, inviteToken, requiresPassword, roomPassword]);
+  }, [socket, roomId, initMedia, connectToPeers, inviteToken, requiresPassword, roomPassword]);
+
+  // Primeiro join (uma vez por sessão de sala).
+  useEffect(() => {
+    if (joined) return;
+    performJoin();
+  }, [joined, performJoin]);
+
+  // Reconnect: o socket volta com OUTRO socketId, então o servidor não tem mais
+  // este peer na sala — sem re-join a malha não se restabelece. `onReconnect`
+  // dispara a partir do evento 'connect' do NAMESPACE (useSocket), já com o
+  // socket conectado — o evento 'reconnect' do Manager disparava antes do ack
+  // do CONNECT e o join era rejeitado com "Socket not connected".
+  // Não mexemos em `joined` de propósito: ele também controla o gate de senha,
+  // e zerá-lo faria a tela de senha piscar a cada oscilação de rede.
+  useEffect(() => {
+    return socket.onReconnect(() => {
+      console.debug('[Room] reconnect detectado — re-join');
+      performJoin();
+    });
+  }, [socket, performJoin]);
 
   // Aviso não bloqueante quando o socket desconecta (ex.: handshake rejeitado
   // pelo tailnet barrier, backend caiu, rede instável). Nada de bloquear a UI:
-  // o join effect acima retoma sozinho no 'reconnect' do socket.
+  // o effect de reconnect acima refaz o join assim que o socket voltar.
   useEffect(() => {
     if (!socket.connected && !loading) {
       toast('Desconectado — tentando reconectar...', 'error');
