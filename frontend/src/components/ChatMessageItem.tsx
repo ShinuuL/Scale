@@ -86,7 +86,7 @@ export function ChatMessageItem({
   if (message.system) {
     return (
       <div className="px-3 py-1.5 text-center">
-        <span className="text-xs italic text-slate-500">{message.content}</span>
+        <span className="text-xs italic text-slate-400">{message.content}</span>
       </div>
     );
   }
@@ -117,7 +117,7 @@ export function ChatMessageItem({
               onEdit(message.id, draft);
               setEditing(false);
             }}
-            className="text-xs px-2 py-1 bg-brand-600 rounded text-white hover:bg-brand-500"
+            className="text-xs px-2 py-1 bg-brand-700 rounded text-white hover:bg-brand-800"
           >
             Salvar
           </button>

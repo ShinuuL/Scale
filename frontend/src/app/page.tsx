@@ -157,7 +157,7 @@ function EmptyRooms({ onCreate }: { onCreate: () => void }) {
       <div className="text-5xl">🎙️</div>
       <div className="space-y-2">
         <p className="text-sm font-medium text-slate-300">Nenhuma sala ativa</p>
-        <p className="text-xs text-slate-500 max-w-xs mx-auto">
+        <p className="text-xs text-slate-400 max-w-xs mx-auto">
           Crie uma sala para começar uma videochamada P2P privada com até 8 participantes.
         </p>
       </div>
@@ -200,14 +200,14 @@ function RoomCard({ room, onEnter }: { room: RoomListItem; onEnter: () => void }
               <Badge variant="warning" className="shrink-0">Temp</Badge>
             )}
           </div>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-slate-400">
             {room.maxParticipants} participantes max
           </p>
         </div>
         <div className="flex items-center gap-1 shrink-0">
           <button
             onClick={handleCopyLink}
-            className="text-xs text-slate-500 hover:text-brand-400 transition-colors px-2 py-1 rounded-lg hover:bg-white/5"
+            className="text-xs text-slate-400 hover:text-brand-400 transition-colors px-2 py-1 rounded-lg hover:bg-white/5"
             title="Copiar link"
           >
             {copied ? '✓' : '🔗'}
@@ -492,7 +492,7 @@ function HomePageInner() {
                   <span className="block text-sm font-medium text-slate-200 group-hover:text-white transition-colors">
                     Sala persistente
                   </span>
-                  <span className="block text-xs text-slate-500">
+                  <span className="block text-xs text-slate-400">
                     Continua ativa até ser encerrada pelo dono (exige login).
                   </span>
                 </span>
@@ -509,7 +509,7 @@ function HomePageInner() {
                   <span className="block text-sm font-medium text-slate-200 group-hover:text-white transition-colors">
                     Sala privada
                   </span>
-                  <span className="block text-xs text-slate-500">
+                  <span className="block text-xs text-slate-400">
                     Só entra quem tem o link de convite.
                   </span>
                 </span>
@@ -546,7 +546,7 @@ function HomePageInner() {
                 <div className="w-full border-t border-white/10" />
               </div>
               <div className="relative flex justify-center text-xs">
-                <span className="px-3 bg-slate-900 text-slate-500">ou</span>
+                <span className="px-3 bg-slate-900 text-slate-400">ou</span>
               </div>
             </div>
 
@@ -574,7 +574,7 @@ function HomePageInner() {
               <h2 className="text-sm font-semibold text-slate-200">
                 Salas na rede
               </h2>
-              <span className="text-xs text-slate-500">
+              <span className="text-xs text-slate-400">
                 {roomsLoading ? '' : `${visibleRooms.length} sala${visibleRooms.length !== 1 ? 's' : ''}`}
               </span>
             </div>
@@ -587,7 +587,7 @@ function HomePageInner() {
             )}
 
             {!roomsLoading && roomsError && (
-              <p className="text-xs text-slate-500 py-4 text-center">{roomsError}</p>
+              <p className="text-xs text-slate-400 py-4 text-center">{roomsError}</p>
             )}
 
             {!roomsLoading && !roomsError && visibleRooms.length === 0 && (
@@ -637,12 +637,12 @@ function HomePageInner() {
                 <p className="text-sm font-medium text-slate-200 group-hover:text-white transition-colors">
                   Como compartilhar na rede
                 </p>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-slate-400">
                   Guia Tailscale passo a passo
                 </p>
               </div>
             </div>
-            <span className="text-slate-500 group-hover:text-brand-400 transition-colors">→</span>
+            <span className="text-slate-400 group-hover:text-brand-400 transition-colors">→</span>
           </div>
         </Link>
 

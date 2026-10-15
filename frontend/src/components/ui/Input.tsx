@@ -42,7 +42,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           </p>
         )}
         {helperText && !error && (
-          <p id={`${inputId}-helper`} className="text-xs text-slate-500">
+          <p id={`${inputId}-helper`} className="text-xs text-slate-400">
             {helperText}
           </p>
         )}

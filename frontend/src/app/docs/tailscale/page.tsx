@@ -30,7 +30,7 @@ export default function DocsTailscalePage() {
               O guia completo está versionado em <code className="bg-white/10 px-1.5 py-0.5 rounded text-brand-300">docs/tailscale-setup.md</code> e cobre: instalação por SO, verificação de IP, compartilhamento de link, MagicDNS, CORS, firewall, ACL e troubleshooting WebRTC.
             </p>
             <div className="flex flex-wrap gap-2">
-              <Link href="/tutorial" className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-600 text-white text-sm font-medium hover:bg-brand-500 transition-colors">
+              <Link href="/tutorial" className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-700 text-white text-sm font-medium hover:bg-brand-800 transition-colors">
                 📖 Abrir tutorial interativo
               </Link>
               <a

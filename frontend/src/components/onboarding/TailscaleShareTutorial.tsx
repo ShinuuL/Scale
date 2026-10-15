@@ -109,7 +109,7 @@ export function TailscaleShareTutorial() {
                 ? 'bg-brand-600/20 text-brand-300 border border-brand-500/30'
                 : activeStep > s.id
                   ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                  : 'text-slate-500 border border-transparent hover:text-slate-300 hover:border-white/10'
+                  : 'text-slate-400 border border-transparent hover:text-slate-300 hover:border-white/10'
             }`}
             aria-current={activeStep === s.id ? 'step' : undefined}
           >
@@ -236,7 +236,7 @@ export function TailscaleShareTutorial() {
                 </div>
               </div>
 
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-slate-400">
                 Plano gratuito inclui até 3 usuários e 100 dispositivos — mais que suficiente para uso pessoal.
               </p>
 
@@ -286,7 +286,7 @@ export function TailscaleShareTutorial() {
                     </div>
                     {tailscaleStatus.tailscaleIp && (
                       <div>
-                        <span className="text-xs text-slate-500">Seu IP na rede:</span>
+                        <span className="text-xs text-slate-400">Seu IP na rede:</span>
                         <code className="ml-2 text-sm text-brand-300 font-mono select-all bg-slate-900/60 px-2 py-1 rounded">
                           {tailscaleStatus.tailscaleIp}
                         </code>
@@ -307,7 +307,7 @@ export function TailscaleShareTutorial() {
                 <code className="block bg-slate-900/80 p-3 rounded-lg text-xs text-brand-300 font-mono select-all">
                   tailscale ip -4
                 </code>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-slate-400">
                   Saída esperada: <code className="text-brand-300">100.x.x.x</code> (ex: 100.64.0.1)
                 </p>
               </div>
@@ -343,7 +343,7 @@ export function TailscaleShareTutorial() {
                 </p>
 
                 <div className="bg-slate-900/80 p-4 rounded-xl font-mono text-sm space-y-1">
-                  <p className="text-slate-500 text-xs"># Formato do link:</p>
+                  <p className="text-slate-400 text-xs"># Formato do link:</p>
                   <p className="text-brand-300 break-all">
                     http://<span className="text-emerald-400">100.x.x.x</span>:3000/room/<span className="text-amber-300">&lt;UUID&gt;</span>
                   </p>
@@ -381,7 +381,7 @@ export function TailscaleShareTutorial() {
                 <span className="text-lg flex-shrink-0">💡</span>
                 <div>
                   <p className="text-xs text-slate-300 font-medium">MagicDNS ativo?</p>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-slate-400">
                     Use o nome do dispositivo em vez do IP:{' '}
                     <code className="text-brand-300 bg-slate-900/60 px-1 py-0.5 rounded">
                       http://meu-computador:3000/room/xxx
@@ -456,7 +456,7 @@ export function TailscaleShareTutorial() {
                 <span className="text-lg flex-shrink-0">⚡</span>
                 <div>
                   <p className="text-xs text-slate-300 font-medium">ACL rápido</p>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-slate-400">
                     Se você tem ACL configurado, garanta que as regras permitem tráfego TCP entre membros.
                     Veja em <a href="https://login.tailscale.com/admin/acls" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-brand-300 hover:bg-white/10 text-xs font-medium transition-colors">🔒 login.tailscale.com/admin/acls ↗</a>.
                   </p>
@@ -494,7 +494,7 @@ export function TailscaleShareTutorial() {
           href="https://tailscale.com/download"
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs text-slate-500 hover:text-slate-300 border border-transparent hover:border-white/10 transition-colors"
+          className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs text-slate-400 hover:text-slate-300 border border-transparent hover:border-white/10 transition-colors"
         >
           ⬇️ Download
         </a>

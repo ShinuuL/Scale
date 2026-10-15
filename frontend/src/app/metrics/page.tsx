@@ -42,13 +42,13 @@ const accentText = {
 function MetricCard({ label, value, hint, accent }: MetricCardProps) {
   return (
     <div className="glass rounded-2xl p-6 flex flex-col gap-2">
-      <span className="text-xs font-medium uppercase tracking-wider text-slate-500">
+      <span className="text-xs font-medium uppercase tracking-wider text-slate-400">
         {label}
       </span>
       <span className={`text-4xl font-bold tabular-nums ${accentText[accent]}`}>
         {value}
       </span>
-      <span className="text-xs text-slate-500">{hint}</span>
+      <span className="text-xs text-slate-400">{hint}</span>
     </div>
   );
 }
@@ -186,7 +186,7 @@ export default function MetricsPage() {
             Peers por sala
           </h2>
           {roomBreaks.length === 0 ? (
-            <div className="glass rounded-2xl p-6 text-sm text-slate-500">
+            <div className="glass rounded-2xl p-6 text-sm text-slate-400">
               Nenhum peer conectado no momento.
             </div>
           ) : (
@@ -200,7 +200,7 @@ export default function MetricsPage() {
                     <p className="text-sm font-medium text-slate-200 truncate">
                       Sala {index + 1}
                     </p>
-                    <p className="text-xs text-slate-500">
+                    <p className="text-xs text-slate-400">
                       Sala de videochamada
                     </p>
                   </div>
@@ -219,7 +219,7 @@ export default function MetricsPage() {
         </section>
 
         {/* Footer */}
-        <footer className="text-xs text-slate-600 text-center pt-4">
+        <footer className="text-xs text-slate-400 text-center pt-4">
           <span className="inline-flex items-center gap-1.5 align-middle">
             <Logo variant="mark" size={16} /> Scale
           </span>

@@ -79,12 +79,12 @@ function VideoTile({ stream, label, isLocal, isScreenShare, peer, solo }: VideoT
       {/* Indicators */}
       <div className="absolute top-2 right-2 flex items-center gap-1">
         {isScreenShare && (
-          <span className="text-[10px] font-medium text-emerald-300 bg-emerald-500/20 backdrop-blur-sm px-1.5 py-0.5 rounded-md">
+          <span className="text-xs font-medium text-emerald-300 bg-emerald-500/20 backdrop-blur-sm px-1.5 py-0.5 rounded-md">
             Tela
           </span>
         )}
         {hasAudio === 0 && !isLocal && (
-          <span className="text-[10px] text-red-400 bg-red-500/20 backdrop-blur-sm px-1.5 py-0.5 rounded-md">
+          <span className="text-xs font-medium text-red-200 bg-red-500/20 backdrop-blur-sm px-1.5 py-0.5 rounded-md">
             Mudo
           </span>
         )}
@@ -154,13 +154,17 @@ export function VideoGrid({
   }
 
   // 2 participantes: tiles lado a lado, centralizados no container.
+  // `w-full` é obrigatório: num flex-column, `mx-auto` cancela o stretch do
+  // eixo cruzado e o grid passa a medir o max-content dos tiles — que é ~0,
+  // porque todo o conteúdo do tile é `absolute`. Sem `w-full` os tiles
+  // colapsam para 2px (só as bordas).
   // >2: grade padrão 2/3/4 colunas (compartilhamento de tela ocupa col-span-2).
   return (
     <div
       className={clsx(
         'grid h-full',
         total === 2
-          ? 'grid-cols-2 gap-3 p-3 items-center content-center max-w-4xl mx-auto min-h-0'
+          ? 'w-full grid-cols-2 gap-3 p-3 items-center content-center max-w-4xl mx-auto min-h-0'
           : 'gap-2 p-2 auto-rows-fr sm:gap-3 sm:p-3',
         total > 2 && cols === 2 && 'grid-cols-2',
         total > 2 && cols === 3 && 'grid-cols-3',

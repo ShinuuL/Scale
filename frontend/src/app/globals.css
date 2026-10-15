@@ -40,7 +40,7 @@
 
   /* Skip to content link */
   .skip-link {
-    @apply absolute -top-10 left-4 z-50 bg-brand-600 text-white px-4 py-2 rounded-md;
+    @apply absolute -top-10 left-4 z-50 bg-brand-700 text-white px-4 py-2 rounded-md;
   }
   .skip-link:focus {
     @apply top-4;
@@ -58,12 +58,16 @@
   }
 
   /* Button base */
+  /* Contraste: texto branco sobre brand-600 (#059669) dá 3.77:1 — abaixo do
+     4.5:1 exigido para texto normal. brand-700 (#047857) dá 5.48:1, então é o
+     tom de repouso; clarear no hover (brand-500/600) reprovaria, então o hover
+     ESCURECE para brand-800 (#065f46, 7.69:1) mantendo o texto legível. */
   .btn-primary {
     @apply inline-flex items-center justify-center gap-2 rounded-xl
-           bg-brand-600 px-5 py-2.5 text-sm font-medium text-white
+           bg-brand-700 px-5 py-2.5 text-sm font-medium text-white
            shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_8px_24px_rgba(5,150,105,0.35),0_2px_8px_rgba(2,44,34,0.6)]
            transition-all duration-200
-           hover:bg-brand-500 hover:-translate-y-[1px]
+           hover:bg-brand-800 hover:-translate-y-[1px]
            hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_12px_32px_rgba(16,185,129,0.45),0_4px_12px_rgba(2,44,34,0.7)]
            active:translate-y-0
            active:shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_2px_8px_rgba(2,44,34,0.8)]
@@ -106,7 +110,7 @@
   /* Input base */
   .input-base {
     @apply w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5
-           text-sm text-slate-100 placeholder:text-slate-500
+           text-sm text-slate-100 placeholder:text-slate-400
            transition-all duration-200
            focus:border-emerald-500 focus:bg-white/[0.07] focus:ring-1 focus:ring-emerald-500
            focus:outline-none;

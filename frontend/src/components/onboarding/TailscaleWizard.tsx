@@ -201,7 +201,7 @@ export function TailscaleWizard({ onComplete, onSkip }: TailscaleWizardProps) {
                   Scale usa Tailscale para criar uma rede mesh privada entre os participantes.
                   Isso permite chamadas P2P de baixa latência sem exposição pública.
                 </p>
-                <p className="text-slate-500 text-xs">
+                <p className="text-slate-400 text-xs">
                   Você pode pular esta etapa se já tem Tailscale configurado.
                 </p>
               </div>
@@ -309,7 +309,7 @@ export function TailscaleWizard({ onComplete, onSkip }: TailscaleWizardProps) {
                     </div>
                     {tailscaleStatus.tailscaleIp && (
                       <div className="mt-2">
-                        <span className="text-xs text-slate-500">IP no Tailnet:</span>
+                        <span className="text-xs text-slate-400">IP no Tailnet:</span>
                         <code className="ml-2 text-xs text-brand-300 font-mono select-all">
                           {tailscaleStatus.tailscaleIp}
                         </code>
@@ -342,7 +342,7 @@ export function TailscaleWizard({ onComplete, onSkip }: TailscaleWizardProps) {
                       Isso é normal com Docker — já configurado via .env, pode continuar:
                     </p>
                     <code className="block bg-slate-900/80 p-2 rounded text-xs text-brand-300 font-mono select-all">TAILSCALE_IP=100.119.215.105 (seu .env atual)</code>
-                    <p className="text-xs text-slate-500 mt-2">Após adicionar, faça: docker compose up --build -d</p>
+                    <p className="text-xs text-slate-400 mt-2">Após adicionar, faça: docker compose up --build -d</p>
                   </div>
                 </div>
               )}
@@ -379,7 +379,7 @@ export function TailscaleWizard({ onComplete, onSkip }: TailscaleWizardProps) {
                   <div className="w-full border-t border-white/10" />
                 </div>
                 <div className="relative flex justify-center text-xs">
-                  <span className="px-3 bg-slate-900 text-slate-500">ou</span>
+                  <span className="px-3 bg-slate-900 text-slate-400">ou</span>
                 </div>
               </div>
 

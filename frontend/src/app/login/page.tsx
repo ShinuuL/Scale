@@ -86,7 +86,7 @@ export default function LoginPage() {
           <div className="mt-3 text-center">
             <Link
               href="/"
-              className="text-xs text-slate-500 hover:text-slate-400 transition-colors"
+              className="text-xs text-slate-400 hover:text-slate-200 transition-colors"
             >
               ← Voltar ao início
             </Link>

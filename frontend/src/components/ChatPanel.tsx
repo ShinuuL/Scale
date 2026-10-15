@@ -264,7 +264,7 @@ export function ChatPanel({
             >
               <span aria-hidden="true">{mimeIcon(file.type)}</span>
               <span className="max-w-[140px] truncate">{file.name}</span>
-              <span className="text-slate-500">{formatFileSize(file.size)}</span>
+              <span className="text-slate-400">{formatFileSize(file.size)}</span>
               <button
                 onClick={() => removeFile(index)}
                 aria-label={`Remover arquivo ${file.name}`}
@@ -280,6 +280,7 @@ export function ChatPanel({
       {/* Autocomplete de menções */}
       {showMention && filtered.length > 0 && (
         <ul
+          id="chat-mention-options"
           role="listbox"
           aria-label="Participantes para mencionar"
           className="mx-3 mb-1 border border-white/10 rounded bg-forest-950 shadow-xl overflow-hidden flex-shrink-0 max-h-40 overflow-y-auto"
@@ -291,7 +292,7 @@ export function ChatPanel({
               role="option"
               aria-selected={index === activeOption}
               className={`px-2 py-1.5 text-xs cursor-pointer ${
-                index === activeOption ? 'bg-brand-600 text-white' : 'text-slate-200 hover:bg-white/10'
+                index === activeOption ? 'bg-brand-700 text-white' : 'text-slate-200 hover:bg-white/10'
               }`}
               onMouseEnter={() => setActiveOption(index)}
               onClick={() => selectOption(name)}
@@ -304,6 +305,8 @@ export function ChatPanel({
 
       {/* Input */}
       <div className="p-3 border-t border-white/5 flex flex-col gap-2 flex-shrink-0">
+        {/* `aria-expanded` so e valido em `role="combobox"`: o autocomplete de
+            mencoes e exatamente esse padrao (combobox + listbox de opcoes). */}
         <textarea
           ref={inputRef}
           value={input}
@@ -311,19 +314,22 @@ export function ChatPanel({
           onKeyDown={handleKeyDown}
           placeholder="Escreva uma mensagem..."
           aria-label="Mensagem"
+          role="combobox"
           aria-autocomplete="list"
+          aria-haspopup="listbox"
+          aria-controls={showMention && filtered.length > 0 ? 'chat-mention-options' : undefined}
           aria-expanded={showMention && filtered.length > 0}
           aria-activedescendant={
             showMention && activeOption >= 0 ? `chat-mention-option-${activeOption}` : undefined
           }
           rows={2}
           maxLength={600}
-          className="min-h-[40px] max-h-24 rounded bg-white/10 p-2 text-sm text-slate-100 placeholder:text-slate-500 resize-none focus:outline-none focus:ring-1 focus:ring-moss-500"
+          className="min-h-[40px] max-h-24 rounded bg-white/5 p-2 text-sm text-slate-100 placeholder:text-slate-400 resize-none focus:outline-none focus:ring-1 focus:ring-moss-500"
         />
         <div className="flex items-center justify-between gap-2">
           <span
             data-testid="char-counter"
-            className={`text-xs ${charOverflow ? 'text-red-400 font-medium' : 'text-slate-500'}`}
+            className={`text-xs ${charOverflow ? 'text-red-400 font-medium' : 'text-slate-400'}`}
           >
             {input.length}/500
           </span>
@@ -344,7 +350,7 @@ export function ChatPanel({
             <button
               onClick={send}
               disabled={!canSend}
-              className="text-xs px-3 py-1.5 bg-brand-600 text-white rounded hover:bg-brand-500 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="text-xs px-3 py-1.5 bg-brand-700 text-white rounded hover:bg-brand-800 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Enviar
             </button>

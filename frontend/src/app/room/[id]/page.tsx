@@ -321,7 +321,7 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
             aria-label="Senha da sala"
             minLength={8}
             required
-            className="w-full rounded bg-white/10 p-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-moss-500"
+            className="w-full rounded bg-white/5 p-2 text-sm text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-moss-500"
           />
           <Button type="submit" size="md" disabled={roomPassword.trim().length < 8}>
             Entrar na sala
@@ -361,7 +361,7 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
           </Button>
           <div>
             <h1 className="text-sm font-semibold text-white">{roomName}</h1>
-            <p className="text-xs text-slate-500">Sala · {roomId.slice(0, 8)}...</p>
+            <p className="text-xs text-slate-400">Sala · {roomId.slice(0, 8)}...</p>
           </div>
         </div>
 
