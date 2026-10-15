@@ -1,10 +1,13 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Server as HttpServer } from 'http';
 import Fastify from 'fastify';
+import cookie from '@fastify/cookie';
 import { io as ioClient, Socket } from 'socket.io-client';
 import { prisma } from '../lib/prisma.js';
 import { createSocketServer } from '../socket/handler.js';
 import { metricsRoutes } from '../routes/metrics.js';
+import { authPlugin } from '../plugins/auth.js';
+import { signToken } from '../lib/auth.js';
 
 async function buildApp() {
   const app = Fastify({ logger: false });
@@ -16,13 +19,20 @@ describe('Socket.io Handler', () => {
   let app: ReturnType<typeof buildApp> extends Promise<infer T> ? T : never;
   let httpServer: HttpServer;
   let port: number;
+  let token: string;
 
   beforeAll(async () => {
     process.env.JWT_SECRET = 'test-secret-for-unit-tests';
     process.env.NODE_ENV = 'test';
     process.env.ALLOWED_ORIGINS = 'http://localhost:3000';
 
+    token = signToken({ userId: 'user-socket-test', email: 'socket@exemplo.com', name: 'Socket Tester' });
+
     app = await buildApp();
+    // /api/metrics exige JWT: sem o authPlugin registrado o decorator
+    // `fastify.authenticate` nao existe e a rota nem é montada.
+    await app.register(cookie);
+    await app.register(authPlugin);
     await app.register(metricsRoutes);
     await prisma.$connect();
 
@@ -160,7 +170,11 @@ describe('Socket.io Handler', () => {
       client.emit('join-room', { roomId }, () => resolve());
     });
 
-    const res = await app.inject({ method: 'GET', url: '/api/metrics' });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/metrics',
+      headers: { authorization: `Bearer ${token}` },
+    });
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.payload) as {
       peers: { total: number; perRoom: number[]; byRoom?: unknown };

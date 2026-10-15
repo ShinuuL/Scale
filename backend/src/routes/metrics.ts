@@ -10,10 +10,14 @@ import {
 import { getRoomPeersSnapshot } from '../socket/handler.js';
 
 export async function metricsRoutes(fastify: FastifyInstance): Promise<void> {
-  // GET /api/metrics — observabilidade (público, sem auth).
-  // JSON por padrão; Prometheus text quando Accept: text/plain ou ?format=prometheus.
+  // GET /api/metrics — observabilidade. EXIGE autenticacao (JWT em cookie
+  // `token` ou `Authorization: Bearer <jwt>`): o app pode ser publicado na
+  // internet (tunel trycloudflare) e este payload expoe a contagem de peers
+  // por sala. Sem credencial valida -> 401 (mesmo guard das rotas privadas).
+  // JSON por padrao; Prometheus text quando Accept: text/plain ou ?format=prometheus.
   fastify.get<{ Querystring: { format?: string } }>(
     '/api/metrics',
+    { preHandler: [fastify.authenticate as never] },
     async (request, reply) => {
       const [totalRooms, activeRooms] = await Promise.all([
         prisma.room.count(),

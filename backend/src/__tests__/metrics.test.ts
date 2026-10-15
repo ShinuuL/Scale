@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import Fastify from 'fastify';
 import type { FastifyInstance } from 'fastify';
+import cookie from '@fastify/cookie';
 import {
   incChatMessages,
   incChatEdits,
@@ -10,6 +11,9 @@ import {
   getChatMetricsText,
 } from '../lib/metrics.js';
 import { metricsRoutes } from '../routes/metrics.js';
+import { authPlugin } from '../plugins/auth.js';
+import { signToken } from '../lib/auth.js';
+import { resetEnv } from '../lib/env.js';
 
 /** Extrai o valor numérico de uma linha Prometheus (name + optional labels). */
 function metricValue(text: string, name: string): number {
@@ -78,10 +82,22 @@ describe('chat metrics (scale_chat_*)', () => {
 
 describe('GET /api/metrics', () => {
   let app: FastifyInstance;
+  let token: string;
 
   beforeAll(async () => {
     process.env.NODE_ENV = 'test';
+    process.env.JWT_SECRET = 'test-secret-for-unit-tests';
+    // getEnv() cacheia o ambiente no primeiro acesso; como os tokens são
+    // assinados aqui, garante que o secret acima já está valendo.
+    resetEnv();
+    token = signToken({
+      userId: 'user-metrics-test',
+      email: 'metrics@exemplo.com',
+      name: 'Metrics Tester',
+    });
     app = Fastify({ logger: false });
+    await app.register(cookie);
+    await app.register(authPlugin);
     await app.register(metricsRoutes);
     await app.ready();
   });
@@ -92,7 +108,11 @@ describe('GET /api/metrics', () => {
   });
 
   it('JSON inclui chat counters escalar (chat.messagesPersistent etc)', async () => {
-    const res = await app.inject({ method: 'GET', url: '/api/metrics' });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/metrics',
+      headers: { authorization: `Bearer ${token}` },
+    });
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.payload) as {
       chat?: {
@@ -117,7 +137,7 @@ describe('GET /api/metrics', () => {
     const res = await app.inject({
       method: 'GET',
       url: '/api/metrics',
-      headers: { accept: 'text/plain' },
+      headers: { accept: 'text/plain', authorization: `Bearer ${token}` },
     });
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toMatch(/text\/plain/);
@@ -133,9 +153,49 @@ describe('GET /api/metrics', () => {
     const res = await app.inject({
       method: 'GET',
       url: '/api/metrics?format=prometheus',
+      headers: { authorization: `Bearer ${token}` },
     });
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toMatch(/text\/plain/);
     expect(res.payload).toContain('scale_chat_messages_total');
+  });
+
+  /* ------------------------------------------------------------------ */
+  /*  Auth: /api/metrics deixou de ser publico                           */
+  /* ------------------------------------------------------------------ */
+
+  it('sem credencial responde 401 e nao vaza contadores', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/metrics' });
+    expect(res.statusCode).toBe(401);
+    expect(res.payload).not.toContain('scale_chat');
+    expect(JSON.parse(res.payload)).toMatchObject({ error: 'Authentication required' });
+  });
+
+  it('Prometheus text tambem exige credencial', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/metrics?format=prometheus',
+      headers: { accept: 'text/plain' },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('token invalido responde 401', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/metrics',
+      headers: { authorization: 'Bearer nao-e-um-jwt' },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('cookie token valido responde 200 (mesmo caminho do browser)', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/metrics',
+      cookies: { token },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.payload)).toHaveProperty('peers');
   });
 });

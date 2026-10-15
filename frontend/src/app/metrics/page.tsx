@@ -56,6 +56,10 @@ function MetricCard({ label, value, hint, accent }: MetricCardProps) {
 export default function MetricsPage() {
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // 401 não é "backend fora": é sessão ausente/expirada. O endpoint exige JWT
+  // desde que o app passou a ser exposto publicamente, então a UI precisa
+  // dizer isso e oferecer o login em vez de acusar falha de conexão.
+  const [needsAuth, setNeedsAuth] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -67,10 +71,18 @@ export default function MetricsPage() {
         if (!cancelled) {
           setMetrics(data);
           setError(null);
+          setNeedsAuth(false);
         }
       } catch (err) {
         if (!cancelled) {
-          setError('Não foi possível carregar as métricas do backend');
+          const status = (err as { status?: number }).status;
+          if (status === 401) {
+            setNeedsAuth(true);
+            setError('As métricas exigem autenticação. Entre com sua conta para vê-las.');
+          } else {
+            setNeedsAuth(false);
+            setError('Não foi possível carregar as métricas do backend');
+          }
           console.error(err);
         }
       } finally {
@@ -115,13 +127,19 @@ export default function MetricsPage() {
             <p className="text-slate-400 text-sm">
               {metrics
                 ? `Atualizado a cada 10s · v${metrics.version}`
-                : 'Carregando métricas...'}
+                : needsAuth
+                  ? 'Acesso restrito'
+                  : 'Carregando métricas...'}
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Badge variant={error ? 'error' : 'success'}>
-              {error ? 'Offline' : loading ? 'Conectando…' : 'Online'}
-            </Badge>
+            {needsAuth ? (
+              <Badge variant="info">Requer login</Badge>
+            ) : (
+              <Badge variant={error ? 'error' : 'success'}>
+                {error ? 'Offline' : loading ? 'Conectando…' : 'Online'}
+              </Badge>
+            )}
             <Link
               href="/"
               className="text-sm font-medium text-brand-400 hover:text-brand-300 transition-colors"
@@ -133,10 +151,18 @@ export default function MetricsPage() {
 
         {error && (
           <div
-            className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 text-sm text-red-300"
+            className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 text-sm text-red-300 flex flex-wrap items-center gap-x-3 gap-y-2"
             role="alert"
           >
-            {error}
+            <span>{error}</span>
+            {needsAuth && (
+              <Link
+                href="/login"
+                className="font-medium text-brand-400 hover:text-brand-300 underline underline-offset-2 transition-colors"
+              >
+                Entrar
+              </Link>
+            )}
           </div>
         )}
 

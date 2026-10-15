@@ -4,6 +4,10 @@ import cors from '@fastify/cors';
 const PORT = Number(process.env.PORT) || 4001;
 const MCP_TOKEN = process.env.MCP_TOKEN || '';
 const BACKEND_URL = process.env.BACKEND_URL || 'http://backend:4000';
+// JWT de usuario (POST /api/auth/login) para o MCP autenticar no backend.
+// /api/metrics exige JWT desde que o app passou a ser exposto publicamente;
+// sem isto o backend responde 401 e /mcp/metrics devolve 503 com a instrucao.
+const BACKEND_TOKEN = process.env.BACKEND_TOKEN || '';
 
 const server = Fastify({ logger: true });
 
@@ -28,8 +32,11 @@ server.get('/health', async () => {
 
 // ─── Helpers ──────────────────────────────────────────────────
 async function backendFetch<T>(path: string): Promise<T> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (BACKEND_TOKEN) headers.Authorization = `Bearer ${BACKEND_TOKEN}`;
+
   const res = await fetch(`${BACKEND_URL}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     signal: AbortSignal.timeout(5000),
   });
   if (!res.ok) {
@@ -50,8 +57,17 @@ server.get('/mcp/rooms', async (_request, reply) => {
 });
 
 // ─── GET /mcp/metrics ─────────────────────────────────────────
-// Requer Bearer MCP_TOKEN (verificada no onRequest hook).
+// Requer Bearer MCP_TOKEN (verificada no onRequest hook) e, do lado do
+// backend, um JWT valido (BACKEND_TOKEN). Sem a env o backend responde 401 e
+// devolvemos 503 com a instrucao — em vez de um 502 generico "unavailable".
 server.get('/mcp/metrics', async (_request, reply) => {
+  if (!BACKEND_TOKEN) {
+    return reply.code(503).send({
+      error:
+        'BACKEND_TOKEN não configurado — /api/metrics exige JWT. ' +
+        'Defina BACKEND_TOKEN com um token de POST /api/auth/login.',
+    });
+  }
   try {
     const data = await backendFetch<Record<string, unknown>>('/api/metrics');
     return reply.send(data);
