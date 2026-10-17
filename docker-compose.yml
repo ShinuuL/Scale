@@ -9,41 +9,86 @@ services:
       # Porta do HOST configuravel. Dentro do container o backend sempre
       # escuta 4000 (ver environment abaixo). O .env usa 4100 para nao
       # colidir com um PostgreSQL local que costuma ocupar a 4000.
-      - "${BACKEND_PORT:-4000}:4000"
+      #
+      # Esta porta continua publicada porque, em HTTP puro (dev/LAN), o
+      # getWsUrl() do frontend conecta o WebSocket direto em
+      # `${hostname}:${NEXT_PUBLIC_BACKEND_PORT}` — que aponta para a porta
+      # publicada aqui. Acessando pelo tunel (HTTPS) o signaling vai
+      # same-origin pelo proxy e esta porta NAO e usada pelo browser.
+      #
+      # SEGURANCA (loopback-only por padrao): publicada em 127.0.0.1, NAO em
+      # 0.0.0.0. Em 0.0.0.0 qualquer host da rede alcanca o backend e forja
+      # `X-Forwarded-For` para furar TODOS os baldes por IP dos rate limits.
+      # Nada do fluxo real (tunel; navegador local em http://localhost:8090)
+      # precisa desta porta fora do loopback. `NEXT_PUBLIC_BACKEND_URL=
+      # http://localhost:4100` (usado pelo browser em HTTP puro) continua
+      # funcionando: localhost = loopback.
+      - "127.0.0.1:${BACKEND_PORT:-4000}:4000"
+      # Variante antiga (exposta na LAN): descomente para liberar acesso direto
+      # pelo IP da maquina. AVISO: isto REINTRODUZ a superficie de spoof de
+      # X-Forwarded-For descrita acima (qualquer host da rede fura os baldes
+      # por IP). Use so em LAN de confianca, de proposito.
+      # - "${BACKEND_PORT:-4000}:4000"
     env_file:
       - .env
     environment:
-      # Overrides do .env, que agora aponta para dev no host (PORT=4100,
+      # Overrides do .env, que aponta para dev no host (PORT=4100,
       # DATABASE_URL relativo). Aqui o container fala pela rede interna:
       # escuta 4000 e usa o banco no volume nomeado.
       - PORT=4000
       - DATABASE_URL=file:/app/data/data.db
+      # Producao no container: desliga a isencao de loopback dos rate limits
+      # (lib/clientIp.ts isRateLimitExempt), que so existe para dev/E2E no host.
+      - NODE_ENV=production
+      # TRUST_PROXY = APENAS os hops reais na frente do backend (IPs estaticos
+      # fixados em `networks.scale.ipv4_address` abaixo). NUNCA use `true` nem a
+      # subnet inteira (`172.28.0.0/16`): o gateway da rede (172.28.0.1) fica
+      # DENTRO do /16 e uma conexao pela porta publicada chega com peer =
+      # 172.28.0.1, o que faz o proxy-addr descer para o X-Forwarded-For e
+      # aceitar um valor FORJADO pelo cliente — furam-se TODOS os baldes por IP.
+      #   - 172.28.0.3 (frontend): rewrites `/api` do Next repassam o request
+      #     (com o XFF ja saneado pelo Caddy) para o backend.
+      #   - 172.28.0.4 (proxy/Caddy): `/socket.io/*` vai DIRETO ao backend.
+      #   - 172.28.0.5 (cloudflared): hop do tunel, aparece como ultimo
+      #     elemento do X-Forwarded-For quando o request cruza o tunel.
+      # O gateway 172.28.0.1 FICA DE FORA de proposito: ele e o peer de quem
+      # alcanca uma porta publicada, e confiar nele reintroduz o spoof.
+      - TRUST_PROXY=172.28.0.3/32,172.28.0.4/32,172.28.0.5/32
     volumes:
       - db_data:/app/data
     healthcheck:
-      # Use 127.0.0.1 (not localhost): BusyBox wget can resolve localhost to
-      # ::1 first, and IPv4-only listeners then refuse the connection (observed
-      # on the frontend container).
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 15s
     networks:
-      - scale
+      scale:
+        # IP ESTATICO: este endereco entra em TRUST_PROXY (ver environment).
+        ipv4_address: 172.28.0.2
 
   frontend:
     build:
       context: .
       dockerfile: frontend/Dockerfile
       args:
-        # Injetados em BUILD time: o Next inlina NEXT_PUBLIC_* no bundle do
-        # browser. Aqui a porta e a do HOST, que e o que o browser enxerga.
+        # Injetados pelo docker-compose (build.args). O Next inlina NEXT_PUBLIC_*
+        # no bundle do browser em BUILD time, entao precisam existir nesta etapa.
+        # Aqui a porta e a do HOST, que e o que o browser enxerga (HTTP puro).
         NEXT_PUBLIC_BACKEND_PORT: ${BACKEND_PORT:-4000}
         NEXT_PUBLIC_BACKEND_URL: http://localhost:${BACKEND_PORT:-4000}
         NEXT_PUBLIC_WS_URL: http://localhost:${BACKEND_PORT:-4000}
     ports:
-      - "3000:3000"
+      # SEGURANCA (loopback-only por padrao): publicada em 127.0.0.1, NAO em
+      # 0.0.0.0. Em 0.0.0.0 qualquer host da rede alcanca o Next e, como os
+      # rewrites `/api` repassam o `X-Forwarded-For` recebido, forja o header
+      # para furar os baldes por IP. O tunel nao usa esta porta (ele fala com o
+      # proxy interno). Nada do fluxo precisa dela fora do loopback.
+      - "127.0.0.1:3000:3000"
+      # Variante antiga (exposta na LAN): descomente para acesso direto pelo IP
+      # da maquina. AVISO: REINTRODUZ a superficie de spoof de X-Forwarded-For
+      # via rewrites do Next (qualquer host da rede fura os baldes por IP).
+      # - "3000:3000"
     depends_on:
       backend:
         condition: service_healthy
@@ -62,7 +107,10 @@ services:
       retries: 5
       start_period: 15s
     networks:
-      - scale
+      scale:
+        # IP ESTATICO: entra em TRUST_PROXY (os rewrites `/api` do Next chegam
+        # ao backend com este peer). Ver environment do backend.
+        ipv4_address: 172.28.0.3
 
   coturn:
     image: coturn/coturn
@@ -73,22 +121,22 @@ services:
     networks:
       - scale
 
-  caddy:
+  # Roteador interno do Scale (HTTP puro, sem TLS). Fica atras do tunel:
+  # o cloudflared (profile `tunnel`) aponta para http://proxy:8080 e o roteamento
+  # por path acontece aqui. Veja o topo do Caddyfile para o porque do proxy
+  # interno (o tunel rapido aponta para um unico servico e os rewrites do Next
+  # nao fazem upgrade de WebSocket).
+  proxy:
     image: caddy:2-alpine
-    profiles:
-      - https
-    # Bind do HOST ao IP Tailscale (nunca 0.0.0.0): sem TAILSCALE_IP definido,
-    # cai para 127.0.0.1 (localhost-only). O :443 interno do container segue
-    # mapeado apenas para esta interface; o checkTailscaleOrigin do backend 403
-    # fora da tailnet. Veja o comentario no Caddyfile.
     ports:
-      - "${TAILSCALE_IP:-127.0.0.1}:3443:443"
-    environment:
-      - TAILSCALE_IP=${TAILSCALE_IP:-127.0.0.1}
+      # Porta do HOST do proxy interno. Em acesso local HTTP, o origin
+      # `http://localhost:${PROXY_PORT:-8080}` precisa estar em ALLOWED_ORIGINS.
+      - "${PROXY_PORT:-8080}:8080"
+      # Variante endurecida (so loopback): descomente para expor o app
+      # SOMENTE pelo tunel (qualquer host da LAN deixa de alcancar o proxy).
+      # - "127.0.0.1:${PROXY_PORT:-8080}:8080"
     volumes:
-      - ./certs:/certs:ro
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
     depends_on:
       backend:
         condition: service_healthy
@@ -96,7 +144,6 @@ services:
         condition: service_healthy
     healthcheck:
       # Caddy admin API (localhost:2019) responde 200 com a config carregada.
-      # Não depende do certificado, evitando false-negative se o cert expirar.
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:2019/config/ || exit 1"]
       interval: 10s
       timeout: 5s
@@ -104,7 +151,29 @@ services:
       start_period: 10s
     restart: unless-stopped
     networks:
-      - scale
+      scale:
+        # IP ESTATICO: entra em TRUST_PROXY (rota /socket.io vai DIRETO ao
+        # backend, sem passar pelo Next) e e o `trusted_proxies` do Caddyfile.
+        ipv4_address: 172.28.0.4
+
+  # Tunel rapido do cloudflared: sem token/conta, gera uma URL efemera
+  # https://<aleatorio>.trycloudflare.com que muda A CADA START. A URL publica
+  # aparece nos logs: `docker compose logs cloudflared`. O tunel aponta para o
+  # proxy interno e este distribui por path. Veja docs/tunnel-setup.md.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    profiles:
+      - tunnel
+    command: tunnel --no-autoupdate --url http://proxy:8080
+    depends_on:
+      proxy:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      scale:
+        # IP ESTATICO: entra em TRUST_PROXY (ultimo hop do X-Forwarded-For
+        # depois que o request cruza o tunel) e e o `trusted_proxies` do Caddy.
+        ipv4_address: 172.28.0.5
 
   mcp:
     build:
@@ -135,7 +204,12 @@ services:
 
 volumes:
   db_data:
-  caddy_data:
 
 networks:
   scale:
+    # Subnet FIXA: e o CIDR que o backend usa em TRUST_PROXY (nunca `true`).
+    # Sem uma subnet fixa o Docker sorteia a faixa e o CIDR do proxy nao seria
+    # previsivel.
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

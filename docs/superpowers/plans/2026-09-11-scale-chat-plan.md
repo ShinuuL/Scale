@@ -1,5 +1,7 @@
 # Scale Chat (Opção A) Implementation Plan
 
+> **Histórico:** descreve a arquitetura anterior (Tailscale). A infra atual usa túnel cloudflared — ver docs/tunnel-setup.md.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Entregar chat de texto lateral à sala `/room/[id]` com temporárias efêmeras (buffer ~100 em memória + `emptyTimers` 5min) e persistentes com histórico (SQLite `ChatMessage`/`ChatFile` + paginação 200→50), menções `@roomPeers`, edição 15min, deleção soft autor/dono, upload zip 15MB/5 por mensagem/quota 200MB e hardening tailnet-only.

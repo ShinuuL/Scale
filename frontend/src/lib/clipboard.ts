@@ -1,6 +1,6 @@
 // Copia texto para a área de transferência, com fallback para contextos
 // inseguros (HTTP): navigator.clipboard só existe em contextos seguros, então
-// em http://100.x:3000 usamos o caminho legado execCommand('copy').
+// em http://<host>:3000 usamos o caminho legado execCommand('copy').
 
 export async function copyText(text: string): Promise<boolean> {
   try {

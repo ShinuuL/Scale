@@ -1,5 +1,6 @@
 import { test, expect, Browser, BrowserContext, Page } from '@playwright/test';
 import { FRONTEND_URL } from './config';
+import { registerAndCreateRoom } from './auth';
 
 /**
  * Audit de contraste/legibilidade da sala (Fase 4).
@@ -254,12 +255,12 @@ async function openPeer(
 }
 
 async function createRoom(page: Page): Promise<string> {
-  const res = await page.request.post('/api/rooms', {
-    data: { name: `E2E a11y ${Date.now()}`, isPersistent: true },
+  // Criar sala agora exige login: registra o usuário (cookie HttpOnly no
+  // context do `page`) antes do POST /api/rooms.
+  return registerAndCreateRoom(page, {
+    name: `E2E a11y ${Date.now()}`,
+    isPersistent: true,
   });
-  expect(res.ok(), `POST /api/rooms -> ${res.status()} ${await res.text()}`).toBeTruthy();
-  const body = (await res.json()) as { room: { id: string } };
-  return body.room.id;
 }
 
 async function joinRoom(page: Page, roomId: string): Promise<void> {
@@ -491,7 +492,7 @@ test.describe('contraste e legibilidade da sala', () => {
 test.describe('contraste das paginas publicas', () => {
   // Cada pagina e auditada no estado em que ela carrega. Cobre o restante do
   // tema (mesmas classes `text-slate-500`/`btn-primary` usadas na sala).
-  const pages = ['/', '/login', '/register', '/metrics', '/tutorial', '/docs/tailscale'];
+  const pages = ['/', '/login', '/register', '/metrics', '/tutorial', '/docs'];
 
   for (const path of pages) {
     test(`"${path}" passa o WCAG AA`, async ({ page }) => {

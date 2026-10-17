@@ -1,8 +1,15 @@
 import { z } from 'zod';
 
 // ─── Room schemas ───────────────────────────────────────────────
+/** Limites do nome da sala, compartilhados entre o formulário e o schema. */
+export const ROOM_NAME_MIN = 3;
+export const ROOM_NAME_MAX = 50;
+
 export const createRoomSchema = z.object({
-  name: z.string().min(3, 'Room name must be at least 3 characters').max(50, 'Room name must be at most 50 characters'),
+  name: z
+    .string()
+    .min(ROOM_NAME_MIN, `Room name must be at least ${ROOM_NAME_MIN} characters`)
+    .max(ROOM_NAME_MAX, `Room name must be at most ${ROOM_NAME_MAX} characters`),
   isPersistent: z.boolean().default(false),
   isPrivate: z.boolean().default(false),
   maxParticipants: z.number().int().min(2).max(8).default(8),
@@ -63,7 +70,10 @@ export type RoomListItem = z.infer<typeof roomListItemSchema>;
 
 // ─── Auth response types ────────────────────────────────────────
 export const userResponseSchema = z.object({
-  id: z.string().uuid(),
+  // ID de usuário é cuid do Prisma (ex.: `cmv9ruyob0000uv343dhsfa9s`), não UUID.
+  // Exigir `.uuid()` quebrava o parse de /api/auth/{register,login} e fazia a UI
+  // mostrar "Falha ao criar conta"/"Falha ao fazer login" mesmo com sucesso.
+  id: z.string().min(1),
   email: z.string().email(),
   name: z.string(),
   createdAt: z.string(),
@@ -77,15 +87,6 @@ export const authResponseSchema = z.object({
 });
 
 export type AuthResponse = z.infer<typeof authResponseSchema>;
-
-// ─── Tailscale status ──────────────────────────────────────────
-export const tailscaleStatusSchema = z.object({
-  tailscaleIp: z.string().nullable(),
-  configured: z.boolean(),
-  interfaceDetected: z.boolean(),
-});
-
-export type TailscaleStatus = z.infer<typeof tailscaleStatusSchema>;
 
 // ─── Metrics ───────────────────────────────────────────────────
 export const metricsSchema = z.object({

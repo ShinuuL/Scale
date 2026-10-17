@@ -1,5 +1,7 @@
 # Concord — Design Specification
 
+> **Histórico:** descreve a arquitetura anterior (Tailscale). A infra atual usa túnel cloudflared — ver docs/tunnel-setup.md.
+
 **Data:** 2026-09-09  
 **Status:** v1.0 — Especificação Inicial
 
@@ -278,7 +280,7 @@ volumes:
 ### 6.2 Tailscale
 - Rede mesh privada entre dispositivos
 - Sem necessidade de port forwarding
-- Guia de configuração: `docs/tailscale-setup.md`
+- Guia de configuração: `docs/tunnel-setup.md`
 - Todos os peers na mesma rede Tailscale
 
 ### 6.3 MCP Server

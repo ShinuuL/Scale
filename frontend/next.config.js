@@ -28,10 +28,6 @@ const nextConfig = {
     NEXT_PUBLIC_BACKEND_URL: process.env.NEXT_PUBLIC_BACKEND_URL || localBackend,
     NEXT_PUBLIC_WS_URL: process.env.NEXT_PUBLIC_WS_URL || localBackend,
     NEXT_PUBLIC_BACKEND_PORT: browserPort,
-    // Host Tailscale (ex.: desktop-xxxx.tail-xxxx.ts.net) usado para gerar o
-    // link HTTPS do banner de conexão insegura. Vazio = banner mostra guia.
-    NEXT_PUBLIC_TAILSCALE_HOST: process.env.NEXT_PUBLIC_TAILSCALE_HOST || process.env.TAILSCALE_HOST || '',
-    NEXT_PUBLIC_HTTPS_PORT: process.env.NEXT_PUBLIC_HTTPS_PORT || process.env.HTTPS_PORT || '3443',
   },
   async rewrites() {
     // BACKEND_URL e o alvo SERVER-SIDE do proxy /api (o browser chama /api no

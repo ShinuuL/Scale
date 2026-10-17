@@ -2,7 +2,7 @@
 
 ## Visão Geral
 
-Sistema de videochamadas P2P (mesh) com escamas de dragão — sala de voz e tela compartilhada via Tailscale. Suporta 2-8 participantes, salas temporárias e persistentes, com wizard de onboarding.
+Sistema de videochamadas P2P (mesh) com escamas de dragão — sala de voz e tela compartilhada, com acesso remoto por túnel cloudflared. Suporta 2-8 participantes, salas temporárias e persistentes, com wizard de onboarding.
 
 ## Stack
 
@@ -77,7 +77,7 @@ docker compose --profile mcp up --build --abort-on-container-exit
 ### Rede
 - CORS: whitelist de origens permitidas
 - Content Security Policy (CSP) habilitada
-- Tailscale: rede privada, sem exposição pública
+- Acesso remoto: tunel cloudflared (URL publica efemera); rate limit e autenticacao sao a protecao
 
 ### WebRTC
 - **TURN server**: opcional (configurável)
@@ -91,7 +91,7 @@ docker compose --profile mcp up --build --abort-on-container-exit
 - Salas temporárias (com TTL) e persistentes
 - Tela compartilhada via WebRTC
 - Wizard de onboarding
-- Guia de configuração Tailscale
+- Guia de configuração do túnel cloudflared
 - MCP server para integração
 
 ### Não incluído (por agora)
@@ -110,15 +110,51 @@ docker compose --profile mcp up --build --abort-on-container-exit
 ## Requisitos de Infra
 
 ### Docker Compose
-- Serviços: frontend, backend, mcp
+- Serviços: frontend, backend, mcp, proxy, cloudflared
+- `proxy`: roteador interno HTTP (Caddy, profile default) que distribui por path
+  — `/socket.io/*` → `backend:4000` (os rewrites do Next.js **não** fazem upgrade
+  de WebSocket) e todo o resto → `frontend:3000`. Fica atrás do túnel.
+- `cloudflared`: túnel rápido (profile `tunnel`) com `--url http://proxy:8080`,
+  sem token/conta; gera URL efêmera `*.trycloudflare.com` a cada start.
 - Volumes para SQLite persistente
 - Health checks para todos os serviços
 - Profile `mcp` para habilitar MCP server
+- Profile `tunnel` para habilitar o túnel cloudflared
 
-### Tailscale
-- Rede mesh privada entre dispositivos
+### Acesso remoto (tunel)
+- Tunel publico via cloudflared (URL efemera `*.trycloudflare.com`)
 - Sem necessidade de port forwarding
-- Guia de configuração em `docs/tailscale-setup.md`
+- Guia de configuração em `docs/tunnel-setup.md`
+
+### Rede e exposicao
+- Publicacao (default, endurecida): o `proxy` publica `${PROXY_PORT:-8080}` em
+  todas as interfaces (e a entrada do app, usada pelo tunel e pelo navegador
+  local); `backend` (`${BACKEND_PORT}`) e `frontend` (`3000`) ficam **so no
+  loopback** (`127.0.0.1`). Publicados em `0.0.0.0`, `:3000`/`:4100` deixam
+  qualquer host da rede forjar `X-Forwarded-For` e furar TODOS os baldes por IP.
+  Para acesso direto na LAN, descomente a variante `0.0.0.0` no
+  `docker-compose.yml` — ciente de que isso **reintroduz** a superficie.
+  - Residuo conhecido: no loopback, `localhost:4100` e seguro (o peer e o
+    gateway, fora do `TRUST_PROXY`), mas `localhost:3000` ainda fura — o rewrite
+    `/api` do Next repassa o `X-Forwarded-For` recebido e o container do
+    `frontend` precisa continuar confiavel. Exige processo JA no host (a LAN e
+    recusada); ver `docs/tunnel-setup.md`.
+- Túnel rápido `*.trycloudflare.com`: URL efêmera, **sem WAF nem Access** — a
+  proteção é autenticação (JWT/cookie) + rate limit por IP real do cliente.
+- Modelo de confiança (hops confiáveis, nunca a subnet inteira nem `true`):
+  - Backend: `TRUST_PROXY=172.28.0.3/32,172.28.0.4/32,172.28.0.5/32` — apenas
+    `frontend` (rewrites `/api`), `proxy` (`/socket.io` direto) e `cloudflared`
+    (hop do tunel), cada um com `ipv4_address` fixo na rede `scale`. O gateway
+    `172.28.0.1` NÃO entra: e o peer de quem alcanca porta publicada e confiar
+    nele reabre o spoof. `TRUST_PROXY=true` ou `172.28.0.0/16` = spoof.
+  - Caddy: bloco global `servers { trusted_proxies static 172.28.0.5/32 }` no
+    `Caddyfile`. Sem ele o Caddy substitui o `X-Forwarded-For` pelo IP do
+    `cloudflared` e TODO o trafego do tunel compartilha um unico balde (ex.: 5
+    cadastros/hora para o mundo inteiro).
+  - `NODE_ENV=production` no container (sem isencao de loopback nos baldes).
+  - Teste (`docs/tunnel-setup.md`): 15 logins com `X-Forwarded-For` rotativo →
+    o 11º deve dar 429; e o log do backend, para request pelo tunel, deve
+    mostrar o SEU IP publico (nunca `172.28.x.x`).
 
 ### MCP Server
 - Endpoints para consulta de estado das salas
@@ -151,4 +187,4 @@ docker compose logs -f       # Logs em tempo real
 ---
 
 **Status:** v1.0  
-**Última atualização:** 2026-09-09
+**Última atualização:** 2026-10-17

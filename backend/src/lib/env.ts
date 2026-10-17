@@ -5,8 +5,15 @@ const envSchema = z.object({
   DATABASE_URL: z.string().default('file:/app/data/data.db'),
   ALLOWED_ORIGINS: z.string().default('http://localhost:3000'),
   PORT: z.coerce.number().int().positive().default(4000),
-  TAILSCALE_IP: z.string().optional(),
-  TAILSCALE_HOST: z.string().optional(),
+  // Semantica do trustProxy do Fastify: false (default) | true | lista de
+  // CIDRs/IPs (ex.: "127.0.0.1/8,::1/128" ou "loopback").
+  // O default e FAIL-CLOSED (`false`): a chave dos rate limits por IP passa a ser
+  // o IP do socket e nenhum header (X-Forwarded-For/cf-connecting-ip) e aceito —
+  // do contrario qualquer cliente forja o header a cada request e fura TODOS os
+  // baldes por IP. So confie em headers configurando explicitamente o CIDR do
+  // proxy/tunel (ex.: "loopback" quando o tunel roda na mesma maquina).
+  // Numeros (hops) sao rejeitados — ver lib/clientIp.ts resolveTrustProxy.
+  TRUST_PROXY: z.string().default('false'),
   ENABLE_TURN: z
     .enum(['true', 'false'])
     .transform((v) => v === 'true')
@@ -23,6 +30,20 @@ export function getEnv(): Env {
     _env = envSchema.parse(process.env);
   }
   return _env;
+}
+
+/**
+ * Whitelist de origens em lista, a partir de ALLOWED_ORIGINS (CSV).
+ *
+ * Fonte ÚNICA para o CORS do HTTP (plugins/cors.ts) e o CORS do Socket.io
+ * (socket/handler.ts): se um dia divergirem, o browser pode conectar o WS e ter
+ * as chamadas REST bloqueadas (ou o inverso).
+ */
+export function getAllowedOrigins(): string[] {
+  return getEnv()
+    .ALLOWED_ORIGINS.split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
 }
 
 export function resetEnv(): void {

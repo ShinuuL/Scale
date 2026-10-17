@@ -1,5 +1,7 @@
 # Scale — Spec de Chat (Opção A)
 
+> **Histórico:** descreve a arquitetura anterior (Tailscale). A infra atual usa túnel cloudflared — ver docs/tunnel-setup.md.
+
 **Data:** 2026-09-11
 **Status:** v1.0
 **Base:** `AGENTS.md` v1.0 (2026-09-09) + `docs/superpowers/specs/2026-09-09-concord-design.md`

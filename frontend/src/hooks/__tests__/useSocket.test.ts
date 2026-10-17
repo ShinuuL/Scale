@@ -53,7 +53,7 @@ describe('useSocket — handler connect_error', () => {
     });
     expect(result.current.connected).toBe(true);
 
-    // connect_error (ex.: backend fora do ar / CORS / tailnet barrier)
+    // connect_error (ex.: backend fora do ar / CORS)
     act(() => {
       socketHandlers.get('connect_error')?.({ message: 'xhr poll error' });
     });

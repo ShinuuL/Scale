@@ -2,7 +2,7 @@
 
 ![Scale logo](./frontend/public/logo.png)
 
-**P2P mesh 2-8 via Tailscale** — Sistema de videochamadas P2P com escamas de dragão. Sala de voz e tela compartilhada via Tailscale. Suporta 2-8 participantes, salas temporárias e persistentes, com wizard de onboarding.
+**P2P mesh 2-8 com acesso remoto por túnel cloudflared** — Sistema de videochamadas P2P com escamas de dragão. Sala de voz e tela compartilhada, expostas por um túnel rápido `*.trycloudflare.com`. Suporta 2-8 participantes, salas temporárias e persistentes, com wizard de onboarding.
 
 ## Stack
 
@@ -34,13 +34,20 @@ cd backend && npx prisma db push && cd ..
 npm run dev
 ```
 
-O frontend estara em `http://localhost:3000` e o backend em `http://localhost:4000`.
+O frontend estara em `http://localhost:3000` e o backend em `http://localhost:4100`.
 
 ### Docker Compose
 
 ```bash
-# Sobe frontend + backend
+# Sobe frontend + backend + proxy interno (Caddy). O proxy e o roteador HTTP
+# que fica atras do tunel (default profile).
 docker compose up --build
+
+# Sobe com o tunel publico (profile tunnel): gera uma URL efemera
+# https://<aleatorio>.trycloudflare.com. Leia a URL com:
+#   docker compose logs cloudflared
+# Guia completo: docs/tunnel-setup.md
+docker compose --profile tunnel up -d --build
 
 # Sobe com MCP validator (profile mcp)
 docker compose --profile mcp up --build --abort-on-container-exit
@@ -49,7 +56,7 @@ docker compose --profile mcp up --build --abort-on-container-exit
 docker compose --profile turn up --build
 
 # Todos os profiles
-docker compose --profile mcp --profile turn up --build
+docker compose --profile mcp --profile turn --profile tunnel up --build
 ```
 
 ### Variaveis de Ambiente
@@ -59,12 +66,12 @@ Copie `.env.example` para `.env` e configure:
 ```env
 JWT_SECRET=sua-chave-secreta-aqui
 DATABASE_URL=file:./data.db
-ALLOWED_ORIGINS=http://localhost:3000
-NEXT_PUBLIC_BACKEND_URL=http://localhost:4000
+ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8080
+NEXT_PUBLIC_BACKEND_URL=http://localhost:4100
 ENABLE_TURN=false
-# Scale — TAILSCALE_IP (IP Tailscale do servidor para rede mesh)
-TAILSCALE_IP=
-PORT=4000
+PROXY_PORT=8080
+PORT=4100
+BACKEND_PORT=4100
 NODE_ENV=development
 ```
 
@@ -72,11 +79,12 @@ NODE_ENV=development
 |----------|-----------|--------|
 | `JWT_SECRET` | Chave secreta para JWT (min 8 chars) | `change-me-in-production` |
 | `DATABASE_URL` | URL do SQLite | `file:./data.db` |
-| `ALLOWED_ORIGINS` | Origens CORS permitidas | `http://localhost:3000` |
-| `NEXT_PUBLIC_BACKEND_URL` | URL publica do backend | `http://localhost:4000` |
+| `ALLOWED_ORIGINS` | Origens CORS permitidas (CSV) | `http://localhost:3000,http://localhost:8080` |
+| `NEXT_PUBLIC_BACKEND_URL` | URL publica do backend | `http://localhost:4100` |
 | `ENABLE_TURN` | Habilitar servidor TURN | `false` |
-| `TAILSCALE_IP` | IP Tailscale do servidor | vazio |
-| `PORT` | Porta do backend | `4000` |
+| `PROXY_PORT` | Porta do proxy interno (Caddy) no host | `8080` |
+| `PORT` | Porta do backend em dev no host (container sempre 4000) | `4100` |
+| `BACKEND_PORT` | Porta do backend publicada no host pelo compose | `4100` |
 | `NODE_ENV` | Ambiente (`development`, `production`, `test`) | `development` |
 
 ## Arquitetura
@@ -94,7 +102,7 @@ NODE_ENV=development
 │   ├── src/
 │   │   ├── lib/       # Auth, env, prisma, rateLimit
 │   │   ├── plugins/   # Fastify plugins (cors, helmet, auth)
-│   │   ├── routes/    # HTTP routes (auth, rooms, tailscale)
+│   │   ├── routes/    # HTTP routes (auth, rooms, turn, messages, files, metrics)
 │   │   └── socket/    # Socket.io handlers
 │   ├── prisma/        # Prisma schema
 │   └── Dockerfile
@@ -104,8 +112,9 @@ NODE_ENV=development
 │   └── Dockerfile
 ├── docs/
 │   ├── branding.md    # Identidade visual Scale
-│   └── tailscale-setup.md
+│   └── tunnel-setup.md # Tunel publico (cloudflared)
 ├── docker-compose.yml
+├── Caddyfile          # Proxy interno (HTTP, sem TLS) que roteia por path atras do tunel
 ├── AGENTS.md
 └── README.md
 ```
@@ -115,10 +124,10 @@ NODE_ENV=development
 ### Frontend (porta 3000)
 
 - Interface de videochamadas com WebRTC
-- Wizard de onboarding para Tailscale
+- Wizard de onboarding para acesso pela LAN ou pelo tunel
 - Salas com grid de video e controles
 
-### Backend (porta 4000)
+### Backend (porta 4100 no host em dev; 4000 no container)
 
 - API REST (Fastify 5) para autenticacao e salas
 - WebSocket (Socket.io 4) para signaling WebRTC
@@ -131,6 +140,19 @@ NODE_ENV=development
 - Verifica health do backend e frontend
 - Testa conectividade Socket.io + join-room
 - Reporta JSON com pass/fail
+
+### Proxy interno (Caddy, default)
+
+- Roteia por path: `/socket.io/*` → `backend:4000`, todo o resto → `frontend:3000`
+- Existe porque o tunel rapido aponta para um unico servico e os rewrites do
+  Next.js nao fazem upgrade de WebSocket
+- Publica `${PROXY_PORT:-8080}`
+
+### Cloudflared (profile `tunnel`)
+
+- Tunel rapido (`--url http://proxy:8080`): URL efemera `*.trycloudflare.com`
+- Sem conta, sem token, sem abrir porta no roteador
+- Guia: `docs/tunnel-setup.md`
 
 ### COTURN (profile `turn`)
 
@@ -186,8 +208,8 @@ Proxy do backend com dois tokens distintos:
 
 ### Vitest (unit/integration)
 
-- **Backend** (`npm run test --workspace backend`): **71 testes** — chat socket (message/edit/delete/rate/mentions/history), REST messages paginadas, files multipart (magic bytes, quota, GC, sandbox), uploads lib, tailnet hardening, rooms/password/rotate-invite, signaling e métricas `scale_chat_*` (inclui auth de `/api/metrics`: 401 sem credencial, 401 com token invalido, 200 com cookie/Bearer).
-- **Frontend** (`npm run test --workspace frontend`): **42 testes** — validação cliente, `useSocket` (connect_error, onReconnect/isConnected), `useChat` (unread, edit/delete, mention audio, loadMore, upload), `useWebRTC`, `ChatMessageItem` (linkify, highlight, XSS, ações) e `ChatPanel` (role=log, Enter/Shift+Enter, contador 500, autocomplete `@`, chips, loadMore, drawer mobile).
+- **Backend** (`npm run test -w scale-backend`): **91 testes** (11 arquivos) — chat socket (message/edit/delete/rate/mentions/history), REST messages paginadas, files multipart (magic bytes, quota, GC, sandbox), uploads lib, hardening de exposição pública (auth/CORS/Helmet/trust proxy), rooms/password/rotate-invite, signaling e métricas `scale_chat_*` (inclui auth de `/api/metrics`: 401 sem credencial, 401 com token invalido, 200 com cookie/Bearer).
+- **Frontend** (`npm run test -w scale-frontend`): **42 testes** — validação cliente, `useSocket` (connect_error, onReconnect/isConnected), `useChat` (unread, edit/delete, mention audio, loadMore, upload), `useWebRTC`, `ChatMessageItem` (linkify, highlight, XSS, ações) e `ChatPanel` (role=log, Enter/Shift+Enter, contador 500, autocomplete `@`, chips, loadMore, drawer mobile).
 
 ### GET /api/metrics — formato Prometheus
 
@@ -236,7 +258,7 @@ cd backend && npx prisma studio       # Interface visual do DB
 ## Documentacao
 
 - [Branding — Identidade Visual](docs/branding.md) - Conceito, paleta e tipografia do Scale
-- [Configuracao do Tailscale](docs/tailscale-setup.md) - Guia completo de instalacao e configuracao
+- [Configuracao do tunel publico](docs/tunnel-setup.md) - Guia do tunel cloudflared (URL publica efemera)
 
 ## Convencoes
 

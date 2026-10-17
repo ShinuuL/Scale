@@ -74,7 +74,16 @@ async function fetchIceServers(): Promise<RTCConfiguration> {
     const res = await fetch(url, {
       signal: AbortSignal.timeout(3000),
     });
-    if (!res.ok) return DEFAULT_ICE_SERVERS;
+    // 401 = sem sessão (convidado anônimo): o endpoint de credenciais TURN
+    // passou a exigir login. Tratamos como "sem TURN" e caímos no fallback
+    // STUN abaixo — o app segue funcionando (hoje ENABLE_TURN=false, então já
+    // não havia relay a receber). Qualquer outro !ok também cai no STUN.
+    if (!res.ok) {
+      if (res.status === 401) {
+        console.debug('[WebRTC] TURN exige login — usando apenas STUN');
+      }
+      return DEFAULT_ICE_SERVERS;
+    }
     const data = (await res.json()) as { iceServers?: RTCIceServer[] };
     if (data.iceServers && data.iceServers.length > 0) {
       return { iceServers: data.iceServers };
@@ -376,8 +385,8 @@ export function useWebRTC(
       return;
     }
     // getUserMedia exige contexto seguro (https ou localhost). Em
-    // http://100.x o objeto navigator.mediaDevices?getUserMedia EXISTE, mas a
-    // chamada rejeita com NotAllowedError porque window.isSecureContext é
+    // http://<host-da-lan> o objeto navigator.mediaDevices?getUserMedia EXISTE,
+    // mas a chamada rejeita com NotAllowedError porque window.isSecureContext é
     // false — detectamos antes e avisamos em vez de falhar em silêncio.
     if (typeof window !== 'undefined' && !window.isSecureContext) {
       console.warn(

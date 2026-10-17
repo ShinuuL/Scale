@@ -4,7 +4,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'Scale — P2P Video Calls',
-  description: 'Scale — escamas de dragão, P2P mesh powered by WebRTC and Tailscale',
+  description: 'Scale — escamas de dragão, videochamadas P2P mesh powered by WebRTC',
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'),
   icons: {
     icon: [

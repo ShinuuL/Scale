@@ -8,12 +8,12 @@ function getWsUrl(): string {
   // Porta do backend para HTTP simples. Exposta como variável (default 4000)
   // porque o backend pode rodar em outra porta — ver .env (PORT).
   // Deliberadamente NAO usamos uma URL fixa aqui: o hostname vem de
-  // window.location para que acesso remoto (Tailscale/IP) continue valendo.
+  // window.location para que acesso remoto (domínio publico/IP da LAN) continue valendo.
   const port = process.env.NEXT_PUBLIC_BACKEND_PORT || '4000';
 
   if (typeof window !== 'undefined') {
-    // On HTTPS pages (Tailscale cert via Caddy), signaling must stay on the same
-    // origin: Caddy proxies /socket.io to the backend. Mixed http(s)://host:port
+    // On HTTPS pages (Caddy / tunel), signaling must stay on the same
+    // origin: the proxy forwards /socket.io to the backend. Mixed http(s)://host:port
     // would be blocked by the browser.
     if (window.location.protocol === 'https:') {
       return window.location.origin;
@@ -92,7 +92,7 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
     // getWsUrl() é avaliado AQUI dentro do effect (e não no escopo do módulo):
     // `window.location` só tem o valor certo no cliente, e um import do módulo é
     // avaliado uma única vez. Assim o signaling acompanha o host de acesso
-    // (localhost, IP Tailscale ou Caddy HTTPS) em cada conexão.
+    // (localhost, IP da LAN ou domínio HTTPS) em cada conexão.
     const wsUrl = getWsUrl();
     hadConnectedRef.current = false;
     const sock = io(wsUrl, {
@@ -123,7 +123,7 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
       console.debug('[Socket] disconnected', reason);
     });
 
-    // CORS / tailnet barrier / backend fora do ar: sem este handler o badge fica
+    // CORS / backend fora do ar: sem este handler o badge fica
     // "Desconectado" sem nenhum motivo visível no console.
     sock.on('connect_error', (err: Error) => {
       console.error('[Socket] connect_error', err.message, err);
@@ -224,7 +224,7 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
       // Fallback por timeout: se o socket existir mas estiver desconectado (ou
       // o servidor não responder), o callback do emit nunca dispara e a Promise
       // ficaria pendente para sempre — travando o `await leaveRoom` na UI.
-      // 1500ms é mais que suficiente para o ack normal em rede local/tailnet.
+      // 1500ms é mais que suficiente para o ack normal em rede local.
       const done = (): void => resolve();
       const timer = setTimeout(done, 1500);
       socket.emit('leave-room', { roomId }, () => {

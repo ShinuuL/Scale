@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../lib/prisma.js';
 import { isRoomCreateRateLimited } from '../lib/rateLimit.js';
+import { getClientIp } from '../lib/clientIp.js';
 
 const createRoomSchema = z.object({
   name: z.string().min(3).max(50),
@@ -17,10 +18,17 @@ const createRoomSchema = z.object({
 export async function roomRoutes(fastify: FastifyInstance): Promise<void> {
   // POST /api/rooms
   fastify.post('/api/rooms', async (request, reply) => {
-    // Anti-flood: cada chamada cria uma sala persistida. `request.ip` e o IP
-    // real do cliente (trustProxy: true — ver server.ts), entao funciona
-    // tambem atras do proxy /api do Next.
-    if (isRoomCreateRateLimited(`room-create:${request.ip}`)) {
+    // Criar sala exige login (regra de negócio): sem sessão válida → 401 antes
+    // de qualquer trabalho (rate limit/zod/prisma).
+    const userId = request.userId;
+    if (!userId) {
+      return reply.code(401).send({ error: 'Authentication required' });
+    }
+
+    // Anti-flood: cada chamada cria uma sala persistida. A chave e o IP do
+    // cliente resolvido por lib/clientIp.ts (nao o header cru), entao continua
+    // valido atras do proxy /api do Next e do tunel.
+    if (isRoomCreateRateLimited(getClientIp(request))) {
       return reply
         .code(429)
         .send({ error: 'Too many rooms created. Try again in a few seconds.' });
@@ -65,7 +73,7 @@ export async function roomRoutes(fastify: FastifyInstance): Promise<void> {
         maxParticipants,
         inviteToken: uuidv4(),
         expiresAt,
-        ownerId: request.userId ?? null,
+        ownerId: userId,
         passwordHash,
       },
       select: {
@@ -119,6 +127,9 @@ export async function roomRoutes(fastify: FastifyInstance): Promise<void> {
 
     // passwordHash nunca é exposto; expomos apenas o flag hasPassword para a UI
     // decidir se deve pedir a senha antes do join (fluxo password do critic).
+    // `ownerId` também é restrito: só o dono vê quem é o dono (o resto do app é
+    // anônimo/guest e não precisa do dado). O `select` continua trazendo ownerId
+    // para a checagem isOwner — ele só não entra no payload público.
     return reply.send({
       room: {
         id: room.id,
@@ -130,53 +141,61 @@ export async function roomRoutes(fastify: FastifyInstance): Promise<void> {
         expiresAt: room.expiresAt,
         createdAt: room.createdAt,
         status: room.status,
-        ownerId: room.ownerId,
+        ownerId: isOwner ? room.ownerId : undefined,
         hasPassword: room.passwordHash !== null,
       },
     });
   });
 
   // GET /api/rooms - list active rooms
-  fastify.get('/api/rooms', async (request, reply) => {
-    const rooms = await prisma.room.findMany({
-      where: {
-        status: 'ACTIVE',
-        isPrivate: false,
-        OR: [
-          { expiresAt: null },
-          { expiresAt: { gt: new Date() } },
-        ],
-      },
-      select: {
-        id: true,
-        name: true,
-        isPersistent: true,
-        isPrivate: true,
-        maxParticipants: true,
-        inviteToken: true,
-        ownerId: true,
-        createdAt: true,
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 50,
-    });
+  // Exige login: o app é publicado na internet (tunel) e a listagem enumera as
+  // salas ativas da instância. Sem sessão → 401 antes de tocar o banco.
+  fastify.get(
+    '/api/rooms',
+    { preHandler: [fastify.authenticate as never] },
+    async (request, reply) => {
+      const rooms = await prisma.room.findMany({
+        where: {
+          status: 'ACTIVE',
+          isPrivate: false,
+          OR: [
+            { expiresAt: null },
+            { expiresAt: { gt: new Date() } },
+          ],
+        },
+        select: {
+          id: true,
+          name: true,
+          isPersistent: true,
+          isPrivate: true,
+          maxParticipants: true,
+          inviteToken: true,
+          ownerId: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+      });
 
-    // Expose inviteToken only when the requester is the room owner
-    const roomsPublic = rooms.map((room) => {
-      const isOwner = request.userId && room.ownerId === request.userId;
-      return {
-        id: room.id,
-        name: room.name,
-        isPersistent: room.isPersistent,
-        isPrivate: room.isPrivate,
-        maxParticipants: room.maxParticipants,
-        createdAt: room.createdAt,
-        inviteToken: isOwner ? room.inviteToken : undefined,
-      };
-    });
+      // Expose inviteToken only when the requester is the room owner. ownerId é
+      // usado só para essa checagem e NÃO vai para o payload — a listagem é
+      // pública para qualquer usuário logado e não precisa do dono.
+      const roomsPublic = rooms.map((room) => {
+        const isOwner = request.userId && room.ownerId === request.userId;
+        return {
+          id: room.id,
+          name: room.name,
+          isPersistent: room.isPersistent,
+          isPrivate: room.isPrivate,
+          maxParticipants: room.maxParticipants,
+          createdAt: room.createdAt,
+          inviteToken: isOwner ? room.inviteToken : undefined,
+        };
+      });
 
-    return reply.send({ rooms: roomsPublic });
-  });
+      return reply.send({ rooms: roomsPublic });
+    },
+  );
 
   // POST /api/rooms/:id/rotate-invite (owner only)
   fastify.post<{ Params: { id: string } }>(

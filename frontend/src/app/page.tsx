@@ -6,15 +6,14 @@ import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
-import { Banner } from '@/components/ui/Banner';
 import { Logo } from '@/components/ui/Logo';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { ToastProvider, useToast } from '@/components/ui/Toast';
-import { TailscaleWizard } from '@/components/onboarding/TailscaleWizard';
+import { OnboardingWizard } from '@/components/onboarding/OnboardingWizard';
 import { InviteLinkCard } from '@/components/room/InviteLinkCard';
 import { api, FETCH_RETRY_MAX_ATTEMPTS } from '@/lib/api';
-import { buildTailscaleHttpsUrl } from '@/lib/tailscale';
-import type { RoomListItem, TailscaleStatus } from '@/lib/validation';
+import type { RoomListItem } from '@/lib/validation';
+import { ROOM_NAME_MIN, ROOM_NAME_MAX } from '@/lib/validation';
 
 const STORAGE_KEY = 'scale.onboardingDone';
 const RECENT_ROOMS_KEY = 'scale.recentRooms';
@@ -237,12 +236,15 @@ function HomePageInner() {
   const [mounted, setMounted] = useState(false);
 
   // ─── Create room state ──────────────────────────────────────
+  const [roomName, setRoomName] = useState('');
+  const [nameTouched, setNameTouched] = useState(false);
   const [isPersistent, setIsPersistent] = useState(false);
   const [isPrivate, setIsPrivate] = useState(false);
   const [creating, setCreating] = useState(false);
   // Attempt number of the retry currently in flight, or null (1 = first retry, i.e. "2/3")
   const [createRetry, setCreateRetry] = useState<number | null>(null);
-  const [persistentWarning, setPersistentWarning] = useState(false);
+  // Aviso de que criar sala exige login (qualquer sala, temp ou persistente).
+  const [authWarning, setAuthWarning] = useState(false);
   const [createdInvite, setCreatedInvite] = useState<{ roomId: string; inviteToken?: string } | null>(null);
 
   // ─── Auth + rooms ───────────────────────────────────────────
@@ -251,13 +253,13 @@ function HomePageInner() {
   const [rooms, setRooms] = useState<RoomListItem[]>([]);
   const [roomsLoading, setRoomsLoading] = useState(true);
   const [roomsError, setRoomsError] = useState<string | null>(null);
+  // Anônimo: GET /api/rooms agora responde 401. Em vez de "não foi possível
+  // carregar", mostramos o aviso para entrar e ver as salas da rede.
+  const [roomsRequireAuth, setRoomsRequireAuth] = useState(false);
 
   // ─── Recent rooms ───────────────────────────────────────────
   const [recentRoomIds, setRecentRoomIds] = useState<string[]>([]);
   const [recentRooms, setRecentRooms] = useState<RoomListItem[]>([]);
-
-  // ─── Tailscale status ───────────────────────────────────────
-  const [tailscaleStatus, setTailscaleStatus] = useState<TailscaleStatus | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -265,18 +267,32 @@ function HomePageInner() {
     setOnboardingDone(done);
     setRecentRoomIds(getRecentRooms());
 
-    // Auth
-    api
-      .getMe()
-      .then(() => setIsAuthenticated(true))
-      .catch(() => setIsAuthenticated(false))
-      .finally(() => setAuthChecked(true));
+    // Auth ANTES da listagem: GET /api/rooms agora exige login (401 sem
+    // sessão), então só buscamos as salas quando há sessão válida. Anônimo vê o
+    // aviso com link para /login em vez do erro genérico.
+    let cancelled = false;
 
-    // Active rooms
-    setRoomsLoading(true);
-    api
-      .listRooms()
-      .then(({ rooms: list }) => {
+    const load = async () => {
+      let authed = false;
+      try {
+        await api.getMe();
+        authed = true;
+      } catch {
+        authed = false;
+      }
+      if (cancelled) return;
+      setIsAuthenticated(authed);
+      setAuthChecked(true);
+
+      if (!authed) {
+        setRoomsRequireAuth(true);
+        setRoomsLoading(false);
+        return;
+      }
+
+      try {
+        const { rooms: list } = await api.listRooms();
+        if (cancelled) return;
         setRooms(list);
 
         // Resolve recent rooms from full list
@@ -287,33 +303,49 @@ function HomePageInner() {
             .filter((r): r is RoomListItem => !!r);
           setRecentRooms(matched);
         }
-      })
-      .catch(() => setRoomsError('Não foi possível carregar as salas'))
-      .finally(() => setRoomsLoading(false));
+      } catch {
+        if (!cancelled) setRoomsError('Não foi possível carregar as salas');
+      } finally {
+        if (!cancelled) setRoomsLoading(false);
+      }
+    };
 
-    // Tailscale status (non-blocking)
-    api
-      .getTailscaleStatus()
-      .then(setTailscaleStatus)
-      .catch(() => {});
+    void load();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleTogglePersistent = (checked: boolean) => {
     setIsPersistent(checked);
-    setPersistentWarning(checked && !isAuthenticated);
   };
 
+  const trimmedName = roomName.trim();
+  const nameError =
+    trimmedName.length === 0
+      ? 'Informe um nome para a sala'
+      : trimmedName.length < ROOM_NAME_MIN
+        ? `O nome precisa de pelo menos ${ROOM_NAME_MIN} caracteres`
+        : null;
+
   const handleCreateRoom = async () => {
-    if (isPersistent && !isAuthenticated) {
-      setPersistentWarning(true);
+    setNameTouched(true);
+    // Criar sala (temporária OU persistente) exige login: sem sessão, não chama
+    // a API (que responderia 401) e mostra o aviso com link para entrar.
+    if (!isAuthenticated) {
+      setAuthWarning(true);
       return;
     }
+    if (nameError) return;
+
+    setAuthWarning(false);
     setCreating(true);
     setCreateRetry(null);
     try {
       const result = await api.createRoom(
         {
-          name: `Sala ${Math.random().toString(36).slice(2, 6)}`,
+          name: trimmedName,
           isPersistent,
           isPrivate,
           maxParticipants: 8,
@@ -370,20 +402,18 @@ function HomePageInner() {
   }
 
   if (showWizard) {
-    return <TailscaleWizard onComplete={handleWizardComplete} onSkip={handleWizardSkip} />;
+    return (
+      <OnboardingWizard
+        onComplete={handleWizardComplete}
+        onSkip={handleWizardSkip}
+        isAuthenticated={isAuthenticated}
+      />
+    );
   }
 
   const visibleRooms = isAuthenticated
     ? rooms.filter((r) => r.isPersistent)
     : rooms;
-
-  const tsConnected = !!tailscaleStatus?.tailscaleIp;
-
-  // Banner de contexto inseguro: HTTP na rede Tailscale bloqueia micro/tela.
-  // Só aparece quando há Tailscale IP detectado (acesso via rede mesh).
-  const isInsecureContext = typeof window !== 'undefined' && !window.isSecureContext;
-  const insecureHttpsUrl = buildTailscaleHttpsUrl('/');
-  const showInsecureBanner = isInsecureContext && tsConnected;
 
   return (
     <main id="main-content" className="min-h-screen">
@@ -397,56 +427,14 @@ function HomePageInner() {
             </span>
           </Link>
           <div className="flex items-center gap-3">
-            {/* Tailscale status badge */}
-            {tailscaleStatus && (
-              <div className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition-colors ${
-                tsConnected
-                  ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
-                  : 'bg-amber-500/10 text-amber-300 border-amber-500/20'
-              }`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${tsConnected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
-                {tsConnected ? tailscaleStatus.tailscaleIp : 'Tailscale?'}
-              </div>
-            )}
             <Link href="/tutorial">
               <Button variant="ghost" size="sm">
-                📖 Compartilhar
+                📖 Como usar
               </Button>
             </Link>
           </div>
         </div>
       </header>
-
-      {/* ── Insecure context banner ──────────────────────────── */}
-      {showInsecureBanner && (
-        <div className="max-w-3xl mx-auto px-4 pt-4">
-          <Banner
-            variant="warning"
-            icon="🔒"
-            title="Conexão não segura — microfone/tela bloqueados"
-            description="Você está acessando via HTTP na rede Tailscale. Use HTTPS para que os navegadores liberem microfone e compartilhamento de tela nas chamadas."
-            action={
-              insecureHttpsUrl ? (
-                <a
-                  className="btn-primary text-xs px-3 py-1.5 rounded-lg"
-                  href={insecureHttpsUrl}
-                  aria-label={`Abrir Scale via HTTPS (${insecureHttpsUrl})`}
-                >
-                  Abrir via HTTPS
-                </a>
-              ) : (
-                <Link
-                  href="/tutorial"
-                  className="btn-ghost text-xs px-3 py-1.5 rounded-lg"
-                  aria-label="Ver instruções de configuração HTTPS no guia"
-                >
-                  Ver guia HTTPS
-                </Link>
-              )
-            }
-          />
-        </div>
-      )}
 
       {/* ── Hero ─────────────────────────────────────────────── */}
       <section className="relative overflow-hidden">
@@ -454,11 +442,6 @@ function HomePageInner() {
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-brand-600/5 blur-[120px] rounded-full pointer-events-none" />
 
         <div className="relative max-w-2xl mx-auto px-4 pt-16 pb-10 text-center space-y-5">
-          <div className="inline-flex items-center gap-2 bg-brand-500/10 text-brand-300 text-xs font-medium px-3 py-1.5 rounded-full border border-brand-500/20">
-            <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
-            P2P via Tailscale — Sem exposição pública
-          </div>
-
           <h1 className="text-4xl sm:text-5xl font-bold tracking-tight">
             <span className="bg-gradient-to-r from-white via-white to-slate-400 bg-clip-text text-transparent">
               Chamadas privadas
@@ -480,6 +463,18 @@ function HomePageInner() {
       <section className="max-w-md mx-auto px-4 pb-8 space-y-6">
         <Card variant="glass" className="animate-slide-up">
           <CardContent className="space-y-4">
+            <Input
+              label="Nome da sala"
+              placeholder="Ex: Reunião de equipe"
+              value={roomName}
+              onChange={(e) => setRoomName(e.target.value)}
+              onBlur={() => setNameTouched(true)}
+              maxLength={ROOM_NAME_MAX}
+              required
+              error={nameTouched && nameError ? nameError : undefined}
+              aria-label="Nome da sala"
+            />
+
             <div className="space-y-3">
               <label className="flex items-start gap-3 cursor-pointer select-none group">
                 <input
@@ -493,7 +488,7 @@ function HomePageInner() {
                     Sala persistente
                   </span>
                   <span className="block text-xs text-slate-400">
-                    Continua ativa até ser encerrada pelo dono (exige login).
+                    Continua ativa até ser encerrada pelo dono.
                   </span>
                 </span>
               </label>
@@ -515,12 +510,12 @@ function HomePageInner() {
                 </span>
               </label>
 
-              {persistentWarning && !isAuthenticated && (
+              {authWarning && !isAuthenticated && (
                 <div
                   className="flex items-center justify-between gap-3 bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 animate-fade-in"
                   role="alert"
                 >
-                  <p className="text-xs text-amber-300">Faça login para salas persistentes</p>
+                  <p className="text-xs text-amber-300">Faça login para criar uma sala</p>
                   <Link href="/login" className="text-xs font-medium text-brand-400 hover:text-brand-300 transition-colors shrink-0">
                     Entrar →
                   </Link>
@@ -586,11 +581,26 @@ function HomePageInner() {
               </div>
             )}
 
-            {!roomsLoading && roomsError && (
+            {!roomsLoading && roomsRequireAuth && (
+              <div
+                className="flex items-center justify-between gap-3 bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 animate-fade-in"
+                role="alert"
+              >
+                <p className="text-xs text-amber-300">Faça login para ver as salas da rede</p>
+                <Link
+                  href="/login"
+                  className="text-xs font-medium text-brand-400 hover:text-brand-300 transition-colors shrink-0"
+                >
+                  Entrar →
+                </Link>
+              </div>
+            )}
+
+            {!roomsLoading && !roomsRequireAuth && roomsError && (
               <p className="text-xs text-slate-400 py-4 text-center">{roomsError}</p>
             )}
 
-            {!roomsLoading && !roomsError && visibleRooms.length === 0 && (
+            {!roomsLoading && !roomsRequireAuth && !roomsError && visibleRooms.length === 0 && (
               <EmptyRooms onCreate={handleCreateRoom} />
             )}
 
@@ -635,10 +645,10 @@ function HomePageInner() {
               <span className="text-xl">📖</span>
               <div>
                 <p className="text-sm font-medium text-slate-200 group-hover:text-white transition-colors">
-                  Como compartilhar na rede
+                  Como usar o Scale
                 </p>
                 <p className="text-xs text-slate-400">
-                  Guia Tailscale passo a passo
+                  Guia passo a passo, da conta até a chamada
                 </p>
               </div>
             </div>
@@ -650,7 +660,7 @@ function HomePageInner() {
           <Card variant="subtle" className="animate-slide-up">
             <CardContent className="py-2">
               <Button variant="secondary" onClick={handleShowGuide} className="w-full">
-                Abrir Wizard de configuração
+                Abrir guia de uso
               </Button>
             </CardContent>
           </Card>
@@ -659,7 +669,7 @@ function HomePageInner() {
         {onboardingDone && (
           <div className="text-center">
             <Button variant="ghost" size="sm" onClick={handleShowGuide}>
-              📖 Rever guia de configuração
+              📖 Rever guia de uso
             </Button>
           </div>
         )}

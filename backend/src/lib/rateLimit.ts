@@ -1,9 +1,126 @@
+import { isRateLimitExempt } from './clientIp.js';
+
 interface RateLimitEntry {
   count: number;
   resetAt: number;
 }
 
-const store = new Map<string, RateLimitEntry>();
+/**
+ * Resultado de um balde: além de bloquear ou não, devolve quantos segundos
+ * faltam para a janela reabrir — é o que alimenta o header `Retry-After`.
+ */
+export interface RateLimitResult {
+  limited: boolean;
+  retryAfterSeconds: number;
+}
+
+const NOT_LIMITED: RateLimitResult = { limited: false, retryAfterSeconds: 0 };
+
+/**
+ * Registro de TODOS os baldes (nome + store).
+ *
+ * Necessário desde que as chaves passaram a ser parcialmente controladas pelo
+ * cliente (IP/email por requisição): uma entrada por chave sem expurgo cresce
+ * sem limite. O expurgo (`sweepExpiredEntries`) varre este registro e derruba
+ * toda entrada cuja janela já expirou — uma entrada só vive enquanto a janela
+ * está viva.
+ */
+const registeredBuckets: Array<{ name: string; store: Map<string, RateLimitEntry> }> = [];
+
+/** Cria um store e o registra para o expurgo periódico. */
+function createBucket(name: string): Map<string, RateLimitEntry> {
+  const store = new Map<string, RateLimitEntry>();
+  registeredBuckets.push({ name, store });
+  return store;
+}
+
+/**
+ * Expurgo único: remove de TODOS os baldes as entradas cuja janela expirou.
+ *
+ * Chamado periodicamente (ver SWEEP_INTERVAL_MS) e também de forma preguiçosa
+ * no caminho quente (ver throttledSweep). É O(nº de chaves vivas), barato.
+ *
+ * @param now instante de referência (default: agora) — os testes usam um
+ *            instante futuro para simular janelas expiradas.
+ * @returns quantas entradas foram removidas.
+ */
+export function sweepExpiredEntries(now: number = Date.now()): number {
+  let removed = 0;
+  for (const { store } of registeredBuckets) {
+    for (const [key, entry] of store) {
+      if (now > entry.resetAt) {
+        store.delete(key);
+        removed += 1;
+      }
+    }
+  }
+  return removed;
+}
+
+/**
+ * Tamanho de cada balde registrado — usado pelos testes para provar que o
+ * expurgo esvazia as janelas mortas.
+ */
+export function rateLimitStoreSizes(): Record<string, number> {
+  const sizes: Record<string, number> = {};
+  for (const { name, store } of registeredBuckets) {
+    sizes[name] = store.size;
+  }
+  return sizes;
+}
+
+/**
+ * Motor dos baldes novos: conta a requisição na janela e responde se estourou.
+ * Usado pelos limites por IP/email de auth, upload e TURN.
+ */
+function take(
+  store: Map<string, RateLimitEntry>,
+  key: string,
+  windowMs: number,
+  max: number,
+): RateLimitResult {
+  const now = Date.now();
+  const entry = store.get(key);
+
+  if (!entry || now > entry.resetAt) {
+    store.set(key, { count: 1, resetAt: now + windowMs });
+    return NOT_LIMITED;
+  }
+
+  entry.count++;
+
+  if (entry.count > max) {
+    return {
+      limited: true,
+      retryAfterSeconds: Math.max(1, Math.ceil((entry.resetAt - now) / 1000)),
+    };
+  }
+
+  return NOT_LIMITED;
+}
+
+/**
+ * Balde por IP. Requisições de loopback NÃO são contadas fora de produção
+ * (dev/E2E/proxy local do Next — ver lib/clientIp.ts isRateLimitExempt); em
+ * produção o balde vale sempre, inclusive atrás de um túnel no mesmo host, onde
+ * todos os requests chegam como 127.0.0.1.
+ */
+function ipBucket(
+  store: Map<string, RateLimitEntry>,
+  ip: string,
+  windowMs: number,
+  max: number,
+): RateLimitResult {
+  if (isRateLimitExempt(ip)) return NOT_LIMITED;
+  return take(store, ip, windowMs, max);
+}
+
+/** Zera o balde (ex.: login bem-sucedido libera o usuário). */
+function reset(store: Map<string, RateLimitEntry>, key: string): void {
+  store.delete(key);
+}
+
+const store = createBucket('signal');
 
 const CLEANUP_INTERVAL_MS = 60_000;
 const WINDOW_MS = 1000; // 1 second
@@ -11,16 +128,23 @@ const MAX_REQUESTS = 30;
 
 let lastCleanup = Date.now();
 
-function cleanup(): void {
+/** Expurgo preguiçoso (no máximo 1x por minuto) no caminho quente. */
+function throttledSweep(): void {
   const now = Date.now();
   if (now - lastCleanup < CLEANUP_INTERVAL_MS) return;
   lastCleanup = now;
+  sweepExpiredEntries(now);
+}
 
-  for (const [key, entry] of store) {
-    if (now > entry.resetAt) {
-      store.delete(key);
-    }
-  }
+/**
+ * Expurgo periódico de todos os baldes. `unref()` para o timer não segurar o
+ * processo (dev/scripts/testes) vivo após o trabalho terminar.
+ */
+const sweepTimer = setInterval(() => sweepExpiredEntries(), CLEANUP_INTERVAL_MS);
+sweepTimer.unref();
+
+function cleanup(): void {
+  throttledSweep();
 }
 
 export function isRateLimited(key: string): boolean {
@@ -51,7 +175,7 @@ export function resetRateLimit(key: string): void {
 
 const CHAT_WINDOW_MS = 5_000;
 const CHAT_MAX = 5;
-const chatStore = new Map<string, RateLimitEntry>();
+const chatStore = createBucket('chat');
 
 export function isChatRateLimited(key: string): boolean {
   const now = Date.now();
@@ -81,7 +205,7 @@ export function resetChatRateLimit(key: string): void {
 
 const ROOM_CREATE_WINDOW_MS = 5_000;
 const ROOM_CREATE_MAX = 10;
-const roomCreateStore = new Map<string, RateLimitEntry>();
+const roomCreateStore = createBucket('roomCreate');
 
 export function isRoomCreateRateLimited(key: string): boolean {
   const now = Date.now();
@@ -103,4 +227,95 @@ export function isRoomCreateRateLimited(key: string): boolean {
 
 export function resetRoomCreateRateLimit(key: string): void {
   roomCreateStore.delete(key);
+}
+
+// --- Autenticacao (Etapa 4) ----------------------------------------------
+// O app deixou de ser "Tailnet only" e passou a ser alcancavel por tunel
+// publico: /api/auth/{login,register,refresh} ficam expostos a credential
+// stuffing e a criacao em massa de contas. Cada balde tem sua janela e o par
+// isX/resetX (reset usado no login bem-sucedido). Os baldes por IP ignoram
+// loopback apenas FORA de producao (ver ipBucket e lib/clientIp.ts
+// isRateLimitExempt) — quem valida os 429 nos testes usa um IP publico
+// explicito ou roda com NODE_ENV=production.
+
+// Login: 10 tentativas / 5 min por IP. Segura o flood de um unico host.
+const LOGIN_IP_WINDOW_MS = 5 * 60_000;
+const LOGIN_IP_MAX = 10;
+const loginIpStore = createBucket('loginIp');
+
+export function isLoginRateLimited(ip: string): RateLimitResult {
+  return ipBucket(loginIpStore, ip, LOGIN_IP_WINDOW_MS, LOGIN_IP_MAX);
+}
+
+export function resetLoginRateLimit(ip: string): void {
+  reset(loginIpStore, ip);
+}
+
+// Login: 10 tentativas / 5 min por email normalizado. E o balde que barra o
+// credential stuffing distribuido (mesma conta, varios IPs).
+const LOGIN_EMAIL_WINDOW_MS = 5 * 60_000;
+const LOGIN_EMAIL_MAX = 10;
+const loginEmailStore = createBucket('loginEmail');
+
+export function isLoginEmailRateLimited(email: string): RateLimitResult {
+  return take(loginEmailStore, email, LOGIN_EMAIL_WINDOW_MS, LOGIN_EMAIL_MAX);
+}
+
+export function resetLoginEmailRateLimit(email: string): void {
+  reset(loginEmailStore, email);
+}
+
+// Cadastro: 5 contas / hora por IP. Sem isto um script enche o SQLite de
+// usuarios. Nao resetamos no sucesso: cada cadastro criado E o abuso.
+const REGISTER_WINDOW_MS = 60 * 60_000;
+const REGISTER_MAX = 5;
+const registerStore = createBucket('register');
+
+export function isRegisterRateLimited(ip: string): RateLimitResult {
+  return ipBucket(registerStore, ip, REGISTER_WINDOW_MS, REGISTER_MAX);
+}
+
+export function resetRegisterRateLimit(ip: string): void {
+  reset(registerStore, ip);
+}
+
+// Refresh: 30 / 5 min por IP. Assina um novo JWT (custo de CPU) a cada chamada.
+const REFRESH_WINDOW_MS = 5 * 60_000;
+const REFRESH_MAX = 30;
+const refreshStore = createBucket('refresh');
+
+export function isRefreshRateLimited(ip: string): RateLimitResult {
+  return ipBucket(refreshStore, ip, REFRESH_WINDOW_MS, REFRESH_MAX);
+}
+
+export function resetRefreshRateLimit(ip: string): void {
+  reset(refreshStore, ip);
+}
+
+// Upload de arquivos: 30 / min por IP. Cada upload grava bytes no disco e no
+// SQLite; o balde fica ANTES de bufferizar o multipart.
+const UPLOAD_WINDOW_MS = 60_000;
+const UPLOAD_MAX = 30;
+const uploadStore = createBucket('upload');
+
+export function isFileUploadRateLimited(ip: string): RateLimitResult {
+  return ipBucket(uploadStore, ip, UPLOAD_WINDOW_MS, UPLOAD_MAX);
+}
+
+export function resetFileUploadRateLimit(ip: string): void {
+  reset(uploadStore, ip);
+}
+
+// Credenciais TURN: 30 / min por IP. Hoje ENABLE_TURN=false (so STUN), mas
+// quando ligado o endpoint entrega credenciais do coturn.
+const TURN_WINDOW_MS = 60_000;
+const TURN_MAX = 30;
+const turnStore = createBucket('turn');
+
+export function isTurnRateLimited(ip: string): RateLimitResult {
+  return ipBucket(turnStore, ip, TURN_WINDOW_MS, TURN_MAX);
+}
+
+export function resetTurnRateLimit(ip: string): void {
+  reset(turnStore, ip);
 }

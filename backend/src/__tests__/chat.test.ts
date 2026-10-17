@@ -588,28 +588,39 @@ d3('chat:edit/delete', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Task 14: hardening tailnet — checkTailscaleOrigin middleware
+// Etapa 1: barreira "Tailnet only" removida (plugins/checkTailscale.ts + io.use)
+// Estes testes substituem o suite antigo que validava a barreira: agora
+// garantem o comportamento oposto — acesso público alcança as rotas/handshake.
 // ---------------------------------------------------------------------------
 import { describe as d4, it as it4, beforeAll as ba4, afterAll as aa4 } from 'vitest';
-import { checkTailscaleOrigin, isInSubnet } from '../plugins/checkTailscale.js';
 import { resetEnv } from '../lib/env.js';
+import cookie from '@fastify/cookie';
+import { authPlugin } from '../plugins/auth.js';
+import { roomRoutes } from '../routes/rooms.js';
 
-d4('tailnet hardening', () => {
+d4('acesso sem barreira de rede (túnel HTTPS)', () => {
   let app: Fastify.FastifyInstance;
+  let httpServer: HttpServer;
+  let port: number;
 
   ba4(async () => {
     process.env.JWT_SECRET = 'test-secret-for-unit-tests';
     process.env.ALLOWED_ORIGINS = 'http://localhost:3000';
-    process.env.TAILSCALE_HOST = 'host-dev.tail-abc123.ts.net';
     process.env.NODE_ENV = 'production'; // vitest seta 'test'; aqui queremos sem bypass
-    // getEnv() cacheia em nível de módulo — a suíte d2/d3 (socket) já chamou
-    // createSocketServer e populou o cache SEM TAILSCALE_HOST. resetEnv garante
-    // que checkTailscaleOrigin re-leia o process.env atualizado nesse suite.
+    // getEnv() cacheia em nível de módulo — resetEnv força releitura limpa.
     resetEnv();
+
     app = Fastify({ logger: false, trustProxy: true });
-    app.addHook('onRequest', checkTailscaleOrigin);
+    await app.register(cookie);
+    await app.register(authPlugin);
+    await app.register(roomRoutes);
     app.get('/api/health', async () => ({ status: 'ok' }));
-    await app.ready();
+    await app.listen({ port: 0, host: '127.0.0.1' });
+    httpServer = app.server;
+    const addr = httpServer.address();
+    if (addr && typeof addr === 'object') port = addr.port;
+    // Socket.io sem o middleware io.use "Tailnet only" (removido na Etapa 1).
+    createSocketServer(httpServer);
   });
 
   aa4(async () => {
@@ -618,135 +629,29 @@ d4('tailnet hardening', () => {
     resetEnv();
   });
 
-  it4('isInSubnet cobre a CGNAT 100.64.0.0/10', () => {
-    expect(isInSubnet('100.64.0.1', '100.64.0.0/10')).toBe(true);
-    expect(isInSubnet('100.127.255.255', '100.64.0.0/10')).toBe(true);
-    expect(isInSubnet('100.128.0.1', '100.64.0.0/10')).toBe(false);
-    expect(isInSubnet('8.8.8.8', '100.64.0.0/10')).toBe(false);
-    expect(isInSubnet('::1', '100.64.0.0/10')).toBe(false);
-  });
-
-  it4('rejeita IP público fora tailnet com 403', async () => {
+  it4('REST não responde mais 403 "Tailnet only" para IP público', async () => {
     const res = await app.inject({
-      method: 'GET',
-      url: '/api/rooms/xxx/messages',
+      method: 'POST',
+      url: '/api/rooms',
       headers: { 'x-forwarded-for': '8.8.8.8' },
       remoteAddress: '8.8.8.8',
+      payload: { name: 'Via tunel', isPersistent: false },
     });
-    expect(res.statusCode).toBe(403);
-    expect(JSON.parse(res.payload).error).toMatch(/Tailnet only/i);
+    // Antes: 403 Tailnet only (hook checkTailscaleOrigin). Agora a barreira de IP
+    // sumiu: o request chega ao handler, que exige login → 401 (não 403).
+    expect(res.statusCode).toBe(401);
+    expect(JSON.parse(res.payload).error).toMatch(/Authentication required/i);
   });
 
-  it4('permite IP da CGNAT tailnet (100.64.0.0/10)', async () => {
-    const res = await app.inject({
-      method: 'GET',
-      url: '/api/health',
-      headers: { 'x-forwarded-for': '100.64.0.10' },
-      remoteAddress: '8.8.8.8', // com trustProxy o XFF tem precedência
-    });
-    expect(res.statusCode).toBe(200);
-  });
-
-  it4('permite Host contendo TAILSCALE_HOST (MagicDNS)', async () => {
-    const res = await app.inject({
-      method: 'GET',
-      url: '/api/health',
-      remoteAddress: '8.8.8.8',
-      headers: { host: 'host-dev.tail-abc123.ts.net:3443' },
-    });
-    expect(res.statusCode).toBe(200);
-  });
-
-  it4('permite Origin na allowlist ALLOWED_ORIGINS', async () => {
-    const res = await app.inject({
-      method: 'GET',
-      url: '/api/health',
-      remoteAddress: '8.8.8.8',
-      headers: { origin: 'http://localhost:3000' },
-    });
-    expect(res.statusCode).toBe(200);
-  });
-
-  it4('permite localhost (healthcheck docker / dev)', async () => {
-    // remoteAddress default do inject é 127.0.0.1
-    const res = await app.inject({ method: 'GET', url: '/api/health' });
-    expect(res.statusCode).toBe(200);
-  });
-
-  it4('permite Docker bridge 172.18.x + host interno backend:4000 (rewrite Next.js)', async () => {
-    // frontend container → backend:4000: IP da bridge do Docker + Host interno,
-    // sem Origin (fetch server-to-server). Antes: 403 Tailnet only.
-    const res = await app.inject({
-      method: 'GET',
-      url: '/api/health',
-      remoteAddress: '172.18.0.5',
-      headers: { 'x-forwarded-for': '172.18.0.5', host: 'backend:4000' },
-    });
-    expect(res.statusCode).toBe(200);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Socket.io tailnet barrier — middleware io.use equivalente ao checkTailscaleOrigin
-// ---------------------------------------------------------------------------
-import { describe as d5, it as it5, beforeAll as ba5, afterAll as aa5 } from 'vitest';
-
-d5('socket tailnet hardening', () => {
-  let app5: Fastify.FastifyInstance;
-  let httpServer5: HttpServer;
-  let port5: number;
-
-  ba5(async () => {
-    process.env.JWT_SECRET = 'test-secret-for-unit-tests';
-    process.env.ALLOWED_ORIGINS = 'http://localhost:3000';
-    process.env.NODE_ENV = 'production'; // sem bypass (vitest default é 'test')
-    resetEnv();
-
-    app5 = Fastify({ logger: false });
-    await app5.listen({ port: 0, host: '127.0.0.1' });
-    httpServer5 = app5.server;
-    const addr5 = httpServer5.address();
-    if (addr5 && typeof addr5 === 'object') port5 = addr5.port;
-    createSocketServer(httpServer5);
-  });
-
-  aa5(async () => {
-    await app5?.close();
-    process.env.NODE_ENV = 'test';
-    resetEnv();
-  });
-
-  function connect5(extraHeaders: Record<string, string> = {}): Promise<Socket> {
-    return new Promise((resolve, reject) => {
-      const client = ioClient(`http://127.0.0.1:${port5}`, {
+  it4('Socket.io aceita handshake de IP público (antes: connect_error "Tailnet only")', async () => {
+    const client = await new Promise<Socket>((resolve, reject) => {
+      const c = ioClient(`http://127.0.0.1:${port}`, {
         transports: ['websocket'],
-        extraHeaders,
+        extraHeaders: { 'x-forwarded-for': '8.8.8.8' },
       });
-      client.on('connect', () => resolve(client));
-      client.on('connect_error', (err) => reject(err));
+      c.on('connect', () => resolve(c));
+      c.on('connect_error', (err) => reject(err));
     });
-  }
-
-  it5('rejeita handshake com XFF público (8.8.8.8) → Tailnet only', async () => {
-    await expect(connect5({ 'x-forwarded-for': '8.8.8.8' })).rejects.toThrow(
-      /Tailnet only/i,
-    );
-  });
-
-  it5('permite handshake com XFF na CGNAT tailnet (100.64.0.10)', async () => {
-    const client = await connect5({ 'x-forwarded-for': '100.64.0.10' });
-    expect(client.id).toBeDefined();
-    client.disconnect();
-  });
-
-  it5('permite localhost (remoteAddress 127.0.0.1) mesmo em production', async () => {
-    const client = await connect5();
-    expect(client.id).toBeDefined();
-    client.disconnect();
-  });
-
-  it5('permite handshake com XFF Docker bridge (172.18.0.5)', async () => {
-    const client = await connect5({ 'x-forwarded-for': '172.18.0.5' });
     expect(client.id).toBeDefined();
     client.disconnect();
   });

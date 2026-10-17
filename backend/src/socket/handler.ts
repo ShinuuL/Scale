@@ -3,7 +3,7 @@ import { Server, Socket } from 'socket.io';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../lib/prisma.js';
 import { verifyToken } from '../lib/auth.js';
-import { isTailnetAllowed, normalizeIp } from '../plugins/checkTailscale.js';
+import { getAllowedOrigins } from '../lib/env.js';
 import { isRateLimited, isChatRateLimited } from '../lib/rateLimit.js';
 import { incChatMessages, incChatEdits, incChatDeletes } from '../lib/metrics.js';
 import {
@@ -64,34 +64,13 @@ export function getRoomPeersSnapshot(): Map<string, number> {
 export function createSocketServer(httpServer: HttpServer): Server {
   const io = new Server(httpServer, {
     cors: {
-      origin: process.env.ALLOWED_ORIGINS?.split(',').map((o) => o.trim()) ?? [
-        'http://localhost:3000',
-      ],
+      // Mesma whitelist (ALLOWED_ORIGINS) usada pelo HTTP — fonte única em
+      // lib/env.ts, para o WS e o REST nunca divergirem.
+      origin: getAllowedOrigins(),
       credentials: true,
     },
     pingTimeout: 60000,
     pingInterval: 25000,
-  });
-
-  // Tailnet barrier (critic item 6): Socket.io exige a mesma regra do
-  // checkTailscaleOrigin do REST (isTailnetAllowed) — permitido quando:
-  //   1. IP privado/loopback/CGNAT (LAN, bridge do Docker, tailnet);
-  //   2. `Host` interno do compose/rewrite (backend:4000, localhost:3000…);
-  //   3. `Host` contém `TAILSCALE_HOST` (MagicDNS);
-  //   4. `Origin` está na allowlist `ALLOWED_ORIGINS`;
-  //   5. NODE_ENV=test.
-  // Fora isso → connect_error "Tailnet only" (o REST responde 403 equivalente).
-  io.use((socket, next) => {
-    const rawIp =
-      socket.handshake.headers['x-forwarded-for'] ??
-      socket.handshake.address ??
-      '';
-    const ip = normalizeIp(String(rawIp).split(',')[0]);
-    const host = socket.handshake.headers.host ?? '';
-    const origin = socket.handshake.headers.origin ?? '';
-
-    if (isTailnetAllowed({ ip, host, origin })) return next();
-    return next(new Error('Tailnet only'));
   });
 
   // Optional auth middleware

@@ -1,10 +1,10 @@
 import { z } from 'zod';
-import type { CreateRoomInput, RoomResponse, RoomListItem, AuthResponse, TailscaleStatus, LoginInput, RegisterInput, Metrics } from './validation';
-import { createRoomSchema, authResponseSchema, roomResponseSchema, roomListItemSchema, tailscaleStatusSchema, metricsSchema } from './validation';
+import type { CreateRoomInput, RoomResponse, RoomListItem, AuthResponse, LoginInput, RegisterInput, Metrics } from './validation';
+import { createRoomSchema, authResponseSchema, roomResponseSchema, roomListItemSchema, metricsSchema } from './validation';
 
 function resolveBaseUrl(): string {
   // No browser, use SAME-ORIGIN via Next.js rewrites (/api -> backend:4000) para evitar CORS
-  // Isso funciona tanto para localhost:3000 quanto para 100.119.215.105:3000
+  // Isso funciona tanto para localhost:3000 quanto para um host público/HTTPS atrás de túnel.
   if (typeof window !== 'undefined') {
     return '';
   }
@@ -159,12 +159,6 @@ class ApiClient {
 
   async getMe(): Promise<{ user: { id: string; email: string; name: string; createdAt: string } }> {
     return this.request('/api/auth/me');
-  }
-
-  // ─── Tailscale ──────────────────────────────────────────────
-  async getTailscaleStatus(): Promise<TailscaleStatus> {
-    const data = await this.request<Record<string, unknown>>('/api/tailscale/status');
-    return tailscaleStatusSchema.parse(data);
   }
 
   // ─── Health ─────────────────────────────────────────────────

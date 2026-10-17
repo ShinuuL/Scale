@@ -1,8 +1,9 @@
 import { test, expect, Page } from '@playwright/test';
 import { FRONTEND_URL } from './config';
+import { registerAndCreateRoom } from './auth';
 
 /**
- * Registra console + page errors para diagnóstico ("Tailnet only", RST, etc.).
+ * Registra console + page errors para diagnóstico (RST de conexão, etc.).
  * Também captura respostas HTTP >= 400 com URL, para não confundir um 401
  * legítimo (anônimo em /api/auth/me) com um bug real.
  */
@@ -33,15 +34,13 @@ function attachDiagnostics(page: Page): {
 test('sala conecta e mostra Conectado', async ({ page }) => {
   const diag = attachDiagnostics(page);
 
-  // Cria a sala pelo proxy /api do Next (mesmo caminho que o browser usa),
-  // com URL relativa: o baseURL do Playwright resolve a porta correta.
-  const res = await page.request.post('/api/rooms', {
-    data: { name: 'E2E', isPersistent: false },
-  });
-  expect(res.ok(), `POST /api/rooms falhou: ${res.status()}`).toBeTruthy();
-  const { room } = await res.json();
+  // Cria a sala pelo proxy /api do Next (mesmo caminho que o browser usa), com
+  // URL relativa: o baseURL do Playwright resolve a porta correta. Criar sala
+  // agora EXIGE login — o helper registra um usuário e deixa o cookie HttpOnly
+  // no context do `page` antes do POST /api/rooms.
+  const roomId = await registerAndCreateRoom(page, { name: 'E2E', isPersistent: false });
 
-  await page.goto(`/room/${room.id}`);
+  await page.goto(`/room/${roomId}`);
 
   // Aguarda badge Conectado (socket conectado via Socket.io handshake)
   await expect(page.getByText('Conectado')).toBeVisible({ timeout: 15000 });
@@ -50,10 +49,9 @@ test('sala conecta e mostra Conectado', async ({ page }) => {
   await page.getByRole('button', { name: 'Sair da sala' }).click();
   await expect(page).toHaveURL(`${FRONTEND_URL}/`, { timeout: 5000 });
 
-  // 401 em /api/auth/me e o fluxo PROJETADO para visitante anonimo:
-  // room/[id]/page.tsx usa .catch(() => setCurrentUserId(null)) sob o
-  // comentario "Identify current user (guest if 401)".
-  // Qualquer outra resposta >= 400 continua sendo falha real.
+  // O peer agora está autenticado (register), então /api/auth/me responde 200.
+  // Mantemos o filtro por /api/auth/me por precaução: qualquer outra resposta
+  // >= 400 continua sendo falha real.
   const unexpectedResponses = diag.badResponses.filter((r) => !r.includes('/api/auth/me'));
   expect(
     unexpectedResponses,

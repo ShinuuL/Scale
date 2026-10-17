@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
-import { TailscaleShareTutorial } from '@/components/onboarding/TailscaleShareTutorial';
+import { ShareTutorial } from '@/components/onboarding/ShareTutorial';
 
 export default function TutorialPage() {
   return (
@@ -20,20 +20,20 @@ export default function TutorialPage() {
 
           <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">
             <span className="bg-gradient-to-r from-white via-white to-slate-400 bg-clip-text text-transparent">
-              Como compartilhar na rede
+              Como usar o Scale
             </span>
           </h1>
 
           <p className="text-slate-400 text-base max-w-lg mx-auto leading-relaxed">
-            Guia passo a passo para configurar Tailscale e compartilhar salas do Scale
-            com seus amigos via rede mesh privada.
+            Guia passo a passo para criar sua conta, criar uma sala e chamar os
+            participantes por um link — com áudio e compartilhamento de tela no navegador.
           </p>
         </div>
       </section>
 
       {/* Tutorial content */}
       <section className="max-w-2xl mx-auto px-4 pb-16">
-        <TailscaleShareTutorial />
+        <ShareTutorial />
       </section>
 
       {/* Footer nav */}

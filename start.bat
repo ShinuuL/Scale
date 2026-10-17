@@ -11,19 +11,20 @@ rem    start.bat [ARG]
 rem
 rem  ARGS:
 rem    (sem arg) | up       docker compose up --build -d && docker compose ps
-rem    https                docker compose --profile https up --build -d
+rem    tunnel               docker compose --profile tunnel up --build -d
 rem    mcp                  docker compose --profile mcp up --build -d
-rem    all | https+mcp      docker compose --profile https --profile mcp up --build -d
+rem    all | tunnel+mcp     docker compose --profile tunnel --profile mcp up --build -d
 rem    dev                  npm install && lint && build && docker compose up -d
-rem    down                 docker compose --profile https --profile mcp down
+rem    down                 docker compose --profile tunnel --profile mcp down
 rem    logs                 docker compose logs -f
-rem    check | gates        lint + build + docker compose config (mcp e https)
+rem    check | gates        lint + build + docker compose config (mcp e tunnel)
 rem    help                 mostra esta ajuda
 rem
 rem  PROFILES DO DOCKER COMPOSE:
-rem    https   -> Caddy com TLS (certificado local em certs/ ou tailnet)
+rem    tunnel  -> cloudflared (URL publica efemera *.trycloudflare.com)
 rem    mcp     -> MCP server de consulta de salas (porta 4001)
 rem    turn    -> coturn opcional (nao usado por este script)
+rem  O servico `proxy` (Caddy) faz parte do profile default e sobe sempre.
 rem
 rem  SELF-UPDATE:
 rem    Este .bat e sempre mantido atualizado no repositorio (commits
@@ -43,10 +44,10 @@ if "%ARG%"=="" set "ARG=up"
 rem ----- dispatch -----
 if /i "%ARG%"=="help"      goto :usage
 if /i "%ARG%"=="up"        goto :do_up
-if /i "%ARG%"=="https"     goto :do_https
+if /i "%ARG%"=="tunnel"    goto :do_tunnel
 if /i "%ARG%"=="mcp"       goto :do_mcp
 if /i "%ARG%"=="all"       goto :do_all
-if /i "%ARG%"=="https+mcp" goto :do_all
+if /i "%ARG%"=="tunnel+mcp" goto :do_all
 if /i "%ARG%"=="dev"       goto :do_dev
 if /i "%ARG%"=="down"      goto :do_down
 if /i "%ARG%"=="logs"      goto :do_logs
@@ -71,14 +72,15 @@ if errorlevel 1 (
 docker compose ps
 goto :end
 
-:do_https
+:do_tunnel
 call :prepare
 if errorlevel 1 ( set "EXIT_CODE=1" & goto :end )
 echo.
-echo [Scale] Subindo com profile https (Caddy/TLS)...
-docker compose --profile https up --build -d
+echo [Scale] Subindo com profile tunnel (cloudflared)...
+echo [Scale] A URL publica aparece em: docker compose logs cloudflared
+docker compose --profile tunnel up --build -d
 if errorlevel 1 (
-    echo [Scale] ERRO: docker compose up ^(https^) falhou.
+    echo [Scale] ERRO: docker compose up ^(tunnel^) falhou.
     set "EXIT_CODE=1"
 )
 goto :end
@@ -99,10 +101,11 @@ goto :end
 call :prepare
 if errorlevel 1 ( set "EXIT_CODE=1" & goto :end )
 echo.
-echo [Scale] Subindo com profiles https + mcp...
-docker compose --profile https --profile mcp up --build -d
+echo [Scale] Subindo com profiles tunnel + mcp...
+echo [Scale] A URL publica aparece em: docker compose logs cloudflared
+docker compose --profile tunnel --profile mcp up --build -d
 if errorlevel 1 (
-    echo [Scale] ERRO: docker compose up ^(https+mcp^) falhou.
+    echo [Scale] ERRO: docker compose up ^(tunnel+mcp^) falhou.
     set "EXIT_CODE=1"
 )
 goto :end
@@ -139,8 +142,8 @@ goto :end
 
 :do_down
 echo.
-echo [Scale] Derrubando servicos (profiles https + mcp)...
-docker compose --profile https --profile mcp down
+echo [Scale] Derrubando servicos (profiles tunnel + mcp)...
+docker compose --profile tunnel --profile mcp down
 if errorlevel 1 (
     echo [Scale] ERRO: docker compose down falhou.
     set "EXIT_CODE=1"
@@ -164,9 +167,11 @@ call npm run lint
 if errorlevel 1 set "EXIT_CODE=1"
 call npm run build
 if errorlevel 1 set "EXIT_CODE=1"
+docker compose config
+if errorlevel 1 set "EXIT_CODE=1"
 docker compose --profile mcp config
 if errorlevel 1 set "EXIT_CODE=1"
-docker compose --profile https config
+docker compose --profile tunnel config
 if errorlevel 1 set "EXIT_CODE=1"
 if "%EXIT_CODE%"=="0" (
     echo.
@@ -185,13 +190,13 @@ echo Uso:
 echo   start.bat [ARG]
 echo.
 echo   ^(sem arg^) ^| up        docker compose up --build -d ^&^& docker compose ps
-echo   https                  docker compose --profile https up --build -d
+echo   tunnel                 docker compose --profile tunnel up --build -d
 echo   mcp                    docker compose --profile mcp up --build -d
-echo   all ^| https+mcp         docker compose --profile https --profile mcp up --build -d
+echo   all ^| tunnel+mcp      docker compose --profile tunnel --profile mcp up --build -d
 echo   dev                    npm install ^&^& lint ^&^& build ^&^& docker compose up --build -d
-echo   down                   docker compose --profile https --profile mcp down
+echo   down                   docker compose --profile tunnel --profile mcp down
 echo   logs                   docker compose logs -f
-echo   check ^| gates           lint + build + docker compose config ^(mcp e https^)
+echo   check ^| gates         lint + build + docker compose config ^(mcp e tunnel^)
 echo   help                   mostra esta ajuda
 echo.
 goto :end

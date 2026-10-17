@@ -24,6 +24,9 @@ function uniqueEmail(prefix: string): string {
 
 describe('Room API', () => {
   let app: ReturnType<typeof buildApp> extends Promise<infer T> ? T : never;
+  // Etapa 1: POST /api/rooms exige login. Um usuário fixo criado no beforeAll
+  // fornece o header Authorization usado pelos testes de criação.
+  let auth: { authorization: string };
 
   beforeAll(async () => {
     process.env.JWT_SECRET = 'test-secret-for-unit-tests';
@@ -36,6 +39,18 @@ describe('Room API', () => {
     await prisma.roomMember.deleteMany({});
     await prisma.room.deleteMany({});
     await prisma.user.deleteMany({});
+
+    const reg = await app.inject({
+      method: 'POST',
+      url: '/api/auth/register',
+      payload: {
+        email: uniqueEmail('room-creator'),
+        password: 'pass12345',
+        name: 'Room Creator',
+      },
+    });
+    expect(reg.statusCode).toBe(201);
+    auth = { authorization: `Bearer ${JSON.parse(reg.payload).token}` };
   });
 
   afterAll(async () => {
@@ -43,10 +58,22 @@ describe('Room API', () => {
     await prisma.$disconnect();
   });
 
+  it('POST /api/rooms sem login → 401', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/rooms',
+      payload: { name: 'Sem login', isPersistent: false },
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(JSON.parse(response.payload).error).toBe('Authentication required');
+  });
+
   it('POST /api/rooms creates a room', async () => {
     const response = await app.inject({
       method: 'POST',
       url: '/api/rooms',
+      headers: auth,
       payload: {
         name: 'Test Room',
         isPersistent: false,
@@ -69,6 +96,7 @@ describe('Room API', () => {
     const response = await app.inject({
       method: 'POST',
       url: '/api/rooms',
+      headers: auth,
       payload: {
         name: 'AB',
         isPersistent: false,
@@ -87,6 +115,7 @@ describe('Room API', () => {
         method: 'POST',
         url: '/api/rooms',
         remoteAddress,
+        headers: auth,
         payload: { name, isPersistent: false },
       });
 
@@ -112,6 +141,7 @@ describe('Room API', () => {
     const createRes = await app.inject({
       method: 'POST',
       url: '/api/rooms',
+      headers: auth,
       payload: {
         name: 'Details Room',
         isPersistent: true,
@@ -120,6 +150,7 @@ describe('Room API', () => {
 
     const { room } = JSON.parse(createRes.payload);
 
+    // Não-dono (anônimo): ownerId NÃO é exposto (evita vazar quem é o dono).
     const response = await app.inject({
       method: 'GET',
       url: `/api/rooms/${room.id}`,
@@ -133,6 +164,16 @@ describe('Room API', () => {
     // passwordHash nunca aparece na resposta.
     expect(body.room.hasPassword).toBe(false);
     expect(body.room.passwordHash).toBeUndefined();
+    expect(body.room.ownerId).toBeUndefined();
+
+    // Dono (mesmo token da criação): recebe ownerId.
+    const owned = await app.inject({
+      method: 'GET',
+      url: `/api/rooms/${room.id}`,
+      headers: auth,
+    });
+    expect(owned.statusCode).toBe(200);
+    expect(JSON.parse(owned.payload).room.ownerId).toBeDefined();
   });
 
   it('GET /api/rooms/:id returns 404 for nonexistent room', async () => {
@@ -144,22 +185,36 @@ describe('Room API', () => {
     expect(response.statusCode).toBe(404);
   });
 
+  it('GET /api/rooms sem login → 401', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/rooms',
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(JSON.parse(response.payload).error).toBe('Authentication required');
+  });
+
   it('GET /api/rooms lists active public rooms', async () => {
     // Create some rooms
     await app.inject({
       method: 'POST',
       url: '/api/rooms',
+      headers: auth,
       payload: { name: 'List Room 1', isPersistent: true },
     });
     await app.inject({
       method: 'POST',
       url: '/api/rooms',
+      headers: auth,
       payload: { name: 'List Room 2', isPersistent: true, isPrivate: true },
     });
 
+    // Listar exige login (401 acima); com sessão válida a lista vem.
     const response = await app.inject({
       method: 'GET',
       url: '/api/rooms',
+      headers: auth,
     });
 
     expect(response.statusCode).toBe(200);
@@ -169,6 +224,9 @@ describe('Room API', () => {
     // Should only include public rooms
     for (const r of body.rooms) {
       expect(r.isPrivate).toBe(false);
+      // A listagem nunca expõe o dono (ownerId é usado só internamente para o
+      // gate do inviteToken).
+      expect(r.ownerId).toBeUndefined();
     }
   });
 
@@ -242,6 +300,7 @@ describe('Room API', () => {
       const res = await app.inject({
         method: 'POST',
         url: '/api/rooms',
+        headers: auth,
         payload: { name: 'ShortPw', isPersistent: true, password: 'short' },
       });
       expect(res.statusCode).toBe(400);
@@ -251,6 +310,7 @@ describe('Room API', () => {
       const res = await app.inject({
         method: 'POST',
         url: '/api/rooms',
+        headers: auth,
         payload: { name: 'TempPw', isPersistent: false, password: 'supersec8' },
       });
       expect(res.statusCode).toBe(400);
@@ -260,6 +320,7 @@ describe('Room API', () => {
       const createRes = await app.inject({
         method: 'POST',
         url: '/api/rooms',
+        headers: auth,
         payload: { name: 'NoAuth', isPersistent: true },
       });
       const { room } = JSON.parse(createRes.payload);

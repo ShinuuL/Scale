@@ -7,14 +7,13 @@ import { corsPlugin } from './plugins/cors.js';
 import { helmetPlugin } from './plugins/helmet.js';
 import { authRoutes } from './routes/auth.js';
 import { roomRoutes } from './routes/rooms.js';
-import { tailscaleRoutes } from './routes/tailscale.js';
 import { turnRoutes } from './routes/turn.js';
 import { metricsRoutes } from './routes/metrics.js';
 import { messagesRoutes } from './routes/messages.js';
 import { filesRoutes } from './routes/files.js';
 import { createSocketServer } from './socket/handler.js';
-import { checkTailscaleOrigin } from './plugins/checkTailscale.js';
 import { gcDeletedFiles } from './lib/uploads.js';
+import { resolveTrustProxy } from './lib/clientIp.js';
 import multipart from '@fastify/multipart';
 
 const env = getEnv();
@@ -23,13 +22,15 @@ const server = Fastify({
   logger: {
     level: env.NODE_ENV === 'test' ? 'silent' : 'info',
   },
-  // Confia no X-Forwarded-For dos proxies (Caddy/Next.js): request.ip vira o IP
-  // real do cliente na tailnet, usado pelo checkTailscaleOrigin.
-  trustProxy: true,
+  // TRUST_PROXY decide se o X-Forwarded-For e aceito. O default e `false`
+  // (fail-closed, ver lib/env.ts): sem configuracao explicita nenhum header de
+  // proxy entra na chave dos rate limits — o IP e o do socket. So habilite com o
+  // CIDR do proxy/tunel (ex.: `loopback` ou `127.0.0.1/8` quando o tunel roda na
+  // mesma maquina): ai o Fastify descarta os hops nao confiaveis e sobra o IP
+  // real do cliente (lib/clientIp.ts). `true` confia em TODOS os hops e permete
+  // que qualquer cliente forje X-Forwarded-For.
+  trustProxy: resolveTrustProxy(env.TRUST_PROXY),
 });
-
-// Hardening tailnet: rejeita 403 fora da rede privada (ver checkTailscale.ts).
-server.addHook('onRequest', checkTailscaleOrigin);
 
 // Plugins
 await server.register(cookie);
@@ -41,7 +42,6 @@ await server.register(multipart, { limits: { fileSize: 15_000_000, files: 5 } })
 // Routes
 await server.register(authRoutes);
 await server.register(roomRoutes);
-await server.register(tailscaleRoutes);
 await server.register(turnRoutes);
 await server.register(metricsRoutes);
 await server.register(messagesRoutes);

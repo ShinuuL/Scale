@@ -6,6 +6,8 @@ import { prisma } from '../lib/prisma.js';
 import { sanitizeFilename, detectMagicBytes, saveFile, getQuotaUsage, ALLOWED_MIME_RE, UPLOADS_ROOT } from '../lib/uploads.js';
 import { extractAccessFromQuery, hasRoomAccess } from '../lib/roomAccess.js';
 import { addChatFilesBytes, incQuotaExceeded } from '../lib/metrics.js';
+import { isFileUploadRateLimited } from '../lib/rateLimit.js';
+import { getClientIp } from '../lib/clientIp.js';
 
 /**
  * Nome de exibicao do autor do upload.
@@ -20,6 +22,17 @@ const guestNameFieldSchema = z.string().trim().min(1).max(40);
 
 export async function filesRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.post<{ Params: { id: string } }>('/api/rooms/:id/files', async (request, reply) => {
+    // Rate limit ANTES de bufferizar o multipart: cada upload grava bytes no
+    // disco e linhas no SQLite, entao o flood de multipart e o custo caro. O IP
+    // vem de lib/clientIp.ts (valido atras do proxy /api do Next e do tunel).
+    const uploadLimit = isFileUploadRateLimited(getClientIp(request));
+    if (uploadLimit.limited) {
+      return reply
+        .header('Retry-After', String(uploadLimit.retryAfterSeconds))
+        .code(429)
+        .send({ error: 'Too many uploads. Try again later.' });
+    }
+
     const roomId = request.params.id;
     const room = await prisma.room.findUnique({ where: { id: roomId } });
     if (!room) return reply.code(404).send({ error: 'Room not found' });

@@ -1,5 +1,6 @@
 import { test, expect, Browser, BrowserContext, Page } from '@playwright/test';
 import { FRONTEND_URL } from './config';
+import { registerAndCreateRoom } from './auth';
 
 /**
  * Suite E2E do chat da sala (Fase 2).
@@ -26,14 +27,16 @@ const EMPTY_ZIP = Buffer.from('504b0506' + '00'.repeat(18), 'hex');
 
 type Peer = { context: BrowserContext; page: Page };
 
-/** Cria sala pela API, no mesmo proxy /api que o browser usa. */
+/**
+ * Cria sala pela API, no mesmo proxy /api que o browser usa.
+ * Criar sala agora exige login (401 sem sessão): o helper registra um usuário
+ * e deixa o cookie HttpOnly no context do `page` antes do POST /api/rooms.
+ */
 async function createRoom(page: Page, opts: { isPersistent: boolean }): Promise<string> {
-  const res = await page.request.post('/api/rooms', {
-    data: { name: `E2E chat ${Date.now()}`, isPersistent: opts.isPersistent },
+  return registerAndCreateRoom(page, {
+    name: `E2E chat ${Date.now()}`,
+    isPersistent: opts.isPersistent,
   });
-  expect(res.ok(), `POST /api/rooms -> ${res.status()} ${await res.text()}`).toBeTruthy();
-  const body = (await res.json()) as { room: { id: string } };
-  return body.room.id;
 }
 
 /** Abre um contexto isolado (cookies/storage próprios) com baseURL e microfone. */
@@ -321,14 +324,18 @@ test.describe('chat da sala', () => {
 
   test('sala privada nega upload de nao-membro (403)', async ({ browser }) => {
     const a = await peer(browser);
-    const res = await a.page.request.post('/api/rooms', {
-      data: { name: `E2E privada ${Date.now()}`, isPersistent: true, isPrivate: true },
+    // Sala privada criada pelo dono autenticado (login obrigatório para criar).
+    const roomId = await registerAndCreateRoom(a.page, {
+      name: `E2E privada ${Date.now()}`,
+      isPersistent: true,
+      isPrivate: true,
     });
-    expect(res.ok()).toBeTruthy();
-    const { room } = (await res.json()) as { room: { id: string } };
 
-    // visitante anonimo, sem inviteToken/password
-    const upload = await a.page.request.post(`/api/rooms/${room.id}/files`, {
+    // visitante anonimo em CONTEXTO SEPARADO (sem cookie de sessão), sem
+    // inviteToken/password -> não é membro (o dono seria aceito, então o upload
+    // precisa vir de fora da sessão do dono).
+    const guest = await peer(browser);
+    const upload = await guest.page.request.post(`/api/rooms/${roomId}/files`, {
       multipart: {
         file: {
           name: 'invasao.zip',

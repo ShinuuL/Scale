@@ -1,44 +1,49 @@
-# Caddyfile for Scale HTTPS via Tailscale cert
-# Usage: docker compose --profile https up --build
-# Requires certs/server.crt + certs/server.key (see certs/README.md)
+# Caddyfile — roteador INTERNO do Scale (HTTP puro, sem TLS)
 #
-# TLS: o certificado Tailscale (gerado com `tailscale cert <fqdn>` e copiado para
-# certs/) cobre APENAS o FQDN completo, ex: desktop-sie986u.taile13b10.ts.net.
-# Acessar https://<short-name>:3443 (ex: https://DESKTOP-SIE986U:3443) dispara
-# warning de certificado no browser, pois o SAN do cert nao inclui o short name.
-# RECOMENDADO: usar sempre o FQDN completo — https://desktop-sie986u.taile13b10.ts.net:3443
+# Papel novo (Etapa 5): este Caddy NAO termina TLS e NAO esta preso a nenhuma
+# interface privada. Ele e o roteador interno que fica ATRAS do tunel: recebe
+# HTTP em :8080 e distribui por path entre frontend e backend. Quem termina o
+# TLS e o cloudflared (ver docker-compose.yml, profile `tunnel` e docs/tunnel-setup.md).
 #
-# Hardening (Etapa 5 — critic): consultar docs/tailscale-setup.md para o fluxo
-# completo. Resumo dos dois lugares onde o tailnet e enforce:
-#  1. Caddy: `bind {$TAILSCALE_IP}` abaixo fixa o listener na interface Tailscale
-#     (ou 127.0.0.1 se TAILSCALE_IP vazio). A exposicao externa do :443 interno
-#     no docker-compose.yml ja usa ["${TAILSCALE_IP:-127.0.0.1}:3443:443"], e a
-#     variavel TAILSCALE_IP agora e repassada ao containe via environment.
-#     O container em rede bridge nao consegue bindar o IP Tailscale do host
-#     (100.64.0.0/10 nao existe nas interfaces do container) — por isso o bind
-#     do Caddy container precisa de network_mode: host OU do docker-compose
-#     `extra_hosts`. Na doc explicamos que no perfil https o caddy usa
-#     network_mode: host (comentado no compose quando se preferir bridge+proxy).
-#  2. Backend middlewares: checkTailscaleOrigin (REST, 403 Tailnet only) e o
-#     io.use tailnet (Socket.io, connect_error "Tailnet only") para conexoes que
-#     cheguem por qualquer outra via.
+# Por que o proxy interno existe: o tunel rapido do cloudflared aponta para um
+# UNICO servico upstream. Como o app precisa de DOIS alvos (frontend + backend),
+# o roteamento por path precisa acontecer aqui. Em especial, /socket.io precisa
+# chegar ao backend COM O PREFIXO INTACTO.
+#
+# Cuidado com `handle_path`: ele REMOVE o prefixo casado antes do reverse_proxy.
+# Com `handle_path /socket.io/*` o backend recebe `/?EIO=4&transport=polling` e
+# responde 404 ("Route GET:/?EIO=4&transport=polling not found"). O correto aqui
+# e `handle`, que casa o path mas preserva a URI original.
+#
+# O Host original NAO e reescrito: o cliente fala same-origin com o tunel e o
+# backend usa isso para CORS/rate-limit (ver TRUST_PROXY no docker-compose.yml).
+#
+# IP REAL DO CLIENTE (client IP parsing):
+# sem o bloco global abaixo, o Caddy IGNORA o X-Forwarded-For que recebe e o
+# SUBSTITUI pelo IP do peer imediato — que, atras do tunel, e o container do
+# cloudflared (172.28.0.5, privado). Resultado: TODO o trafego do tunel cai na
+# MESMA chave de rate limit (ex.: 5 cadastros/hora para o mundo inteiro). A doc
+# do reverse_proxy e explicita: configure `servers > trusted_proxies` para que o
+# Caddy ANEXE o IP real em vez de descarta-lo, e o faca no bloco global para
+# valer em todos os proxy handlers do servidor.
+#
+# Confiamos APENAS no cloudflared (172.28.0.5/32): e o unico peer legitimo a
+# frente do Caddy. NAO incluir a subnet inteira (172.28.0.0/16) nem o gateway
+# (172.28.0.1) — confiar neles permitiria a qualquer host da rede forjar o
+# X-Forwarded-For e furar os baldes por IP.
+{
+	servers {
+		trusted_proxies static 172.28.0.5/32
+	}
+}
 
-# {{{$TAILSCALE_IP}}: IP da interface Tailscale (CGNAT 100.x). Se vazio, cai para
-# 127.0.0.1 (somente localhost — dev/CI sem Tailscale). Definido via env do
-# docker-compose caddy service (TAILSCALE_IP=${TAILSCALE_IP:-127.0.0.1}).
-{$TAILSCALE_IP:127.0.0.1}
-
-:443 {
-	bind {$TAILSCALE_IP}
-
-	tls /certs/server.crt /certs/server.key
-
-	# Socket.io signaling -> backend (Next.js rewrites do NOT proxy WebSockets)
-	handle_path /socket.io/* {
+:8080 {
+	# socket.io signaling -> backend, preservando o path /socket.io (handle, nao handle_path)
+	handle /socket.io/* {
 		reverse_proxy backend:4000
 	}
 
-	# Everything else -> frontend (pages, API via same-origin rewrites)
+	# todo o resto -> frontend (paginas e /api via rewrite same-origin)
 	handle {
 		reverse_proxy frontend:3000
 	}

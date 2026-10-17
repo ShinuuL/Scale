@@ -2,7 +2,7 @@
 
 ## Conceito
 
-**Scale** (escama de dragão) — cada peer na mesh é uma escama. Escamas se sobrepõem, se protegem mutuamente e formam uma camada resistente. Assim como uma malha de escamas protege o dragão, a mesh de peers protege a privacidade dos participantes com criptografia ponta-a-ponta via Tailscale.
+**Scale** (escama de dragão) — cada peer na mesh é uma escama. Escamas se sobrepõem, se protegem mutuamente e formam uma camada resistente. Assim como uma malha de escamas protege o dragão, a mesh de peers protege a privacidade dos participantes: a mídia da chamada vai de ponta a ponta por WebRTC (SRTP), e o acesso ao app se dá por um túnel cloudflared, protegido por autenticação (JWT em cookie HttpOnly) e rate limit por IP real do cliente.
 
 ### Metáforas
 
@@ -10,7 +10,7 @@
 |----------|-------------|
 | **Escama** | Peer na mesh — individual, protegido, conectado |
 | **Sobreposição** | Redundância e resiliência da mesh |
-| **Proteção** | Criptografia WireGuard + WebRTC SRTP |
+| **Proteção** | WebRTC SRTP ponta a ponta + autenticação e rate limit na borda do túnel |
 | **Dragão** | O sistema como um todo — forte, ágil, impossível de derrubar |
 
 ## Paleta de Cores
