@@ -4,19 +4,20 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
+import { Icon, type IconName } from '@/components/ui/Icon';
 
 interface Step {
   id: number;
-  icon: string;
+  icon: IconName;
   title: string;
 }
 
 const STEPS: Step[] = [
-  { id: 1, icon: '🔐', title: 'Criar conta' },
-  { id: 2, icon: '🎙️', title: 'Criar uma sala' },
-  { id: 3, icon: '🔗', title: 'Copiar o link' },
-  { id: 4, icon: '🎤', title: 'Permitir mic e tela' },
-  { id: 5, icon: '👥', title: 'Entrar na chamada' },
+  { id: 1, icon: 'key', title: 'Criar conta' },
+  { id: 2, icon: 'mic', title: 'Criar uma sala' },
+  { id: 3, icon: 'link', title: 'Copiar o link' },
+  { id: 4, icon: 'mic', title: 'Permitir mic e tela' },
+  { id: 5, icon: 'users', title: 'Entrar na chamada' },
 ];
 
 export function ShareTutorial() {
@@ -52,9 +53,12 @@ export function ShareTutorial() {
                   ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
                   : 'text-slate-400 border border-transparent hover:text-slate-300 hover:border-white/10'
             }`}
+            aria-label={s.title}
             aria-current={activeStep === s.id ? 'step' : undefined}
           >
-            <span className="text-base">{activeStep > s.id ? '✓' : s.icon}</span>
+            <span className="text-base">
+              {activeStep > s.id ? <Icon name="check" /> : <Icon name={s.icon} />}
+            </span>
             <span className="hidden sm:inline">{s.title}</span>
           </button>
         ))}
@@ -66,7 +70,7 @@ export function ShareTutorial() {
           <Card variant="glass">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <span className="text-2xl">🔐</span>
+                <Icon name="key" size={24} />
                 Crie sua conta ou entre
               </CardTitle>
               <CardDescription>
@@ -90,7 +94,7 @@ export function ShareTutorial() {
               </div>
 
               <div className="flex justify-end">
-                <Button onClick={() => setActiveStep(2)}>Continuar →</Button>
+                <Button onClick={() => setActiveStep(2)}>Continuar <Icon name="arrowRight" /></Button>
               </div>
             </CardContent>
           </Card>
@@ -103,7 +107,7 @@ export function ShareTutorial() {
           <Card variant="glass">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <span className="text-2xl">🎙️</span>
+                <Icon name="mic" size={24} />
                 Crie uma sala e dê um nome
               </CardTitle>
               <CardDescription>
@@ -129,7 +133,7 @@ export function ShareTutorial() {
               </div>
 
               <div className="glass-subtle p-3 rounded-xl flex items-start gap-2">
-                <span className="text-lg flex-shrink-0">💡</span>
+                <span className="flex-shrink-0"><Icon name="lightbulb" size={18} /></span>
                 <div>
                   <p className="text-xs text-slate-300 font-medium">Sala temporária ou persistente?</p>
                   <p className="text-xs text-slate-400">
@@ -141,8 +145,8 @@ export function ShareTutorial() {
               </div>
 
               <div className="flex justify-between">
-                <Button variant="ghost" onClick={() => setActiveStep(1)}>← Voltar</Button>
-                <Button onClick={() => setActiveStep(3)}>Continuar →</Button>
+                <Button variant="ghost" onClick={() => setActiveStep(1)}><Icon name="arrowLeft" /> Voltar</Button>
+                <Button onClick={() => setActiveStep(3)}>Continuar <Icon name="arrowRight" /></Button>
               </div>
             </CardContent>
           </Card>
@@ -155,7 +159,7 @@ export function ShareTutorial() {
           <Card variant="glass">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <span className="text-2xl">🔗</span>
+                <Icon name="link" size={24} />
                 Copie o link e envie para os participantes
               </CardTitle>
               <CardDescription>
@@ -177,7 +181,13 @@ export function ShareTutorial() {
                     aria-label="Link da sala"
                   />
                   <Button variant="secondary" size="sm" onClick={copyShareLink}>
-                    {copied ? '✓ Copiado' : 'Copiar'}
+                    {copied ? (
+                      <>
+                        <Icon name="check" /> Copiado
+                      </>
+                    ) : (
+                      'Copiar'
+                    )}
                   </Button>
                 </div>
                 <p className="text-xs text-slate-400">
@@ -189,8 +199,8 @@ export function ShareTutorial() {
               </div>
 
               <div className="flex justify-between">
-                <Button variant="ghost" onClick={() => setActiveStep(2)}>← Voltar</Button>
-                <Button onClick={() => setActiveStep(4)}>Continuar →</Button>
+                <Button variant="ghost" onClick={() => setActiveStep(2)}><Icon name="arrowLeft" /> Voltar</Button>
+                <Button onClick={() => setActiveStep(4)}>Continuar <Icon name="arrowRight" /></Button>
               </div>
             </CardContent>
           </Card>
@@ -203,7 +213,7 @@ export function ShareTutorial() {
           <Card variant="glass">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <span className="text-2xl">🎤</span>
+                <Icon name="mic" size={24} />
                 Permita microfone e compartilhamento de tela
               </CardTitle>
               <CardDescription>
@@ -230,7 +240,7 @@ export function ShareTutorial() {
               </div>
 
               <div className="glass-subtle p-3 rounded-xl flex items-start gap-2">
-                <span className="text-lg flex-shrink-0">🔒</span>
+                <span className="flex-shrink-0"><Icon name="lock" size={18} /></span>
                 <div>
                   <p className="text-xs text-slate-300 font-medium">Precisa de HTTPS</p>
                   <p className="text-xs text-slate-400">
@@ -242,8 +252,8 @@ export function ShareTutorial() {
               </div>
 
               <div className="flex justify-between">
-                <Button variant="ghost" onClick={() => setActiveStep(3)}>← Voltar</Button>
-                <Button onClick={() => setActiveStep(5)}>Continuar →</Button>
+                <Button variant="ghost" onClick={() => setActiveStep(3)}><Icon name="arrowLeft" /> Voltar</Button>
+                <Button onClick={() => setActiveStep(5)}>Continuar <Icon name="arrowRight" /></Button>
               </div>
             </CardContent>
           </Card>
@@ -256,7 +266,7 @@ export function ShareTutorial() {
           <Card variant="glass">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <span className="text-2xl">👥</span>
+                <Icon name="users" size={24} />
                 Todos entram na chamada
               </CardTitle>
               <CardDescription>
@@ -277,7 +287,8 @@ export function ShareTutorial() {
                     <span className="text-emerald-400">Cada um</span> abre o link e permite o microfone
                   </p>
                   <p className="text-slate-400">
-                    <span className="text-emerald-400">WebRTC</span> conecta todos direto (P2P) → <span className="text-emerald-400">✓ Pronto!</span>
+                    <span className="text-emerald-400">WebRTC</span> conecta todos direto (P2P){' '}
+                    <Icon name="arrowRight" /> <span className="text-emerald-400">Pronto!</span>
                   </p>
                 </div>
               </div>
@@ -286,24 +297,24 @@ export function ShareTutorial() {
                 <p className="text-sm font-medium text-slate-200">Checklist antes da chamada:</p>
                 <ul className="space-y-2">
                   <li className="flex items-start gap-2 text-sm text-slate-300">
-                    <span className="text-emerald-400 mt-0.5">✓</span>
+                    <span className="text-emerald-400 mt-0.5"><Icon name="check" /></span>
                     <span>Todos abriram o link da sala</span>
                   </li>
                   <li className="flex items-start gap-2 text-sm text-slate-300">
-                    <span className="text-emerald-400 mt-0.5">✓</span>
+                    <span className="text-emerald-400 mt-0.5"><Icon name="check" /></span>
                     <span>Permissão de microfone concedida no navegador</span>
                   </li>
                   <li className="flex items-start gap-2 text-sm text-slate-300">
-                    <span className="text-emerald-400 mt-0.5">✓</span>
+                    <span className="text-emerald-400 mt-0.5"><Icon name="check" /></span>
                     <span>Página aberta em HTTPS (ou localhost)</span>
                   </li>
                 </ul>
               </div>
 
               <div className="flex justify-between">
-                <Button variant="ghost" onClick={() => setActiveStep(4)}>← Voltar</Button>
+                <Button variant="ghost" onClick={() => setActiveStep(4)}><Icon name="arrowLeft" /> Voltar</Button>
                 <Link href="/">
-                  <Button>Criar minha primeira sala →</Button>
+                  <Button>Criar minha primeira sala <Icon name="arrowRight" /></Button>
                 </Link>
               </div>
             </CardContent>
@@ -317,13 +328,13 @@ export function ShareTutorial() {
           href="/docs"
           className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-300 hover:bg-white/10 hover:text-white transition-all"
         >
-          📖 Ver documentação completa
+          <Icon name="book" /> Ver documentação completa
         </Link>
         <Link
           href="/"
           className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-600/20 border border-brand-500/30 text-sm text-brand-300 hover:bg-brand-600/30 transition-all"
         >
-          🎙️ Ir para o Scale
+          <Icon name="mic" /> Ir para o Scale
         </Link>
       </div>
     </div>

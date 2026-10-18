@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Button } from '@/components/ui/Button';
+import { Icon } from '@/components/ui/Icon';
 
 interface RoomControlsProps {
   isMuted: boolean;
@@ -60,7 +61,7 @@ export function RoomControls({
         aria-pressed={!isMuted}
         title={isMuted ? 'Ativar microfone' : 'Desativar microfone'}
       >
-        <span aria-hidden="true">{isMuted ? '🔇' : '🎤'}</span>
+        <span aria-hidden="true">{isMuted ? <Icon name="micOff" /> : <Icon name="mic" />}</span>
         <span className="hidden sm:inline">{isMuted ? 'Mudo' : 'Mic'}</span>
       </Button>
 
@@ -73,7 +74,7 @@ export function RoomControls({
         aria-pressed={!isDeafened}
         title={isDeafened ? 'Ativar áudio' : 'Desativar áudio'}
       >
-        <span aria-hidden="true">{isDeafened ? '🔕' : '🔊'}</span>
+        <span aria-hidden="true">{isDeafened ? <Icon name="speakerOff" /> : <Icon name="speaker" />}</span>
         <span className="hidden sm:inline">{isDeafened ? 'Surdo' : 'Áudio'}</span>
       </Button>
 
@@ -86,7 +87,9 @@ export function RoomControls({
         aria-pressed={isScreenSharing}
         title={isScreenSharing ? 'Parar compartilhar tela' : 'Compartilhar tela'}
       >
-        <span aria-hidden="true">{isScreenSharing ? '🖥️' : '🖥️'}</span>
+        <span aria-hidden="true">
+          <Icon name="monitor" />
+        </span>
         <span className="hidden sm:inline">{isScreenSharing ? 'Parar tela' : 'Tela'}</span>
       </Button>
 
@@ -98,7 +101,7 @@ export function RoomControls({
           aria-label="Copiar link de convite"
           title="Copiar link de convite"
         >
-          <span aria-hidden="true">{copied ? '✓' : '🔗'}</span>
+          <span aria-hidden="true">{copied ? <Icon name="check" /> : <Icon name="link" />}</span>
           <span className="hidden sm:inline">{copied ? 'Copiado' : 'Link'}</span>
         </Button>
       )}
@@ -112,7 +115,7 @@ export function RoomControls({
           aria-pressed={showChat}
           title={showChat ? 'Fechar chat' : 'Abrir chat'}
         >
-          <span aria-hidden="true">💬</span>
+          <span aria-hidden="true"><Icon name="chat" /></span>
           <span className="hidden sm:inline">Chat</span>
           {chatUnread > 0 && !showChat && (
             <span className="badge bg-amber-500 text-forest-950">
@@ -130,7 +133,7 @@ export function RoomControls({
         onClick={onLeave}
         aria-label="Sair da sala"
       >
-        <span aria-hidden="true">📞</span>
+        <span aria-hidden="true"><Icon name="phone" /></span>
         <span className="hidden sm:inline">Sair</span>
       </Button>
     </div>

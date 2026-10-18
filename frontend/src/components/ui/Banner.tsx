@@ -2,6 +2,7 @@
 
 import type { ReactNode } from 'react';
 import { clsx } from 'clsx';
+import { Icon, type IconName } from './Icon';
 
 export type BannerVariant = 'info' | 'warning' | 'error' | 'success';
 
@@ -45,11 +46,11 @@ const variantClasses: Record<
   },
 };
 
-const defaultIcons: Record<BannerVariant, string> = {
-  info: 'ℹ️',
-  warning: '⚠️',
-  error: '⛔',
-  success: '✅',
+const defaultIcons: Record<BannerVariant, IconName> = {
+  info: 'info',
+  warning: 'warning',
+  error: 'ban',
+  success: 'checkCircle',
 };
 
 export function Banner({
@@ -73,8 +74,8 @@ export function Banner({
         className,
       )}
     >
-      <span className={clsx('text-lg flex-shrink-0 leading-none', styles.text)} aria-hidden="true">
-        {icon ?? defaultIcons[variant]}
+      <span className={clsx('flex-shrink-0 leading-none', styles.text)} aria-hidden="true">
+        {icon ?? <Icon name={defaultIcons[variant]} size={18} />}
       </span>
       <div className={clsx('flex-1 min-w-0 text-sm', styles.text)}>
         {title && <p className="font-medium">{title}</p>}

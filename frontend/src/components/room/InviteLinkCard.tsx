@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Button } from '@/components/ui/Button';
+import { Icon } from '@/components/ui/Icon';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
 
 interface InviteLinkCardProps {
@@ -74,7 +75,13 @@ export function InviteLinkCard({
             aria-label="Copiar link de convite"
             disabled={!inviteUrl}
           >
-            {copied ? '✓ Copiado' : 'Copiar'}
+            {copied ? (
+              <>
+                <Icon name="check" /> Copiado
+              </>
+            ) : (
+              'Copiar'
+            )}
           </Button>
         </div>
       </CardContent>

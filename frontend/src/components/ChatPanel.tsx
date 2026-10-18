@@ -5,6 +5,7 @@ import type { Socket } from 'socket.io-client';
 import type { ChatApi, ChatMessage } from '@/hooks/useChat';
 import { chatMessageClientSchema, fileClientSchema } from '@/lib/validation';
 import { ChatMessageItem } from '@/components/ChatMessageItem';
+import { Icon, type IconName } from '@/components/ui/Icon';
 
 const MENTION_TOKEN_RE = /@(\w[\w .-]{0,49})/g;
 const MENTION_TRAILING_RE = /@(\w[\w .-]{0,49})$/;
@@ -15,12 +16,12 @@ function extractMentions(text: string, peers: string[]): string[] {
   return matches.filter((name) => peers.includes(name)).slice(0, 8);
 }
 
-function mimeIcon(mime: string): string {
-  if (mime.startsWith('image/')) return '🖼️';
-  if (mime === 'application/pdf') return '📄';
-  if (mime.startsWith('audio/')) return '🎵';
-  if (mime === 'application/zip') return '🗜️';
-  return '📎';
+function mimeIconName(mime: string): IconName {
+  if (mime.startsWith('image/')) return 'image';
+  if (mime === 'application/pdf') return 'document';
+  if (mime.startsWith('audio/')) return 'music';
+  if (mime === 'application/zip') return 'archive';
+  return 'paperclip';
 }
 
 function formatFileSize(bytes: number): string {
@@ -210,9 +211,9 @@ export function ChatPanel({
         <button
           onClick={onClose}
           aria-label="Fechar chat"
-          className="ml-auto text-slate-400 hover:text-white text-lg leading-none"
+          className="ml-auto text-slate-400 hover:text-white leading-none"
         >
-          ✕
+          <Icon name="close" />
         </button>
       </header>
 
@@ -262,7 +263,7 @@ export function ChatPanel({
               className="text-xs bg-white/10 px-2 py-1 rounded flex items-center gap-1.5 text-slate-300"
               data-testid="file-chip"
             >
-              <span aria-hidden="true">{mimeIcon(file.type)}</span>
+              <span aria-hidden="true"><Icon name={mimeIconName(file.type)} size={14} /></span>
               <span className="max-w-[140px] truncate">{file.name}</span>
               <span className="text-slate-400">{formatFileSize(file.size)}</span>
               <button
@@ -270,7 +271,7 @@ export function ChatPanel({
                 aria-label={`Remover arquivo ${file.name}`}
                 className="text-slate-400 hover:text-white"
               >
-                ✕
+                <Icon name="close" size={14} />
               </button>
             </span>
           ))}
@@ -335,7 +336,7 @@ export function ChatPanel({
           </span>
           <div className="flex items-center gap-2">
             <label className="text-xs px-2 py-1.5 bg-white/10 rounded cursor-pointer text-slate-300 hover:bg-white/15">
-              <span aria-hidden="true">📎</span> Anexar
+              <span aria-hidden="true"><Icon name="paperclip" size={14} /></span> Anexar
               <input
                 type="file"
                 multiple

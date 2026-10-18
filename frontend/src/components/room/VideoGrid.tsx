@@ -3,6 +3,7 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { clsx } from 'clsx';
 import { Button } from '@/components/ui/Button';
+import { Icon } from '@/components/ui/Icon';
 import { copyText } from '@/lib/clipboard';
 import type { PeerConnection } from '@/hooks/useWebRTC';
 
@@ -145,7 +146,13 @@ export function VideoGrid({
               Você está sozinho — copie o link e convide alguém
             </p>
             <Button variant="secondary" size="sm" onClick={handleCopyInvite}>
-              {copyState === 'copied' ? '✓ Link copiado' : 'Copiar link'}
+              {copyState === 'copied' ? (
+                <>
+                  <Icon name="check" /> Link copiado
+                </>
+              ) : (
+                'Copiar link'
+              )}
             </Button>
           </div>
         )}

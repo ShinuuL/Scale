@@ -156,7 +156,7 @@ test.describe('chat da sala', () => {
     await waitConnected(a.page);
     await expect(a.page.getByTestId('chat-panel')).toBeVisible();
 
-    // fecha pelo ✕ do painel e confirma que permanece fechado apos reload
+    // fecha pelo botao "Fechar chat" do painel e confirma que permanece fechado apos reload
     await a.page
       .getByTestId('chat-panel')
       .getByRole('button', { name: 'Fechar chat' })

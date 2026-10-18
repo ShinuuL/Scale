@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
+import { Icon } from '@/components/ui/Icon';
 import { ShareTutorial } from '@/components/onboarding/ShareTutorial';
 
 export default function TutorialPage() {
@@ -40,7 +41,7 @@ export default function TutorialPage() {
       <section className="max-w-2xl mx-auto px-4 pb-24 text-center">
         <Link href="/" className="inline-block">
           <Button variant="ghost" size="sm">
-            ← Voltar ao Scale
+            <Icon name="arrowLeft" /> Voltar ao Scale
           </Button>
         </Link>
       </section>

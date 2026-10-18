@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Logo } from '@/components/ui/Logo';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { ToastProvider, useToast } from '@/components/ui/Toast';
+import { Icon } from '@/components/ui/Icon';
 import { OnboardingWizard } from '@/components/onboarding/OnboardingWizard';
 import { InviteLinkCard } from '@/components/room/InviteLinkCard';
 import { api, FETCH_RETRY_MAX_ATTEMPTS } from '@/lib/api';
@@ -153,7 +154,7 @@ function SkeletonCard() {
 function EmptyRooms({ onCreate }: { onCreate: () => void }) {
   return (
     <div className="text-center py-8 space-y-4">
-      <div className="text-5xl">🎙️</div>
+      <div className="text-5xl"><Icon name="mic" size={48} /></div>
       <div className="space-y-2">
         <p className="text-sm font-medium text-slate-300">Nenhuma sala ativa</p>
         <p className="text-xs text-slate-400 max-w-xs mx-auto">
@@ -208,8 +209,11 @@ function RoomCard({ room, onEnter }: { room: RoomListItem; onEnter: () => void }
             onClick={handleCopyLink}
             className="text-xs text-slate-400 hover:text-brand-400 transition-colors px-2 py-1 rounded-lg hover:bg-white/5"
             title="Copiar link"
+            aria-label={copied ? 'Link copiado' : 'Copiar link'}
           >
-            {copied ? '✓' : '🔗'}
+            <span aria-hidden="true">
+              {copied ? <Icon name="check" size={14} /> : <Icon name="link" size={14} />}
+            </span>
           </button>
           <Button variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); onEnter(); }}>
             Entrar
@@ -429,7 +433,7 @@ function HomePageInner() {
           <div className="flex items-center gap-3">
             <Link href="/tutorial">
               <Button variant="ghost" size="sm">
-                📖 Como usar
+                <Icon name="book" /> Como usar
               </Button>
             </Link>
           </div>
@@ -516,8 +520,11 @@ function HomePageInner() {
                   role="alert"
                 >
                   <p className="text-xs text-amber-300">Faça login para criar uma sala</p>
-                  <Link href="/login" className="text-xs font-medium text-brand-400 hover:text-brand-300 transition-colors shrink-0">
-                    Entrar →
+                  <Link
+                    href="/login"
+                    className="inline-flex items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300 transition-colors shrink-0"
+                  >
+                    Entrar <Icon name="arrowRight" size={12} />
                   </Link>
                 </div>
               )}
@@ -589,9 +596,9 @@ function HomePageInner() {
                 <p className="text-xs text-amber-300">Faça login para ver as salas da rede</p>
                 <Link
                   href="/login"
-                  className="text-xs font-medium text-brand-400 hover:text-brand-300 transition-colors shrink-0"
+                  className="inline-flex items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300 transition-colors shrink-0"
                 >
-                  Entrar →
+                  Entrar <Icon name="arrowRight" size={12} />
                 </Link>
               </div>
             )}
@@ -642,7 +649,7 @@ function HomePageInner() {
         <Link href="/tutorial" className="block">
           <div className="glass-subtle p-4 rounded-xl flex items-center justify-between group transition-all duration-200 hover:bg-white/[0.06] hover:border-white/[0.12]">
             <div className="flex items-center gap-3">
-              <span className="text-xl">📖</span>
+              <span className="text-xl"><Icon name="book" size={20} /></span>
               <div>
                 <p className="text-sm font-medium text-slate-200 group-hover:text-white transition-colors">
                   Como usar o Scale
@@ -652,7 +659,9 @@ function HomePageInner() {
                 </p>
               </div>
             </div>
-            <span className="text-slate-400 group-hover:text-brand-400 transition-colors">→</span>
+            <span className="text-slate-400 group-hover:text-brand-400 transition-colors">
+              <Icon name="arrowRight" />
+            </span>
           </div>
         </Link>
 
@@ -669,7 +678,7 @@ function HomePageInner() {
         {onboardingDone && (
           <div className="text-center">
             <Button variant="ghost" size="sm" onClick={handleShowGuide}>
-              📖 Rever guia de uso
+              <Icon name="book" /> Rever guia de uso
             </Button>
           </div>
         )}

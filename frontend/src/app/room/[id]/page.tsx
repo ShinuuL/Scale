@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, use } from 'react';
-import Link from 'next/link';
 import { useSocket } from '@/hooks/useSocket';
 import { useWebRTC } from '@/hooks/useWebRTC';
 import { useChat } from '@/hooks/useChat';
@@ -14,8 +13,8 @@ import { Banner } from '@/components/ui/Banner';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { ToastProvider, useToast } from '@/components/ui/Toast';
+import { Icon } from '@/components/ui/Icon';
 import { api } from '@/lib/api';
-import { buildTailscaleHttpsUrl, buildTailscaleHttpUrl } from '@/lib/tailscale';
 import { copyText } from '@/lib/clipboard';
 
 interface RoomData {
@@ -52,9 +51,7 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
   const [joined, setJoined] = useState(false);
   const [showParticipants, setShowParticipants] = useState(true);
   const [isInsecureContext, setIsInsecureContext] = useState(false);
-  const [tailscaleIp, setTailscaleIp] = useState<string | null>(null);
   const [copiedFlag, setCopiedFlag] = useState(false);
-  const [copiedTsLink, setCopiedTsLink] = useState(false);
   // Senha de sala protegida por password (fluxo password do critic). Fica SÓ em
   // estado — nunca em localStorage (segredo efêmero por sessão de navegação).
   const [roomPassword, setRoomPassword] = useState('');
@@ -104,14 +101,6 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
     if (typeof window !== 'undefined' && !window.isSecureContext) {
       setIsInsecureContext(true);
     }
-  }, []);
-
-  // Tailscale IP do servidor (para link HTTP compartilhável) — não bloqueia
-  useEffect(() => {
-    api
-      .getTailscaleStatus()
-      .then((status) => setTailscaleIp(status.tailscaleIp))
-      .catch(() => {});
   }, []);
 
   // Fetch room info — via Next.js rewrite (same-origin, sem CORS)
@@ -164,8 +153,18 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
    * quando o socket cai, o backend perde o peer (o socketId muda na volta),
    * então sem re-join o participante fica fantasma — some da lista dos outros
    * e nenhum sinal/chat chega mais para ele. `initMedia` é idempotente.
+   *
+   * `mode` separa a entrada original (`'first'`: falha = tela de erro, caso
+   * senha errada/sala cheia) do re-join (`'reconnect'`: falha pode ser
+   * transitória — peer antigo ainda no roomPeers → "Room is full" — então
+   * tenta 1x a mais antes de gritar).
    */
-  const performJoin = useCallback((): void => {
+  // Retry agendado de re-join que falhou, e a versão atual de performJoin
+  // para o retry não disparar um closure velho do useCallback.
+  const rejoinRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const performJoinRef = useRef<(mode?: 'first' | 'reconnect') => void>(() => undefined);
+
+  const performJoin = useCallback((mode: 'first' | 'reconnect' = 'first'): void => {
     // `isConnected()` lê o socket vivo: no re-join a reconexão acontece fora do
     // ciclo de render, então o estado `socket.connected` ainda seria o antigo.
     if (!socket.isConnected()) return;
@@ -174,6 +173,13 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
 
     socket.joinRoom(roomId, socket.guestName, inviteToken, roomPassword.trim() || undefined).then(({ peers: existingPeers, history }) => {
       setJoined(true);
+      // Limpa um erro anterior: a tela de erro tem precedência no render, e
+      // sem isto um re-join bem-sucedido deixaria a pessoa presa nela.
+      setError(null);
+      if (rejoinRetryRef.current) {
+        clearTimeout(rejoinRetryRef.current);
+        rejoinRetryRef.current = null;
+      }
       // Seed chat history (persistent rooms: last 200; temporary: FIFO buffer)
       if (history.length > 0) {
         chatRef.current.setMessages(history);
@@ -189,10 +195,37 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
           void connectToPeers(existingPeers);
         }
       });
-    }).catch((err) => {
-      setError(err.message || 'Falha ao entrar na sala');
+    }).catch((err: unknown) => {
+      const message =
+        err instanceof Error && err.message ? err.message : 'Falha ao entrar na sala';
+      if (mode === 'first') {
+        setError(message);
+        return;
+      }
+      // Re-join: não ejecta no primeiro erro. Tenta de novo em 2,5s (dá tempo
+      // de o servidor processar o disconnect do peer antigo); se persistir,
+      // aí sim mostra o erro — que um re-join seguinte consegue limpar.
+      if (rejoinRetryRef.current === null) {
+        rejoinRetryRef.current = setTimeout(() => {
+          rejoinRetryRef.current = null;
+          performJoinRef.current('reconnect');
+        }, 2500);
+        return;
+      }
+      setError(message);
     });
   }, [socket, roomId, initMedia, connectToPeers, inviteToken, requiresPassword, roomPassword]);
+
+  useEffect(() => {
+    performJoinRef.current = performJoin;
+  }, [performJoin]);
+
+  // Zera um retry agendado ao desmontar (senão o timer dispara tarde demais).
+  useEffect(() => {
+    return () => {
+      if (rejoinRetryRef.current) clearTimeout(rejoinRetryRef.current);
+    };
+  }, []);
 
   // Primeiro join (uma vez por sessão de sala).
   useEffect(() => {
@@ -210,12 +243,12 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
   useEffect(() => {
     return socket.onReconnect(() => {
       console.debug('[Room] reconnect detectado — re-join');
-      performJoin();
+      performJoin('reconnect');
     });
   }, [socket, performJoin]);
 
-  // Aviso não bloqueante quando o socket desconecta (ex.: handshake rejeitado
-  // pelo tailnet barrier, backend caiu, rede instável). Nada de bloquear a UI:
+  // Aviso não bloqueante quando o socket desconecta (ex.: backend caiu, rede
+  // instável). Nada de bloquear a UI:
   // o effect de reconnect acima refaz o join assim que o socket voltar.
   useEffect(() => {
     if (!socket.connected && !loading) {
@@ -243,8 +276,6 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
 
   // ─── Insecure context actions ───────────────────────────────
   const chromeFlagCommand = 'chrome://flags/#unsafely-treat-insecure-origin-as-secure';
-  const tailscaleHttpUrl = buildTailscaleHttpUrl(tailscaleIp, `/room/${roomId}`);
-  const httpsUrl = buildTailscaleHttpsUrl(`/room/${roomId}`);
 
   const handleCopyFlag = useCallback(async () => {
     const ok = await copyText(chromeFlagCommand);
@@ -253,14 +284,6 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
       setTimeout(() => setCopiedFlag(false), 2000);
     }
   }, []);
-
-  const handleCopyTsLink = useCallback(async () => {
-    const ok = await copyText(tailscaleHttpUrl);
-    if (ok) {
-      setCopiedTsLink(true);
-      setTimeout(() => setCopiedTsLink(false), 2000);
-    }
-  }, [tailscaleHttpUrl]);
 
   // Room expired status
   const isExpired = room?.room.expiresAt
@@ -287,7 +310,13 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
       <div className="min-h-screen flex items-center justify-center p-4">
         <div className="text-center space-y-4 max-w-md">
           <div className="text-5xl">
-            {error.includes('expirou') ? '⏰' : error.includes('não encontrada') ? '🔍' : '⚠️'}
+            {error.includes('expirou') ? (
+              <Icon name="clock" size={48} />
+            ) : error.includes('não encontrada') ? (
+              <Icon name="search" size={48} />
+            ) : (
+              <Icon name="warning" size={48} />
+            )}
           </div>
           <h1 className="text-xl font-semibold text-white">{error}</h1>
           <Button onClick={() => window.location.href = '/'}>
@@ -302,7 +331,9 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <div className="text-center space-y-4 max-w-md">
-          <div className="text-5xl">{isExpired ? '⏰' : '👥'}</div>
+          <div className="text-5xl">
+            {isExpired ? <Icon name="clock" size={48} /> : <Icon name="users" size={48} />}
+          </div>
           <h1 className="text-xl font-semibold text-white">
             {isExpired ? 'Esta sala expirou' : 'Sala cheia'}
           </h1>
@@ -335,7 +366,7 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
           }}
           className="w-full max-w-md bg-forest-950/60 border border-white/10 rounded-2xl p-6 space-y-4"
         >
-          <div className="text-4xl">🔒</div>
+          <div className="text-4xl"><Icon name="lock" size={36} /></div>
           <h1 className="text-xl font-semibold text-white">Sala protegida por senha</h1>
           <p className="text-sm text-slate-400">
             Esta sala exige a senha definida pelo dono para entrar. A senha não é
@@ -384,8 +415,13 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
       {/* Header */}
       <header className="flex items-center justify-between px-4 py-2 border-b border-white/5 bg-forest-950/80 backdrop-blur-sm z-10">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" onClick={() => window.location.href = '/'}>
-            ←
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => window.location.href = '/'}
+            aria-label="Voltar ao início"
+          >
+            <Icon name="arrowLeft" />
           </Button>
           <div>
             <h1 className="text-sm font-semibold text-white">{roomName}</h1>
@@ -407,7 +443,7 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
             aria-label="Mostrar/ocultar participantes"
             aria-expanded={showParticipants}
           >
-            👥
+            <Icon name="users" />
           </Button>
         </div>
       </header>
@@ -417,43 +453,21 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
         <div className="mx-4 mt-3">
           <Banner
             variant="warning"
-            icon="🔒"
+            icon={<Icon name="lock" size={18} />}
             title="Conexão não segura — microfone/tela bloqueados"
             description="Navegadores bloqueiam microfone e compartilhamento de tela em páginas HTTP fora do localhost. Acesse via HTTPS para falar com áudio, ou ative a flag do Chrome para liberar este endereço. A chamada segue funcionando sem áudio — participantes com HTTPS falam normalmente."
             action={
-              <>
-                <Button variant="secondary" size="sm" onClick={handleCopyFlag}>
-                  {copiedFlag ? '✓ Flag copiada' : 'Copiar comando flag'}
-                </Button>
-                {httpsUrl ? (
-                  <a
-                    className="btn-primary text-xs px-3 py-1.5 rounded-lg"
-                    href={httpsUrl}
-                    aria-label={`Abrir sala via HTTPS (${httpsUrl})`}
-                  >
-                    Abrir via HTTPS
-                  </a>
+              <Button variant="secondary" size="sm" onClick={handleCopyFlag}>
+                {copiedFlag ? (
+                  <>
+                    <Icon name="check" /> Flag copiada
+                  </>
                 ) : (
-                  <Link
-                    href="/tutorial"
-                    className="btn-ghost text-xs px-3 py-1.5 rounded-lg"
-                    aria-label="Ver instruções de configuração HTTPS no guia"
-                  >
-                    Ver guia HTTPS
-                  </Link>
+                  'Copiar comando flag'
                 )}
-              </>
-            }
-          >
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <code className="bg-amber-500/10 px-1.5 py-0.5 rounded text-xs font-mono break-all">
-                {tailscaleHttpUrl}
-              </code>
-              <Button variant="ghost" size="sm" onClick={handleCopyTsLink}>
-                {copiedTsLink ? '✓ Copiado' : 'Copiar link Tailscale'}
               </Button>
-            </div>
-          </Banner>
+            }
+          />
         </div>
       )}
 
@@ -464,7 +478,7 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
         <div className="mx-4 mt-3">
           <Banner
             variant="warning"
-            icon="🎤"
+            icon={<Icon name="mic" size={18} />}
             title="Microfone indisponível"
             description="O navegador bloqueou o acesso ao microfone (permissão negada ou contexto inseguro). A chamada segue funcionando; participantes com áudio habilitado falam normalmente."
           />

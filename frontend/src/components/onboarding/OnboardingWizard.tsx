@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Banner } from '@/components/ui/Banner';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
+import { Icon } from '@/components/ui/Icon';
 import { Input } from '@/components/ui/Input';
 import { ROOM_NAME_MIN, ROOM_NAME_MAX } from '@/lib/validation';
 
@@ -125,7 +126,7 @@ export function OnboardingWizard({ onComplete, onSkip, isAuthenticated }: Onboar
           {step === 1 && (
             <div className="space-y-4 animate-slide-up">
               <div className="text-center space-y-3 py-4">
-                <div className="text-5xl">🎙️</div>
+                <div className="text-5xl"><Icon name="mic" size={48} /></div>
                 <p className="text-slate-300 text-sm leading-relaxed">
                   O Scale faz chamadas de voz com compartilhamento de tela direto no
                   navegador, de 2 a 8 participantes na mesma sala. O áudio e o vídeo
@@ -194,7 +195,7 @@ export function OnboardingWizard({ onComplete, onSkip, isAuthenticated }: Onboar
                 {!isAuthenticated ? (
                   <Banner
                     variant="warning"
-                    icon="🔐"
+                    icon={<Icon name="key" size={18} />}
                     title="Faça login para criar uma sala"
                     description={
                       <>
@@ -300,7 +301,7 @@ export function OnboardingWizard({ onComplete, onSkip, isAuthenticated }: Onboar
               {isInsecureContext && (
                 <Banner
                   variant="warning"
-                  icon="🔒"
+                  icon={<Icon name="lock" size={18} />}
                   title="Conexão não segura — microfone/tela bloqueados"
                   description="Este acesso via HTTP bloqueia microfone e compartilhamento de tela no browser. Use HTTPS (ou localhost) para chamadas com áudio."
                 />

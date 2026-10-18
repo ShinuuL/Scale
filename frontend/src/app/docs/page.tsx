@@ -3,9 +3,10 @@
 import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
+import { Icon, type IconName } from '@/components/ui/Icon';
 
 interface DocSection {
-  icon: string;
+  icon: IconName;
   title: string;
   description: string;
   items: string[];
@@ -13,7 +14,7 @@ interface DocSection {
 
 const SECTIONS: DocSection[] = [
   {
-    icon: '🔐',
+    icon: 'key',
     title: 'Criar conta ou entrar',
     description: 'A conta é o que permite criar salas e mantê-las salvas.',
     items: [
@@ -23,7 +24,7 @@ const SECTIONS: DocSection[] = [
     ],
   },
   {
-    icon: '🎙️',
+    icon: 'mic',
     title: 'Criar uma sala',
     description: 'Criar sala exige estar logado.',
     items: [
@@ -34,7 +35,7 @@ const SECTIONS: DocSection[] = [
     ],
   },
   {
-    icon: '👥',
+    icon: 'users',
     title: 'Entrar numa sala',
     description: 'Duas formas: pelo link ou pelo código da sala.',
     items: [
@@ -44,7 +45,7 @@ const SECTIONS: DocSection[] = [
     ],
   },
   {
-    icon: '🔗',
+    icon: 'link',
     title: 'Compartilhar o link',
     description: 'Cada sala tem uma URL única com o ID dela.',
     items: [
@@ -54,7 +55,7 @@ const SECTIONS: DocSection[] = [
     ],
   },
   {
-    icon: '🎤',
+    icon: 'mic',
     title: 'Microfone, tela e HTTPS',
     description: 'Navegadores só liberam microfone e tela em contexto seguro.',
     items: [
@@ -75,7 +76,7 @@ export default function DocsPage() {
             href="/tutorial"
             className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-white transition-colors mb-6"
           >
-            ← Voltar ao tutorial
+            <Icon name="arrowLeft" /> Voltar ao tutorial
           </Link>
           <h1 className="text-3xl font-bold text-white mb-2">Documentação do Scale</h1>
           <p className="text-slate-400 text-sm">
@@ -94,7 +95,7 @@ export default function DocsPage() {
           <Card variant="glass" key={section.title}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <span className="text-xl">{section.icon}</span>
+                <Icon name={section.icon} size={20} />
                 {section.title}
               </CardTitle>
               <CardDescription>{section.description}</CardDescription>
@@ -115,7 +116,7 @@ export default function DocsPage() {
         <Card variant="glass">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <span className="text-xl">🌍</span>
+              <Icon name="globe" size={20} />
               Expor o Scale na internet (túnel)
             </CardTitle>
             <CardDescription>
@@ -140,13 +141,13 @@ export default function DocsPage() {
                 href="/tutorial"
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-700 text-white text-sm font-medium hover:bg-brand-800 transition-colors"
               >
-                📖 Abrir tutorial interativo
+                <Icon name="book" /> Abrir tutorial interativo
               </Link>
               <Link
                 href="/"
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-300 hover:bg-white/10 transition-colors"
               >
-                🎙️ Ir para o Scale
+                <Icon name="mic" /> Ir para o Scale
               </Link>
             </div>
           </CardContent>
@@ -154,7 +155,7 @@ export default function DocsPage() {
 
         <div className="text-center">
           <Link href="/">
-            <Button variant="ghost" size="sm">← Voltar ao Scale</Button>
+            <Button variant="ghost" size="sm"><Icon name="arrowLeft" /> Voltar ao Scale</Button>
           </Link>
         </div>
       </section>

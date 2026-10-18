@@ -5,6 +5,7 @@ import { api } from '@/lib/api';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { Icon } from '@/components/ui/Icon';
 import Link from 'next/link';
 
 export default function LoginPage() {
@@ -86,9 +87,9 @@ export default function LoginPage() {
           <div className="mt-3 text-center">
             <Link
               href="/"
-              className="text-xs text-slate-400 hover:text-slate-200 transition-colors"
+              className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-slate-200 transition-colors"
             >
-              ← Voltar ao início
+              <Icon name="arrowLeft" size={12} /> Voltar ao início
             </Link>
           </div>
         </CardContent>

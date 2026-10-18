@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from 'react';
 import { clsx } from 'clsx';
+import { Icon, type IconName } from './Icon';
 
 // ─── Types ──────────────────────────────────────────────────────
 export type ToastVariant = 'success' | 'error' | 'info';
@@ -100,10 +101,10 @@ const variantStyles: Record<ToastVariant, string> = {
   info: 'bg-brand-500/20 border-brand-500/30 text-brand-200',
 };
 
-const variantIcons: Record<ToastVariant, string> = {
-  success: '✓',
-  error: '✕',
-  info: 'ℹ',
+const variantIcons: Record<ToastVariant, IconName> = {
+  success: 'check',
+  error: 'close',
+  info: 'info',
 };
 
 function ToastItemComponent({
@@ -123,8 +124,8 @@ function ToastItemComponent({
         variantStyles[item.variant],
       )}
     >
-      <span aria-hidden="true" className="mt-0.5 text-base shrink-0">
-        {variantIcons[item.variant]}
+      <span aria-hidden="true" className="mt-0.5 shrink-0">
+        <Icon name={variantIcons[item.variant]} />
       </span>
       <span className="flex-1 min-w-0">{item.message}</span>
       <button
@@ -132,7 +133,9 @@ function ToastItemComponent({
         aria-label="Fechar notificação"
         className="shrink-0 mt-0.5 text-current opacity-60 hover:opacity-100 transition-opacity"
       >
-        <span aria-hidden="true">✕</span>
+        <span aria-hidden="true">
+          <Icon name="close" />
+        </span>
       </button>
     </div>
   );

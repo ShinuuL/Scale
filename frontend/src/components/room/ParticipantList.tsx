@@ -2,6 +2,7 @@
 
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
+import { Icon } from '@/components/ui/Icon';
 import type { PeerConnection } from '@/hooks/useWebRTC';
 
 interface Participant {
@@ -68,8 +69,12 @@ export function ParticipantList({
                 {p.isScreenSharing && (
                   <Badge variant="success">Tela</Badge>
                 )}
-                <span className="text-xs" aria-label={p.isMuted ? 'Mudo' : 'Com áudio'}>
-                  {p.isMuted ? '🔇' : '🎤'}
+                <span className="text-xs">
+                  <Icon
+                    name={p.isMuted ? 'micOff' : 'mic'}
+                    size={14}
+                    title={p.isMuted ? 'Mudo' : 'Com áudio'}
+                  />
                 </span>
               </div>
             </li>
