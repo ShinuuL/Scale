@@ -124,7 +124,7 @@ NODE_ENV=development
 ### Frontend (porta 3000)
 
 - Interface de videochamadas com WebRTC
-- Wizard de onboarding para acesso pela LAN ou pelo tunel
+- Wizard de onboarding em 5 passos (boas-vindas, criar conta ou entrar, criar ou entrar numa sala, compartilhar o link, microfone e tela), com tutorial interativo em `/tutorial`
 - Salas com grid de video e controles
 
 ### Backend (porta 4100 no host em dev; 4000 no container)
@@ -209,7 +209,7 @@ Proxy do backend com dois tokens distintos:
 ### Vitest (unit/integration)
 
 - **Backend** (`npm run test -w scale-backend`): **91 testes** (11 arquivos) — chat socket (message/edit/delete/rate/mentions/history), REST messages paginadas, files multipart (magic bytes, quota, GC, sandbox), uploads lib, hardening de exposição pública (auth/CORS/Helmet/trust proxy), rooms/password/rotate-invite, signaling e métricas `scale_chat_*` (inclui auth de `/api/metrics`: 401 sem credencial, 401 com token invalido, 200 com cookie/Bearer).
-- **Frontend** (`npm run test -w scale-frontend`): **42 testes** — validação cliente, `useSocket` (connect_error, onReconnect/isConnected), `useChat` (unread, edit/delete, mention audio, loadMore, upload), `useWebRTC`, `ChatMessageItem` (linkify, highlight, XSS, ações) e `ChatPanel` (role=log, Enter/Shift+Enter, contador 500, autocomplete `@`, chips, loadMore, drawer mobile).
+- **Frontend** (`npm run test -w scale-frontend`): **48 testes** (4 arquivos) — validação cliente + `useChat` (unread, edit/delete, mention audio, loadMore, upload) e `ChatMessageItem` (linkify, highlight, XSS, ações) cobertos em `ChatPanel.test.tsx`; `useSocket` (connect_error, onReconnect/isConnected); `useWebRTC` (regra determinística de quem inicia offer e glare/perfect negotiation); e `Icon` (decorativo vs rótulo acessível, grade 24×24, strokeWidth 1.75, preenchimento só nos estados "ligado"). A suíte de `ChatPanel` cobre ainda role=log, Enter/Shift+Enter, contador 500, autocomplete `@`, chips, loadMore e drawer mobile.
 
 ### GET /api/metrics — formato Prometheus
 
@@ -267,6 +267,7 @@ cd backend && npx prisma studio       # Interface visual do DB
 - **PRs**: Descrever mudancas, anexar testes e screenshots
 - **TypeScript**: Strict mode, sem `any`, validacao com Zod
 - **Testes**: TDD, testes antes ou durante implementacao
+- **UI**: sem emojis na interface; icones sao SVG internos de `frontend/src/components/ui/Icon.tsx`, sem dependencia externa
 
 ## Licenca
 

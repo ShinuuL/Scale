@@ -65,6 +65,43 @@ O ícone do Scale é o **S escamado** em PNG: gradiente **azul → roxo** (`#3b8
 - **Wordmark** (somente texto "Scale"): espaços compactos — `<Logo variant="wordmark" />`
 - O emoji 🐉 **não** é mais usado como ícone — apenas o PNG escamado.
 
+## Iconografia de UI
+
+A interface **não usa emojis**: todo ícone da aplicação é um **SVG vetorial** do
+componente interno `frontend/src/components/ui/Icon.tsx` (catálogo fechado de
+**29 ícones**), sem biblioteca externa de ícones (lucide, heroicons, react-icons
+e afins). O arquivo é `"use client"` e depende apenas de `clsx`.
+
+### Propriedades (conferidas contra o código)
+
+| Propriedade | Valor |
+|-------------|-------|
+| `viewBox` | `0 0 24 24` — todos desenhados na mesma grade 24×24 |
+| `stroke` | `currentColor` — herda a cor do texto (funciona nos dois temas e em botão ativo/desabilitado) |
+| `strokeWidth` | `1.75` |
+| `strokeLinecap` / `strokeLinejoin` | `round` |
+| `fill` | ausente, **exceto** nos glifos de estado "ligado": `mic` e `speaker` preenchem as formas sólidas (`fill="currentColor"`); o par desligado (`micOff`/`speakerOff`) é contorno com corte |
+| `size` | default `16` px (o prop sobrescreve `width` e `height` juntos) |
+
+A geometria é declarada uma única vez em `ICONS` (tudo em `path`, inclusive os
+círculos) e reaproveitada — nenhum `path` é duplicado no JSX.
+
+### Glifos tipográficos
+
+Glifos tipográficos usados como UI (setas de navegação, check e x) também são
+SVG desenhados à mão. Setas em comentários de código, no Markdown da
+documentação e nos logs do backend são texto comum e **não** contam como UI.
+
+### Acessibilidade
+
+- **Ícone decorativo** (dentro de botão com rótulo ou ao lado de texto): sem o
+  prop `title`, o componente renderiza `aria-hidden="true"` + `focusable="false"`
+  e nenhum `role`.
+- **Ícone informativo** (quando o ícone É o rótulo): passe `title` — o SVG vira
+  `role="img"` com `aria-label` em PT-BR e perde o `aria-hidden`.
+- **Botão só-ícone** precisa de nome acessível próprio (`aria-label` no botão),
+  em qualquer breakpoint.
+
 ## Princípios de Design
 
 1. **Dark-first verdant**: fundo forest (`#071412`) escuro e profundo reduz fadiga visual durante chamadas longas

@@ -39,6 +39,21 @@ Sistema de videochamadas P2P (mesh) com escamas de dragão — sala de voz e tel
 └── docs/              # Documentação
 ```
 
+### Interface (UI)
+- **Sem emojis na interface**: texto renderizado, `aria-label`, `title`, `placeholder`
+  e `alt` usam palavras, nunca emoji.
+- Ícones são **SVG internos** de `frontend/src/components/ui/Icon.tsx`
+  (`viewBox 0 0 24 24`, `stroke="currentColor"`, `strokeWidth 1.75`,
+  tamanho default 16).
+- **Proibido adicionar biblioteca de ícones** (lucide, heroicons, react-icons e
+  afins) — o componente interno existe para evitar a dependência.
+- Glifos tipográficos usados como UI (setas de navegação, check, x) também viram
+  SVG; setas em comentários de código, Markdown de documentação e logs do
+  backend são texto comum e não contam.
+- Ícone decorativo: `aria-hidden`. Ícone que carrega informação: prop `title`
+  (o componente renderiza `role="img"` com `aria-label`). Botão só-ícone
+  precisa de nome acessível próprio, em qualquer breakpoint.
+
 ## Gates Obrigatórios
 
 Antes de considerar qualquer tarefa completa, TODOS os gates devem passar:
@@ -106,6 +121,8 @@ docker compose --profile mcp up --build --abort-on-container-exit
   allowlist de MIME (`image/*`, `application/pdf`, `text/plain`, `audio/*`,
   `application/zip`), validação por magic bytes e quota de 200 MB por sala
 - Upload bloqueado em sala temporária (apenas persistente aceita arquivos)
+- Sistema de ícones internos: UI sem emojis, `frontend/src/components/ui/Icon.tsx`
+  com 29 ícones (SVG vetorial, `stroke="currentColor"`), sem dependência externa
 
 ## Requisitos de Infra
 
@@ -182,7 +199,7 @@ docker compose logs -f       # Logs em tempo real
 - **Branches**: `feat/nome-da-feature`, `fix/nome-do-fix`
 - **PRs**: descrever mudanças, anexar testes, screenhots quando relevante
 - **Commits**: conventional commits, mensagens claras e concisas
-- **Docs**: manter atualizado,特别是 setup e troubleshooting
+- **Docs**: manter atualizado, especialmente setup e troubleshooting
 
 ---
 
