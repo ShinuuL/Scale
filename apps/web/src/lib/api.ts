@@ -134,6 +134,17 @@ class ApiClient {
     return { rooms: z.array(roomListItemSchema).parse(data.rooms) };
   }
 
+  /**
+   * Apaga a sala para sempre (dono ou admin do sistema). Corpo `{}` porque o
+   * Fastify recusa JSON vazio com Content-Type application/json.
+   */
+  async deleteRoom(id: string): Promise<void> {
+    await this.request<{ success: boolean }>(`/api/rooms/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      body: '{}',
+    });
+  }
+
   // ─── Auth ───────────────────────────────────────────────────
   async login(input: LoginInput): Promise<AuthResponse> {
     const data = await this.request<Record<string, unknown>>('/api/auth/login', {

@@ -138,3 +138,18 @@ describe('useSocket — onReconnect', () => {
     expect(onReconnect).not.toHaveBeenCalled();
   });
 });
+describe('useSocket — room:deleted', () => {
+  it('repassa payload valido para onRoomDeleted e descarta invalido', () => {
+    const { result } = renderHook(() => useSocket());
+    const cb = vi.fn();
+    act(() => {
+      result.current.onRoomDeleted(cb);
+    });
+    act(() => {
+      socketHandlers.get('room:deleted')?.({ roomId: 'nao-e-uuid' });
+      socketHandlers.get('room:deleted')?.({ roomId: '44444444-4444-4444-8444-444444444444' });
+    });
+    expect(cb).toHaveBeenCalledTimes(1);
+    expect(cb).toHaveBeenCalledWith({ roomId: '44444444-4444-4444-8444-444444444444' });
+  });
+});

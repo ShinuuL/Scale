@@ -226,6 +226,7 @@ function createHookMock(myId: string) {
     emitScreenShareState: vi.fn().mockResolvedValue(undefined),
     onScreenShareState: vi.fn(register('screenShareState')),
     onReconnect: vi.fn(register('reconnect')),
+    onRoomDeleted: vi.fn(() => () => {}),
     guestName: 'Test',
     setGuestName: vi.fn(),
   };

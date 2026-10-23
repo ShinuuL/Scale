@@ -3,7 +3,8 @@
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { io, Socket } from 'socket.io-client';
 import type { ChatMessage } from '@/hooks/useChat';
-import type { JoinRoomPayload, PeerInfo, PeerLeftEvent, ScreenShareStateEvent } from '@scale/shared';
+import { roomDeletedEventSchema } from '@scale/shared';
+import type { JoinRoomPayload, PeerInfo, PeerLeftEvent, RoomDeletedEvent, ScreenShareStateEvent } from '@scale/shared';
 
 /**
  * URL do signaling. Producao (frontend estatico servido pelo Caddy): SEMPRE o
@@ -56,6 +57,8 @@ export interface UseSocketReturn {
   emitScreenShareState: (roomId: string, targetPeerId: string, isScreenSharing: boolean) => Promise<void>;
   onScreenShareState: (cb: (data: ScreenShareStateEvent) => void) => () => void;
   onReconnect: (cb: () => void) => () => void;
+  /** A sala foi apagada (dono ou admin): o servidor ja tirou este socket dela. */
+  onRoomDeleted: (cb: (data: RoomDeletedEvent) => void) => () => void;
   guestName: string;
   setGuestName: (name: string) => void;
 }
@@ -78,6 +81,7 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
     signalIceCandidate: [] as Array<(data: { fromPeerId: string; isRegistered: boolean; candidate: RTCIceCandidateInit }) => void>,
     screenShareState: [] as Array<(data: ScreenShareStateEvent) => void>,
     reconnect: [] as Array<() => void>,
+    roomDeleted: [] as Array<(data: RoomDeletedEvent) => void>,
   });
 
   useEffect(() => {
@@ -148,6 +152,12 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
 
     sock.on('signal:screen-share-state', (data: ScreenShareStateEvent) => {
       callbacksRef.current.screenShareState.forEach((cb) => cb(data));
+    });
+
+    sock.on('room:deleted', (data: unknown) => {
+      const parsed = roomDeletedEventSchema.safeParse(data);
+      if (!parsed.success) return;
+      callbacksRef.current.roomDeleted.forEach((cb) => cb(parsed.data));
     });
 
     // Reconexão: ver o handler de 'connect' acima. Os consumidores recebem o
@@ -375,6 +385,14 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
     };
   }, []);
 
+  const onRoomDeleted = useCallback((cb: (data: RoomDeletedEvent) => void): (() => void) => {
+    callbacksRef.current.roomDeleted.push(cb);
+    return () => {
+      const idx = callbacksRef.current.roomDeleted.indexOf(cb);
+      if (idx >= 0) callbacksRef.current.roomDeleted.splice(idx, 1);
+    };
+  }, []);
+
   // Retorno memoizado: a identidade do objeto `socketHook` só muda quando um
   // dep realmente muda (socket novo, connected flip, guestName). Consumidores
   // (useWebRTC, page.tsx, useChat) dependem dele sem recriar listeners a cada
@@ -397,6 +415,7 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
       emitScreenShareState,
       onScreenShareState,
       onReconnect,
+      onRoomDeleted,
       guestName,
       setGuestName,
     }),
@@ -418,6 +437,7 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
       emitScreenShareState,
       onScreenShareState,
       onReconnect,
+      onRoomDeleted,
       setGuestName,
     ],
   );

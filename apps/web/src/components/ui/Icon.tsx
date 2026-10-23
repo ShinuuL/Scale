@@ -50,6 +50,7 @@ export type IconName =
   | 'search'
   | 'speaker'
   | 'speakerOff'
+  | 'trash'
   | 'users'
   | 'warning';
 
@@ -231,6 +232,14 @@ export const ICONS: Record<IconName, IconShape[]> = {
     },
     { d: 'M5.2 8.8v9.1A2.6 2.6 0 0 0 7.8 20.5h8.4a2.6 2.6 0 0 0 2.6-2.6V8.8' },
     { d: 'M9.9 12.6h4.2' },
+  ],
+  // Lixeira: tampa com alça, corpo afunilado e dois frisos.
+  trash: [
+    { d: 'M4 6.5h16' },
+    { d: 'M9.2 6.5V4.8A1.3 1.3 0 0 1 10.5 3.5h3a1.3 1.3 0 0 1 1.3 1.3v1.7' },
+    { d: 'M6.3 6.5l.9 12.1a2 2 0 0 0 2 1.9h5.6a2 2 0 0 0 2-1.9l.9-12.1' },
+    { d: 'M10.2 10.5v6' },
+    { d: 'M13.8 10.5v6' },
   ],
 };
 

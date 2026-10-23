@@ -51,6 +51,8 @@ export const roomListItemSchema = z.object({
   participantCount: z.number().int().min(0),
   isPersistent: z.boolean(),
   hasPassword: z.boolean(),
+  /** Quem pede pode apagar a sala (dono ou admin do sistema). */
+  canDelete: z.boolean().default(false),
 });
 
 export type RoomListItem = z.infer<typeof roomListItemSchema>;

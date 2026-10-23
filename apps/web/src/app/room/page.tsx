@@ -6,12 +6,14 @@ import { useSearchParams } from 'next/navigation';
 import { useSocket } from '@/hooks/useSocket';
 import { useWebRTC } from '@/hooks/useWebRTC';
 import { useDisconnectNotice } from '@/hooks/useDisconnectNotice';
+import { useRoomDeleted } from '@/hooks/useRoomDeleted';
 import { useSpeaking } from '@/hooks/useSpeaking';
 import { useChat } from '@/hooks/useChat';
 import { ChatPanel } from '@/components/ChatPanel';
 import { VideoGrid, LOCAL_ID } from '@/components/room/VideoGrid';
 import { RoomControls } from '@/components/room/RoomControls';
 import { ParticipantList } from '@/components/room/ParticipantList';
+import { DeleteRoomDialog } from '@/components/room/DeleteRoomDialog';
 import { Badge } from '@/components/ui/Badge';
 import { Banner } from '@/components/ui/Banner';
 import { Button } from '@/components/ui/Button';
@@ -23,6 +25,7 @@ import { api } from '@/lib/api';
 import { copyText } from '@/lib/clipboard';
 import { roomUrl } from '@/lib/roomLink';
 import { roomInviteHeaders } from '@/lib/roomAccess';
+import { setFlash } from '@/lib/flash';
 
 /**
  * Sala privada sem credencial (nem dono, nem convite valido no header) vem
@@ -43,6 +46,8 @@ interface RoomData {
     status?: string;
     /** Sala persistente protegida por senha (passwordHash presente) — pedir senha no join. */
     hasPassword?: boolean;
+    /** Quem pede pode apagar a sala (dono ou admin do sistema). */
+    canDelete?: boolean;
   };
 }
 
@@ -102,6 +107,7 @@ function RoomPageInner({ roomId }: { roomId: string }) {
   }, []);
   const [isInsecureContext, setIsInsecureContext] = useState(false);
   const [copiedFlag, setCopiedFlag] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   // Senha de sala protegida por password (fluxo password do critic). Fica SÓ em
   // estado — nunca em localStorage (segredo efêmero por sessão de navegação).
   const [roomPassword, setRoomPassword] = useState('');
@@ -361,6 +367,9 @@ function RoomPageInner({ roomId }: { roomId: string }) {
     window.location.href = '/';
   }, [socket, roomId, webrtc]);
 
+  // Sala apagada por outra pessoa: limpa a midia e volta para a home com aviso.
+  const deletingByMeRef = useRoomDeleted(socket, roomId, webrtc.cleanupMedia);
+
   // ─── Insecure context actions ───────────────────────────────
   const chromeFlagCommand = 'chrome://flags/#unsafely-treat-insecure-origin-as-secure';
 
@@ -523,6 +532,19 @@ function RoomPageInner({ roomId }: { roomId: string }) {
           <Badge variant="info" aria-live="polite" className="max-sm:hidden">
             {Array.from(webrtc.peers.size ? webrtc.peers.keys() : []).length + 1} / {room?.room.maxParticipants ?? 8}
           </Badge>
+          {room?.room.canDelete && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setConfirmDelete(true)}
+              aria-label="Apagar sala"
+              title="Apagar sala"
+              aria-haspopup="dialog"
+              className="hover:!text-red-400"
+            >
+              <Icon name="trash" />
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="sm"
@@ -668,6 +690,25 @@ function RoomPageInner({ roomId }: { roomId: string }) {
           onToggleChat={() => setChatOpen((prev) => !prev)}
         />
       </div>
+
+      {confirmDelete && (
+        <DeleteRoomDialog
+          roomId={roomId}
+          roomName={roomName}
+          onCancel={() => setConfirmDelete(false)}
+          onDeleteStart={() => {
+            deletingByMeRef.current = true;
+          }}
+          onDeleteError={() => {
+            deletingByMeRef.current = false;
+          }}
+          onDeleted={() => {
+            webrtc.cleanupMedia();
+            setFlash('Sala apagada', 'success');
+            window.location.href = '/';
+          }}
+        />
+      )}
     </div>
   );
 }

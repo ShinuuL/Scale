@@ -5,18 +5,20 @@ import Link from 'next/link';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { Badge } from '@/components/ui/Badge';
 import { Logo } from '@/components/ui/Logo';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { ToastProvider, useToast } from '@/components/ui/Toast';
 import { Icon } from '@/components/ui/Icon';
 import { OnboardingWizard } from '@/components/onboarding/OnboardingWizard';
 import { InviteLinkCard } from '@/components/room/InviteLinkCard';
+import { DeleteRoomDialog } from '@/components/room/DeleteRoomDialog';
+import { RoomCard } from '@/components/room/RoomCard';
+import { takeFlash } from '@/lib/flash';
 import { ProfileMenu } from '@/components/ui/ProfileMenu';
 import { api, FETCH_RETRY_MAX_ATTEMPTS } from '@/lib/api';
 import type { RoomListItem } from '@/lib/validation';
 import { ROOM_NAME_MIN, ROOM_NAME_MAX } from '@/lib/validation';
-import { roomPath, roomUrl } from '@/lib/roomLink';
+import { roomPath } from '@/lib/roomLink';
 
 const STORAGE_KEY = 'scale.onboardingDone';
 const RECENT_ROOMS_KEY = 'scale.recentRooms';
@@ -170,62 +172,6 @@ function EmptyRooms({ onCreate }: { onCreate: () => void }) {
   );
 }
 
-function RoomCard({ room, onEnter }: { room: RoomListItem; onEnter: () => void }) {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopyLink = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    const url = roomUrl(room.id);
-    await navigator.clipboard.writeText(url);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  return (
-    <div
-      className="group cursor-pointer rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3 transition-colors duration-150 hover:border-white/[0.12] hover:bg-white/[0.05] focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-400 motion-reduce:transition-none"
-      onClick={onEnter}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => e.key === 'Enter' && onEnter()}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 mb-1">
-            <p className="text-sm font-medium text-slate-200 truncate group-hover:text-white transition-colors">
-              {room.name}
-            </p>
-            {room.isPersistent && (
-              <Badge variant="success" className="shrink-0">Persistente</Badge>
-            )}
-            {!room.isPersistent && (
-              <Badge variant="warning" className="shrink-0">Temporária</Badge>
-            )}
-          </div>
-          <p className="text-xs text-slate-400">
-            {room.participantCount === 1 ? '1 pessoa na sala' : `${room.participantCount} pessoas na sala`}
-            {room.hasPassword ? ' · com senha' : ''}
-          </p>
-        </div>
-        <div className="flex items-center gap-1 shrink-0">
-          <button
-            onClick={handleCopyLink}
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-white/5 hover:text-brand-400"
-            title="Copiar link"
-            aria-label={copied ? 'Link copiado' : 'Copiar link'}
-          >
-            <span aria-hidden="true">
-              {copied ? <Icon name="check" size={14} /> : <Icon name="link" size={14} />}
-            </span>
-          </button>
-          <Button variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); onEnter(); }}>
-            Entrar
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export default function HomePage() {
   return (
@@ -268,6 +214,20 @@ function HomePageInner() {
   // ─── Recent rooms ───────────────────────────────────────────
   const [recentRoomIds, setRecentRoomIds] = useState<string[]>([]);
   const [recentRooms, setRecentRooms] = useState<RoomListItem[]>([]);
+  const [roomToDelete, setRoomToDelete] = useState<RoomListItem | null>(null);
+
+  // Aviso deixado pela pagina da sala (ex.: "Sala apagada").
+  useEffect(() => {
+    const flash = takeFlash();
+    if (flash) toast(flash.message, flash.variant);
+  }, [toast]);
+
+  const handleRoomDeleted = (id: string) => {
+    setRooms((prev) => prev.filter((r) => r.id !== id));
+    setRecentRooms((prev) => prev.filter((r) => r.id !== id));
+    setRoomToDelete(null);
+    toast('Sala apagada', 'success');
+  };
 
   useEffect(() => {
     setMounted(true);
@@ -615,7 +575,11 @@ function HomePageInner() {
                 <ul className="space-y-2">
                   {visibleRooms.map((room) => (
                     <li key={room.id}>
-                      <RoomCard room={room} onEnter={() => handleEnterRoom(room.id)} />
+                      <RoomCard
+                        room={room}
+                        onEnter={() => handleEnterRoom(room.id)}
+                        onDelete={() => setRoomToDelete(room)}
+                      />
                     </li>
                   ))}
                 </ul>
@@ -636,7 +600,11 @@ function HomePageInner() {
               <ul className="space-y-2 p-4">
                 {recentRooms.map((room) => (
                   <li key={room.id}>
-                    <RoomCard room={room} onEnter={() => handleEnterRoom(room.id)} />
+                    <RoomCard
+                        room={room}
+                        onEnter={() => handleEnterRoom(room.id)}
+                        onDelete={() => setRoomToDelete(room)}
+                      />
                   </li>
                 ))}
               </ul>
@@ -690,6 +658,15 @@ function HomePageInner() {
           </section>
         </div>
       </div>
+
+      {roomToDelete && (
+        <DeleteRoomDialog
+          roomId={roomToDelete.id}
+          roomName={roomToDelete.name}
+          onCancel={() => setRoomToDelete(null)}
+          onDeleted={() => handleRoomDeleted(roomToDelete.id)}
+        />
+      )}
 
       {/* ── Invite modal ─────────────────────────────────────── */}
       {createdInvite && (
