@@ -18,7 +18,7 @@ import { registerAndCreateRoom } from './auth';
  *   ChatMessageItem  -> [data-testid="chat-message"], [data-testid="message-content"],
  *                       botões Editar/Salvar/Cancelar/Deletar, selos "(editado)"
  *                       e "[apagada]", menção destacada em span.bg-amber-200
- *   ParticipantList  -> [aria-label="Lista de participantes"] li  -> "Nome (Você)"
+ *   ParticipantList  -> [aria-label="Participantes"] li  -> "Nome (você)"
  *   room/[id]/page   -> "Conectado" (indicador único de socket.connected)
  */
 
@@ -51,7 +51,7 @@ async function openPeer(browser: Browser): Promise<Peer> {
 
 /** Espera o socket conectar (indicador único em room/[id]/page.tsx:370). */
 async function waitConnected(page: Page): Promise<void> {
-  await expect(page.getByText('Conectado')).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText('Conectado', { exact: true })).toBeVisible({ timeout: 20_000 });
 }
 
 /** Entra na sala e abre o painel de chat pelo controle da propria sala. */
@@ -68,18 +68,18 @@ async function joinAndOpenChat(page: Page, roomId: string): Promise<void> {
  */
 async function localName(page: Page): Promise<string> {
   const li = page
-    .locator('[aria-label="Lista de participantes"] li', { hasText: '(Você)' })
+    .locator('[aria-label="Participantes"] li', { hasText: '(você)' })
     .first();
   await expect(li).toBeVisible();
   const raw = (await li.innerText()).replace(/\s+/g, ' ').trim();
-  const match = raw.match(/^(?:\S\s+)?(.+?)\s*\(Você\)/);
+  const match = raw.match(/^(?:\S\s+)?(.+?)\s*\(você\)/i);
   const name = (match?.[1] ?? '').trim();
   expect(name.length, `nome local nao extraido de "${raw}"`).toBeGreaterThan(0);
   return name;
 }
 
 function participants(page: Page) {
-  return page.locator('[aria-label="Lista de participantes"] li');
+  return page.locator('[aria-label="Participantes"] li');
 }
 
 async function sendMessage(page: Page, text: string): Promise<void> {
@@ -254,10 +254,13 @@ test.describe('chat da sala', () => {
     const href = await link.getAttribute('href');
     expect(href, 'link de download sem href').toBeTruthy();
 
-    // download real, pelo mesmo caminho que o browser usaria
-    const res = await b.page.request.get(href!);
-    expect(res.status(), `GET ${href} -> ${res.status()}`).toBe(200);
-    expect(res.headers()['content-disposition']).toContain(fileName);
+    // Sem prova de participacao (room ticket no header) o GET direto e negado.
+    const direct = await b.page.request.get(href!);
+    expect(direct.status(), `GET ${href} sem ticket -> ${direct.status()}`).toBe(403);
+
+    // Download real: o clique baixa via fetch com X-Room-Ticket (blob).
+    const [download] = await Promise.all([b.page.waitForEvent('download'), link.click()]);
+    expect(download.suggestedFilename()).toBe(fileName);
 
     // autor do arquivo tem que ser o nome do uploader
     await expect(received).toContainText(nameA);
