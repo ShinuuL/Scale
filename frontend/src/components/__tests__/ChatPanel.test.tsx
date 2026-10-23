@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, renderHook, act, fireEvent, screen } from '@testing-library/react';
 import type { Socket } from 'socket.io-client';
 import { chatMessageClientSchema, chatEditClientSchema, fileClientSchema } from '@/lib/validation';
-import { useChat, type ChatMessage, type ChatApi } from '@/hooks/useChat';
+import { useChat, uploadErrorMessage, type ChatMessage, type ChatApi } from '@/hooks/useChat';
 import { ChatMessageItem } from '@/components/ChatMessageItem';
 import { ChatPanel } from '@/components/ChatPanel';
 
@@ -575,6 +575,39 @@ describe('ChatPanel (Task 10)', () => {
       'Me',
     );
     expect(chat.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('upload que falha mostra o motivo (antes era engolido em silêncio)', async () => {
+    const { chat } = renderChatPanel({
+      chat: {
+        uploadFiles: vi.fn().mockRejectedValue(new Error(uploadErrorMessage(400, 'Temporary rooms do not support files'))),
+      },
+    });
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(fileInput, {
+      target: { files: [new File(['%PDF-'], 'nota.pdf', { type: 'application/pdf' })] },
+    });
+    await act(async () => {
+      fireEvent.keyDown(screen.getByPlaceholderText('Escreva uma mensagem...'), { key: 'Enter' });
+    });
+    expect(chat.uploadFiles).toHaveBeenCalled();
+    expect(screen.getByTestId('file-error').textContent).toMatch(/Sala temporária não aceita arquivos/);
+  });
+
+  it('arquivo recusado no anexo informa nome e motivo', () => {
+    renderChatPanel();
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(fileInput, {
+      target: { files: [new File(['x'], 'app.exe', { type: 'application/x-msdownload' })] },
+    });
+    expect(screen.getByTestId('file-error').textContent).toMatch(/app.exe: Tipo não permitido/);
+  });
+
+  it('uploadErrorMessage traduz os erros do servidor', () => {
+    expect(uploadErrorMessage(413, 'File too large. Max 15MB')).toMatch(/15 MB/);
+    expect(uploadErrorMessage(413, 'Quota exceeded')).toMatch(/Cota/);
+    expect(uploadErrorMessage(403, 'Not a room member')).toMatch(/permissão/);
+    expect(uploadErrorMessage(502)).toBe('Falha no envio (HTTP 502).');
   });
 
   it('rejeita arquivo >15MB ou mime fora da allowlist nos chips', () => {

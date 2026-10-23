@@ -16,7 +16,10 @@ WORKDIR /app
 ENV NODE_ENV=production
 RUN apk add --no-cache wget
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 appuser
-RUN mkdir -p /app/data && chown appuser:nodejs /app/data
+# /app/uploads: anexos do chat (lib/uploads.ts grava em cwd/uploads). Sem o
+# diretório pré-criado com dono appuser, o mkdir em runtime dava EACCES e TODO
+# upload (PDF, imagem...) respondia 500.
+RUN mkdir -p /app/data /app/uploads && chown appuser:nodejs /app/data /app/uploads
 COPY --from=builder /app/backend/dist ./dist
 # Workspace-local deps that npm could not hoist into the root tree live in
 # backend/node_modules (e.g. @fastify/multipart + its fastify-plugin@5 while

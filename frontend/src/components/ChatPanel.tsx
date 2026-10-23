@@ -83,6 +83,9 @@ export function ChatPanel({
   const [filtered, setFiltered] = useState<string[]>([]);
   const [activeOption, setActiveOption] = useState(-1);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  // Motivo visível de arquivo recusado ou upload que falhou — antes os dois
+  // casos sumiam em silêncio (filtro mudo + `.catch(() => {})`).
+  const [fileError, setFileError] = useState<string | null>(null);
 
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -131,7 +134,10 @@ export function ChatPanel({
 
     const mentions = extractMentions(input, currentPeers);
     if (selectedFiles.length > 0) {
-      void chat.uploadFiles(selectedFiles, input, guestName).catch(() => {});
+      setFileError(null);
+      void chat.uploadFiles(selectedFiles, input, guestName).catch((err: unknown) => {
+        setFileError(err instanceof Error ? err.message : 'Falha no envio do arquivo');
+      });
     } else {
       chat.sendMessage(input, mentions);
     }
@@ -179,9 +185,17 @@ export function ChatPanel({
 
   const handleFiles = useCallback((files: FileList | null) => {
     if (!files) return;
+    const rejected: string[] = [];
     const valid = Array.from(files)
-      .filter((file) => fileClientSchema.safeParse({ file }).success)
+      .filter((file) => {
+        const result = fileClientSchema.safeParse({ file });
+        if (!result.success) {
+          rejected.push(`${file.name}: ${result.error.issues[0]?.message ?? 'arquivo inválido'}`);
+        }
+        return result.success;
+      })
       .slice(0, MAX_FILES);
+    setFileError(rejected.length > 0 ? `Não anexado — ${rejected.join('; ')}` : null);
     setSelectedFiles((prev) => [...prev, ...valid].slice(0, MAX_FILES));
   }, []);
 
@@ -253,6 +267,16 @@ export function ChatPanel({
           />
         ))}
       </div>
+
+      {fileError && (
+        <p
+          role="alert"
+          data-testid="file-error"
+          className="px-3 py-1.5 text-xs text-red-300 border-t border-white/5 flex-shrink-0"
+        >
+          {fileError}
+        </p>
+      )}
 
       {/* Chips de arquivos */}
       {selectedFiles.length > 0 && (

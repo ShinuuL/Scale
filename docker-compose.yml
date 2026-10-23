@@ -56,6 +56,9 @@ services:
       - TRUST_PROXY=172.28.0.3/32,172.28.0.4/32,172.28.0.5/32
     volumes:
       - db_data:/app/data
+      # Anexos do chat: volume nomeado herda o dono (appuser) do diretório da
+      # imagem na 1a criação e sobrevive a rebuild do container.
+      - uploads_data:/app/uploads
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/health || exit 1"]
       interval: 10s
@@ -204,6 +207,7 @@ services:
 
 volumes:
   db_data:
+  uploads_data:
 
 networks:
   scale:

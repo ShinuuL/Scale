@@ -64,6 +64,29 @@ function playMentionSound(): void {
  * `accessToken` (inviteToken) e `password` de salas protegidas são anexados aos
  * REST calls para satisfazer o membership check server-side (hardening Task 15).
  */
+/** Mensagem legível para a falha de upload (o backend responde em inglês). */
+export function uploadErrorMessage(status: number, serverError?: string): string {
+  if (serverError === 'Temporary rooms do not support files') {
+    return 'Sala temporária não aceita arquivos — use uma sala persistente.';
+  }
+  if (serverError === 'Magic bytes mismatch') {
+    return 'O conteúdo do arquivo não corresponde ao tipo declarado.';
+  }
+  switch (status) {
+    case 401:
+    case 403:
+      return 'Sem permissão para enviar arquivos nesta sala.';
+    case 413:
+      return serverError === 'Quota exceeded'
+        ? 'Cota de 200 MB da sala atingida.'
+        : 'Arquivo grande demais (máx. 15 MB).';
+    case 429:
+      return 'Muitos envios seguidos. Aguarde e tente de novo.';
+    default:
+      return serverError ? `Falha no envio: ${serverError}` : `Falha no envio (HTTP ${status}).`;
+  }
+}
+
 export function useChat(
   roomId: string,
   socket: Socket | null,
@@ -218,7 +241,7 @@ export function useChat(
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error ?? 'Upload falhou');
+        throw new Error(uploadErrorMessage(res.status, body.error));
       }
     },
     [roomId],
