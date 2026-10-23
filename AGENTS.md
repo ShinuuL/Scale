@@ -107,6 +107,40 @@ docker compose --profile mcp up --build --abort-on-container-exit
 - Tokens de sala: UUID v4
 - TTL de sala temporária: definido na criação
 
+### Participação na sala (room ticket)
+- Histórico (`GET /api/rooms/:id/messages`), download (`GET /api/files/:id`) e
+  upload (`POST /api/rooms/:id/files`) exigem **participação efetiva**, inclusive
+  em sala pública sem senha: só quem fez `join-room` com sucesso ou o **dono**
+  (JWT) passa. Sem prova → 403.
+- Prova = **room ticket**: JWT HS256 com segredo **derivado** do `JWT_SECRET`
+  (HMAC com rótulo próprio — não vale como sessão nem o inverso), `aud`
+  `scale:room-ticket`, escopo `{ roomId, sub }` (`u:<userId>` ou
+  `g:<guestId>`), validade 12 h. Emitido no ack do `join-room` e no evento
+  `room:ticket`; o cliente envia no header `X-Room-Ticket` (nunca em query
+  string). O REST confere que o `sub` é a identidade de quem chama (cookie de
+  sessão ou de convidado): ticket vazado sem o cookie não serve.
+- Senha e convite valem **só** para o `join-room` (balde `roomAuthFail` lá).
+- Escolha: ticket stateless em vez de `RoomMember` — não grava no SQLite a cada
+  entrada, cobre convidado e logado igual, e não exige limpeza.
+- Saiu/foi desconectado: o ticket continua válido até expirar (12 h). Sala
+  `ENDED` ou expirada: negado na hora, para todos (inclusive o dono).
+- `GET /api/rooms` ("Salas na rede", exige login): só salas públicas ATIVAS,
+  com `{ id, name, participantCount, isPersistent, hasPassword }`.
+
+### Convidado (guestId)
+- O servidor emite um `guestId` (UUID v4) no cookie `scale_guest` — HttpOnly,
+  SameSite=Strict, Secure em produção, 180 dias, assinado (HMAC,
+  `GUEST_COOKIE_SECRET`, mínimo 32 caracteres, **obrigatório em produção**: sem
+  ele o backend não sobe).
+- Emissão automática: no handshake do Socket.io (`initial_headers` do engine) e
+  em qualquer `/api/*` de quem não está logado. O socket lê e **verifica** a
+  assinatura; cookie inválido é ignorado (vira convidado novo, sem autoria).
+- Autoria de convidado (`chat:edit`, `chat:delete`, `isMine`, upload) é por
+  `guestId`; de logado, por `authorId`. O `guestName` (zod 1..40) é só exibição
+  e **nunca** concede permissão. Mensagem de convidado sem `guestId` (anterior a
+  esta regra): nenhum convidado edita/apaga (o dono da sala ainda apaga).
+- O `guestId` nunca sai do servidor nos DTOs públicos.
+
 ### Validação
 - **Zod** em todos os inputs do frontend e backend
 - Validação server-side obrigatória
