@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import type { ChatMessage } from '@/hooks/useChat';
+import { downloadRoomFile } from '@/lib/roomAccess';
 
 function escapeHtml(input: string): string {
   return input
@@ -50,9 +51,9 @@ export interface ChatMessageItemProps {
   currentPeers: string[];
   onEdit: (id: string, content: string) => void;
   onDelete: (id: string) => void;
-  /** inviteToken de sala protegida — anexado aos links de download (membership hardening). */
+  /** inviteToken de sala protegida — enviado em header no download (membership hardening). */
   accessToken?: string;
-  /** senha de sala protegida por password — alternativa ao inviteToken nos links de download. */
+  /** senha de sala protegida — alternativa ao inviteToken, enviada em header no download. */
   password?: string;
 }
 
@@ -143,12 +144,18 @@ export function ChatMessageItem({
           {message.files.map((file) => (
             <li key={file.id}>
               <a
-                href={
-                  accessToken
-                    ? `/api/files/${file.id}?inviteToken=${encodeURIComponent(accessToken)}`
-                    : password
-                      ? `/api/files/${file.id}?password=${encodeURIComponent(password)}`
-                      : `/api/files/${file.id}`
+                href={`/api/files/${file.id}`}
+                // Sala protegida: o <a href> nao envia header, entao o clique
+                // baixa via fetch com a credencial no header (nunca na URL).
+                onClick={
+                  accessToken || password
+                    ? (event) => {
+                        event.preventDefault();
+                        downloadRoomFile(file.id, file.filename, accessToken, password).catch((err: unknown) => {
+                          console.warn(err);
+                        });
+                      }
+                    : undefined
                 }
                 target="_blank"
                 rel="noopener"

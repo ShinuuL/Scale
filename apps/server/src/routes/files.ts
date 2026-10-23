@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { sanitizeFilename, detectMagicBytes, saveFile, getQuotaUsage, UPLOADS_ROOT } from '../lib/uploads.js';
 import { ALLOWED_MIME_RE, CHAT_MESSAGE_MAX, MAX_FILE_SIZE_BYTES } from '@scale/shared';
-import { extractAccessFromQuery, hasRoomAccess } from '../lib/roomAccess.js';
+import { extractAccessFromHeaders, guardRoomAccess } from '../lib/roomAccess.js';
 import { addChatFilesBytes, incQuotaExceeded } from '../lib/metrics.js';
 import { isFileUploadRateLimited } from '../lib/rateLimit.js';
 import { getClientIp } from '../lib/clientIp.js';
@@ -59,8 +59,8 @@ export async function filesRoutes(fastify: FastifyInstance): Promise<void> {
 
       if (!membershipChecked) {
         const creds = { userId: request.userId, inviteToken: fields.inviteToken, password: fields.password };
-        if (!(await hasRoomAccess(room, creds))) {
-          return reply.code(403).send({ error: 'Not a room member' });
+        if (!(await guardRoomAccess(request, reply, room, creds))) {
+          return reply;
         }
         membershipChecked = true;
       }
@@ -130,9 +130,8 @@ export async function filesRoutes(fastify: FastifyInstance): Promise<void> {
     // Membership: valida a sala do arquivo (e não um roomId arbitrário).
     const room = await prisma.room.findUnique({ where: { id: file.roomId } });
     if (!room) return reply.code(404).send({ error: 'Room not found' });
-    const creds = extractAccessFromQuery(request);
-    if (!(await hasRoomAccess(room, creds))) {
-      return reply.code(403).send({ error: 'Not a room member' });
+    if (!(await guardRoomAccess(request, reply, room, extractAccessFromHeaders(request)))) {
+      return reply;
     }
 
     // Arquivo apagado (soft delete) some na hora: os 7 dias de carencia valem

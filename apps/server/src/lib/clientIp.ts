@@ -1,4 +1,6 @@
+import type { IncomingMessage } from 'node:http';
 import type { FastifyRequest } from 'fastify';
+import proxyAddr from '@fastify/proxy-addr';
 
 /**
  * IP do cliente — fonte única para TODOS os rate limits por IP.
@@ -123,4 +125,21 @@ export function isLocalAddress(ip: string | undefined): boolean {
 export function isRateLimitExempt(ip: string | undefined): boolean {
   if (process.env.NODE_ENV === 'production') return false;
   return isLocalAddress(ip);
+}
+
+/**
+ * IP do cliente de uma conexao Socket.io (handshake HTTP), com a MESMA regra do
+ * Fastify: o X-Forwarded-For so e lido quando o peer casa com TRUST_PROXY
+ * (@fastify/proxy-addr, o mesmo resolvedor que o Fastify usa). Com
+ * TRUST_PROXY=false (default) devolve o peer TCP.
+ */
+export function getSocketClientIp(req: IncomingMessage, trustProxyRaw: string | undefined): string {
+  const peer = req.socket?.remoteAddress ?? '';
+  const trust = resolveTrustProxy(trustProxyRaw);
+  if (trust === false) return peer;
+  try {
+    return proxyAddr(req, trust === true ? () => true : proxyAddr.compile(trust)) || peer;
+  } catch {
+    return peer;
+  }
 }

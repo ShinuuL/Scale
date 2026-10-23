@@ -13,7 +13,9 @@ import { authPlugin } from '../plugins/auth.js';
 import { messagesRoutes } from '../routes/messages.js';
 import { filesRoutes } from '../routes/files.js';
 import { createSocketServer } from '../socket/handler.js';
-import { resetRateLimit, resetChatRateLimit } from '../lib/rateLimit.js';
+import { resetRateLimit, resetChatRateLimit, resetRoomAuthFailures } from '../lib/rateLimit.js';
+import bcrypt from 'bcryptjs';
+import { redactUrl } from '../lib/logger.js';
 
 type Ack = Record<string, unknown>;
 
@@ -171,5 +173,109 @@ describe('item 2 — GET /api/files/:id de arquivo apagado responde 410 imediato
     });
     const res = await h.app.inject({ method: 'GET', url: `/api/files/${file.id}` });
     expect(res.statusCode).toBe(410);
+  });
+});
+
+describe('item 3 — balde de falhas de credencial de sala + credencial por header', () => {
+  let h: Harness;
+  let roomId: string;
+  let fileId: string;
+  const IP = '198.51.100.77';
+
+  beforeAll(async () => {
+    h = await buildHarness();
+    const room = await prisma.room.create({
+      data: { name: 'Audit Item3', isPersistent: true, passwordHash: bcrypt.hashSync('segredo123', 4) },
+    });
+    roomId = room.id;
+    const msg = await prisma.chatMessage.create({ data: { roomId, content: 'oi' } });
+    const file = await prisma.chatFile.create({
+      data: { roomId, messageId: msg.id, filename: 'a.txt', mime: 'text/plain', size: 3, path: `uploads/${roomId}/a.txt` },
+    });
+    fileId = file.id;
+  });
+
+  afterAll(async () => {
+    await prisma.room.deleteMany({ where: { name: 'Audit Item3' } }).catch(() => {});
+    await h.app.close();
+  });
+
+  it('GET /messages: 10 senhas erradas → 403; 11ª → 429 com Retry-After (mesmo com senha certa)', async () => {
+    resetRoomAuthFailures(IP, roomId);
+    for (let i = 0; i < 10; i += 1) {
+      const res = await h.app.inject({
+        method: 'GET',
+        url: `/api/rooms/${roomId}/messages`,
+        remoteAddress: IP,
+        headers: { 'x-room-password': `errada-${i}xx` },
+      });
+      expect(res.statusCode).toBe(403);
+    }
+    const locked = await h.app.inject({
+      method: 'GET',
+      url: `/api/rooms/${roomId}/messages`,
+      remoteAddress: IP,
+      headers: { 'x-room-password': 'segredo123' },
+    });
+    expect(locked.statusCode).toBe(429);
+    expect(Number(locked.headers['retry-after'])).toBeGreaterThan(0);
+
+    // GET /files/:id compartilha o balde da sala
+    const fileLocked = await h.app.inject({ method: 'GET', url: `/api/files/${fileId}`, remoteAddress: IP });
+    expect(fileLocked.statusCode).toBe(429);
+
+    // outro IP nao e afetado
+    const other = await h.app.inject({
+      method: 'GET',
+      url: `/api/rooms/${roomId}/messages`,
+      remoteAddress: '198.51.100.78',
+      headers: { 'x-room-password': 'segredo123' },
+    });
+    expect(other.statusCode).toBe(200);
+    resetRoomAuthFailures(IP, roomId);
+  });
+
+  it('senha na query string NAO e mais aceita; header (percent-encoded) e', async () => {
+    const viaQuery = await h.app.inject({
+      method: 'GET',
+      url: `/api/rooms/${roomId}/messages?password=segredo123`,
+      remoteAddress: '198.51.100.79',
+    });
+    expect(viaQuery.statusCode).toBe(403);
+    const viaHeader = await h.app.inject({
+      method: 'GET',
+      url: `/api/rooms/${roomId}/messages`,
+      remoteAddress: '198.51.100.79',
+      headers: { 'x-room-password': encodeURIComponent('segredo123') },
+    });
+    expect(viaHeader.statusCode).toBe(200);
+    resetRoomAuthFailures('198.51.100.79', roomId);
+  });
+
+  it('join-room: 10 falhas → 11ª bloqueada mesmo com senha certa', async () => {
+    resetRoomAuthFailures('127.0.0.1', roomId);
+    const client = await connect(h.port, { guestName: 'Brute' });
+    try {
+      for (let i = 0; i < 10; i += 1) {
+        const ack = await emitAck(client, 'join-room', { roomId, password: `errada-${i}xx` });
+        expect(ack.error).toMatch(/Invalid invite token or password/);
+      }
+      const ack = await emitAck(client, 'join-room', { roomId, password: 'segredo123' });
+      expect(ack.error).toMatch(/Too many failed/);
+      expect(Number(ack.retryAfterSeconds)).toBeGreaterThan(0);
+    } finally {
+      client.disconnect();
+      resetRoomAuthFailures('127.0.0.1', roomId);
+      resetRoomAuthFailures('::ffff:127.0.0.1', roomId);
+    }
+  });
+
+  it('logger: redactUrl remove password/inviteToken/token da query', () => {
+    const out = redactUrl('/api/files/abc?password=s3gr3d0&inviteToken=uuid-x&token=jwt&limit=50');
+    expect(out).not.toContain('s3gr3d0');
+    expect(out).not.toContain('uuid-x');
+    expect(out).not.toContain('jwt');
+    expect(out).toContain('limit=50');
+    expect(redactUrl('/api/health')).toBe('/api/health');
   });
 });

@@ -3,8 +3,14 @@ import { Server, Socket } from 'socket.io';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../lib/prisma.js';
 import { verifyToken } from '../lib/auth.js';
-import { getAllowedOrigins } from '../lib/env.js';
-import { isRateLimited, isChatRateLimited } from '../lib/rateLimit.js';
+import { getAllowedOrigins, getEnv } from '../lib/env.js';
+import { getSocketClientIp } from '../lib/clientIp.js';
+import {
+  isRateLimited,
+  isChatRateLimited,
+  isRoomAuthLocked,
+  recordRoomAuthFailure,
+} from '../lib/rateLimit.js';
 import { incChatMessages, incChatEdits, incChatDeletes } from '../lib/metrics.js';
 import { toPublicMessage, DELETED_MESSAGE_CONTENT, type PublicChatMessage } from '../lib/publicDto.js';
 import {
@@ -169,6 +175,21 @@ export function createSocketServer(httpServer: HttpServer): Server {
           return;
         }
 
+        // Balde de falhas de credencial por IP+sala (10 / 15 min): checado
+        // ANTES do bcrypt, so falhas contam.
+        const clientIp = getSocketClientIp(socket.request, getEnv().TRUST_PROXY);
+        const isProtected = room.passwordHash !== null || room.isPrivate;
+        if (isProtected) {
+          const locked = isRoomAuthLocked(clientIp, roomId);
+          if (locked.limited) {
+            callback?.({
+              error: 'Too many failed room credential attempts. Try again later.',
+              retryAfterSeconds: locked.retryAfterSeconds,
+            });
+            return;
+          }
+        }
+
         // Access control: protected rooms accept a valid invite token OR the correct password
         if (room.passwordHash) {
           const hasValidInvite =
@@ -177,11 +198,13 @@ export function createSocketServer(httpServer: HttpServer): Server {
             password !== undefined &&
             (await bcrypt.compare(password, room.passwordHash));
           if (!hasValidInvite && !hasValidPassword) {
+            recordRoomAuthFailure(clientIp, roomId);
             callback?.({ error: 'Invalid invite token or password' });
             return;
           }
         } else if (room.isPrivate && inviteToken !== room.inviteToken) {
           // Check invite token for private rooms
+          recordRoomAuthFailure(clientIp, roomId);
           callback?.({ error: 'Invalid invite token' });
           return;
         }

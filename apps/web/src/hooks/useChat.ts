@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import type { Socket } from 'socket.io-client';
 import { CHAT_MESSAGE_MAX } from '@scale/shared';
 import { chatMessageClientSchema, chatEditClientSchema } from '@/lib/validation';
+import { roomAccessHeaders } from '@/lib/roomAccess';
 
 // ─── Tipos públicos ────────────────────────────────────────────
 export interface ChatFileInfo {
@@ -210,9 +211,12 @@ export function useChat(
     try {
       const params = new URLSearchParams({ limit: '50' });
       if (nextCursor) params.set('cursor', nextCursor);
-      if (accessTokenRef.current) params.set('inviteToken', accessTokenRef.current);
-      if (passwordRef.current) params.set('password', passwordRef.current);
-      const res = await fetch(`/api/rooms/${roomId}/messages?${params.toString()}`, { credentials: 'include' });
+      // Credencial da sala vai por header (X-Room-Invite / X-Room-Password),
+      // nunca na URL.
+      const res = await fetch(`/api/rooms/${roomId}/messages?${params.toString()}`, {
+        credentials: 'include',
+        headers: roomAccessHeaders(accessTokenRef.current, passwordRef.current),
+      });
       const data = (await res.json()) as { messages: ChatMessage[]; nextCursor: string | null };
       if (res.ok) {
         setMessages((prev) => [...data.messages, ...prev]);

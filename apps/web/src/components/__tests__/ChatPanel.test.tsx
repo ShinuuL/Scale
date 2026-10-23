@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, renderHook, act, fireEvent, screen } from '@testing-library/react';
+import { render, renderHook, act, fireEvent, screen, waitFor } from '@testing-library/react';
 import type { Socket } from 'socket.io-client';
 import { chatMessageClientSchema, chatEditClientSchema, fileClientSchema } from '@/lib/validation';
 import { useChat, uploadErrorMessage, type ChatMessage, type ChatApi } from '@/hooks/useChat';
@@ -214,7 +214,7 @@ describe('useChat (Task 9/10)', () => {
     await act(() => result.current.loadMore());
     expect(fetchMock).toHaveBeenCalledWith(
       `/api/rooms/${ROOM_ID}/messages?limit=50`,
-      { credentials: 'include' },
+      { credentials: 'include', headers: {} },
     );
     expect(result.current.messages.map((m) => m.id)).toEqual(['old-1', 'old-2']);
     expect(result.current.nextCursor).toBe('cur-2');
@@ -255,7 +255,7 @@ describe('useChat (Task 9/10)', () => {
     expect(body.getAll('files')).toHaveLength(2);
   });
 
-  it('loadMore anexa password na query quando fornecida (sala protegida)', async () => {
+  it('loadMore envia password em header (nunca na query) quando fornecida (sala protegida)', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValue({
@@ -269,8 +269,8 @@ describe('useChat (Task 9/10)', () => {
 
     await act(() => result.current.loadMore());
     expect(fetchMock).toHaveBeenCalledWith(
-      `/api/rooms/${ROOM_ID}/messages?limit=50&password=segredo123`,
-      { credentials: 'include' },
+      `/api/rooms/${ROOM_ID}/messages?limit=50`,
+      { credentials: 'include', headers: { 'X-Room-Password': 'segredo123' } },
     );
   });
 
@@ -416,7 +416,12 @@ describe('ChatMessageItem (Task 10)', () => {
     expect(link?.textContent).toContain('doc.pdf');
   });
 
-  it('renderiza link de arquivo com password na query (sala protegida por senha)', () => {
+  it('link de arquivo de sala com senha nao leva a senha na URL; clique baixa via fetch com header', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, blob: async () => new Blob(['x']) });
+    vi.stubGlobal('fetch', fetchMock);
+    URL.createObjectURL = vi.fn(() => 'blob:fake');
+    URL.revokeObjectURL = vi.fn();
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
     const { container } = render(
       <ChatMessageItem
         message={baseMessage({
@@ -427,9 +432,16 @@ describe('ChatMessageItem (Task 10)', () => {
         password="segredo123"
       />
     );
-    const link = container.querySelector('a[href*="password=segredo123"]');
+    const link = container.querySelector('a[href="/api/files/f-pw"]') as HTMLAnchorElement;
     expect(link).toBeTruthy();
-    expect(link?.getAttribute('href')).toBe('/api/files/f-pw?password=segredo123');
+    expect(container.innerHTML).not.toContain('segredo123');
+    fireEvent.click(link);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('/api/files/f-pw');
+    expect(init.headers).toEqual({ 'X-Room-Password': 'segredo123' });
+    await waitFor(() => expect(clickSpy).toHaveBeenCalled());
+    clickSpy.mockRestore();
   });
 });
 

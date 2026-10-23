@@ -15,14 +15,15 @@ import { createSocketServer } from './socket/handler.js';
 import { gcDeletedFiles } from './lib/uploads.js';
 import { MAX_FILE_SIZE_BYTES, MAX_FILES_PER_MESSAGE } from '@scale/shared';
 import { resolveTrustProxy } from './lib/clientIp.js';
+import { buildLoggerOptions } from './lib/logger.js';
 import multipart from '@fastify/multipart';
 
 const env = getEnv();
 
 const server = Fastify({
-  logger: {
-    level: env.NODE_ENV === 'test' ? 'silent' : 'info',
-  },
+  // Serializer de `req` redige password/inviteToken/token da query string e
+  // headers com credencial (lib/logger.ts).
+  logger: buildLoggerOptions(env.NODE_ENV === 'test' ? 'silent' : 'info'),
   // TRUST_PROXY decide se o X-Forwarded-For e aceito. O default e `false`
   // (fail-closed, ver lib/env.ts): sem configuracao explicita nenhum header de
   // proxy entra na chave dos rate limits — o IP e o do socket. So habilite com o

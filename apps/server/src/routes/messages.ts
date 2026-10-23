@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { toPublicMessage } from '../lib/publicDto.js';
-import { extractAccessFromQuery, hasRoomAccess } from '../lib/roomAccess.js';
+import { extractAccessFromHeaders, guardRoomAccess } from '../lib/roomAccess.js';
 
 const querySchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(50),
@@ -22,9 +22,10 @@ export async function messagesRoutes(fastify: FastifyInstance): Promise<void> {
 
     // Membership: salas protegidas exigem JWT do dono, inviteToken ou password
     // (mesma regra do join-room). Salas públicas continuam abertas.
-    const creds = extractAccessFromQuery(request);
-    if (!(await hasRoomAccess(room, creds))) {
-      return reply.code(403).send({ error: 'Not a room member' });
+    // Credencial via header (X-Room-Password / X-Room-Invite), com balde de
+    // falhas por IP+sala.
+    if (!(await guardRoomAccess(request, reply, room, extractAccessFromHeaders(request)))) {
+      return reply;
     }
 
     let cursorCreatedAt: Date | undefined;

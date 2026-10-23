@@ -319,3 +319,36 @@ export function isTurnRateLimited(ip: string): RateLimitResult {
 export function resetTurnRateLimit(ip: string): void {
   reset(turnStore, ip);
 }
+
+// Falhas de credencial de sala (senha/convite): 10 falhas / 15 min por
+// IP+roomId. So FALHAS contam (acesso concedido nao consome o balde) e nao ha
+// isencao de loopback: e um limite contra brute force da senha da sala, nao de
+// volume. Usado em GET /api/rooms/:id/messages, GET /api/files/:id, upload e
+// join-room.
+const ROOM_AUTH_WINDOW_MS = 15 * 60_000;
+const ROOM_AUTH_MAX = 10;
+const roomAuthStore = createBucket('roomAuthFail');
+
+function roomAuthKey(ip: string, roomId: string): string {
+  return `${ip}|${roomId}`;
+}
+
+/** Bloqueado? (nao conta tentativa — so le o balde). */
+export function isRoomAuthLocked(ip: string, roomId: string): RateLimitResult {
+  const entry = roomAuthStore.get(roomAuthKey(ip, roomId));
+  const now = Date.now();
+  if (!entry || now > entry.resetAt || entry.count < ROOM_AUTH_MAX) return NOT_LIMITED;
+  return {
+    limited: true,
+    retryAfterSeconds: Math.max(1, Math.ceil((entry.resetAt - now) / 1000)),
+  };
+}
+
+/** Registra uma falha de credencial de sala. */
+export function recordRoomAuthFailure(ip: string, roomId: string): void {
+  take(roomAuthStore, roomAuthKey(ip, roomId), ROOM_AUTH_WINDOW_MS, ROOM_AUTH_MAX);
+}
+
+export function resetRoomAuthFailures(ip: string, roomId: string): void {
+  reset(roomAuthStore, roomAuthKey(ip, roomId));
+}

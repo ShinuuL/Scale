@@ -559,14 +559,16 @@ describe('REST membership hardening', () => {
 
     const withToken = await app.inject({
       method: 'GET',
-      url: `/api/rooms/${privateRoomId}/messages?inviteToken=${privateToken}`,
+      url: `/api/rooms/${privateRoomId}/messages`,
+      headers: { 'x-room-invite': privateToken },
     });
     expect(withToken.statusCode).toBe(200);
     expect(JSON.parse(withToken.payload).messages).toHaveLength(3);
 
     const withPass = await app.inject({
       method: 'GET',
-      url: `/api/rooms/${passRoomId}/messages?password=segredo123`,
+      url: `/api/rooms/${passRoomId}/messages`,
+      headers: { 'x-room-password': 'segredo123' },
     });
     expect(withPass.statusCode).toBe(200);
   });
@@ -663,7 +665,8 @@ describe('REST membership hardening', () => {
     try {
       const wrongToken = await app.inject({
         method: 'GET',
-        url: `/api/files/${fileId}?inviteToken=${other.inviteToken}`,
+        url: `/api/files/${fileId}`,
+        headers: { 'x-room-invite': other.inviteToken },
       });
       expect(wrongToken.statusCode).toBe(403);
     } finally {
@@ -672,7 +675,8 @@ describe('REST membership hardening', () => {
 
     const withToken = await app.inject({
       method: 'GET',
-      url: `/api/files/${fileId}?inviteToken=${privateToken}`,
+      url: `/api/files/${fileId}`,
+      headers: { 'x-room-invite': privateToken },
     });
     expect(withToken.statusCode).toBe(200);
     expect(withToken.headers['content-type']).toMatch(/image\/png/);
