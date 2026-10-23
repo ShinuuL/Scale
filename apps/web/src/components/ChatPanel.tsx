@@ -59,10 +59,6 @@ export interface ChatPanelProps {
   onClose: () => void;
   isOwner: boolean;
   guestName: string;
-  /** inviteToken de sala protegida (guests) — usado nos links de download. */
-  inviteToken?: string;
-  /** senha de sala protegida por password — anexada aos links de download. */
-  password?: string;
 }
 
 export function ChatPanel({
@@ -72,8 +68,6 @@ export function ChatPanel({
   onClose,
   isOwner,
   guestName,
-  inviteToken,
-  password,
 }: ChatPanelProps) {
   const isDesktop = useIsDesktop();
 
@@ -254,17 +248,13 @@ export function ChatPanel({
             key={message.id}
             message={message}
             currentPeers={currentPeers}
-            isOwn={
-              // isMine vem do servidor (por destinatario). No historico REST o
-              // convidado nao e identificavel: cai no nome local.
-              message.isMine === true ||
-              (message.isGuest === true && message.guestName === guestName)
-            }
+            // isMine vem do servidor (por destinatario: authorId ou guestId
+            // do cookie). O nome nunca decide autoria.
+            isOwn={message.isMine === true}
             isOwner={isOwner}
             onEdit={chat.editMessage}
             onDelete={chat.deleteMessage}
-            accessToken={inviteToken}
-            password={password}
+            roomTicket={chat.roomTicket}
           />
         ))}
       </div>

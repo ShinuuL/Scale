@@ -4,7 +4,7 @@ import path from 'node:path';
 import { prisma } from '../lib/prisma.js';
 import { sanitizeFilename, detectMagicBytes, saveFile, getQuotaUsage, UPLOADS_ROOT } from '../lib/uploads.js';
 import { ALLOWED_MIME_RE, CHAT_MESSAGE_MAX, MAX_FILE_SIZE_BYTES, parseGuestName } from '@scale/shared';
-import { extractAccessFromHeaders, guardRoomAccess } from '../lib/roomAccess.js';
+import { guardRoomParticipation } from '../lib/roomAccess.js';
 import { addChatFilesBytes, incQuotaExceeded } from '../lib/metrics.js';
 import { toPublicFile } from '../lib/publicDto.js';
 import { emitChatMessage } from '../socket/handler.js';
@@ -43,30 +43,21 @@ export async function filesRoutes(fastify: FastifyInstance): Promise<void> {
       return reply.code(410).send({ error: 'Room has expired' });
     }
 
-    // Membership ANTES de bufferizar (DoS hardening — critic): request.parts()
-    // yield fields E files; coletamos os fields (inviteToken/password) e só então,
-    // ao PRIMEIRO file part, validamos hasRoomAccess com room — sem toBuffer().
-    // Nosso client (useChat.uploadFiles) envia os fields de credencial ANTES dos
-    // files, então a ordem do multipart garante que a checagem vê os campos.
-    // Se o acesso falhar, retornamos 403 SEM consumir/bufferizar o stream.
+    // Participacao efetiva ANTES de ler o multipart (DoS hardening): room
+    // ticket do join-room no header X-Room-Ticket, ou dono por JWT. Negado ->
+    // 403 sem consumir o stream.
+    const participant = await guardRoomParticipation(request, reply, room);
+    if (!participant) return reply;
+
     const files = await request.parts(); // fastify-multipart
     const parts: Array<{ filename: string; mime: string; buffer: Buffer; fieldname: string }> = [];
     const fields: Record<string, string> = {};
     let fileCount = 0;
     let totalNew = 0;
-    let membershipChecked = false;
     for await (const part of files) {
       if (part.type === 'field') {
         fields[part.fieldname] = String(part.value ?? '');
         continue;
-      }
-
-      if (!membershipChecked) {
-        const creds = { userId: request.userId, inviteToken: fields.inviteToken, password: fields.password };
-        if (!(await guardRoomAccess(request, reply, room, creds))) {
-          return reply;
-        }
-        membershipChecked = true;
       }
 
       const buf = await part.toBuffer();
@@ -103,8 +94,11 @@ export async function filesRoutes(fastify: FastifyInstance): Promise<void> {
     // Autor do upload: sem guestName a mensagem cai no fallback 'Anon' de
     // ChatMessageItem.tsx:84 e o autor do arquivo se perde na UI.
     const guestName = request.userName ?? parseGuestName(fields.guestName);
+    // Autoria de convidado = guestId do room ticket (o mesmo do socket que
+    // entrou na sala). O nome nao concede nada.
+    const guestId = userId ? null : participant.guestId;
     const message = await prisma.chatMessage.create({
-      data: { roomId, content, authorId: userId, guestName },
+      data: { roomId, content, authorId: userId, guestName, guestId },
     });
 
     const createdFiles = [];
@@ -112,7 +106,7 @@ export async function filesRoutes(fastify: FastifyInstance): Promise<void> {
       const fileId = crypto.randomUUID();
       const relPath = await saveFile(roomId, fileId, p.filename, p.buffer);
       const cf = await prisma.chatFile.create({
-        data: { id: fileId, roomId, messageId: message.id, filename: sanitizeFilename(p.filename), mime: p.mime, size: p.buffer.length, path: relPath, uploadedBy: userId },
+        data: { id: fileId, roomId, messageId: message.id, filename: sanitizeFilename(p.filename), mime: p.mime, size: p.buffer.length, path: relPath, uploadedBy: userId, guestId },
       });
       createdFiles.push(cf);
     }
@@ -131,10 +125,10 @@ export async function filesRoutes(fastify: FastifyInstance): Promise<void> {
     const file = await prisma.chatFile.findUnique({ where: { id: fileId } });
     if (!file) return reply.code(404).send({ error: 'File not found' });
 
-    // Membership: valida a sala do arquivo (e não um roomId arbitrário).
+    // Participacao na sala DO ARQUIVO (e não num roomId arbitrário).
     const room = await prisma.room.findUnique({ where: { id: file.roomId } });
     if (!room) return reply.code(404).send({ error: 'Room not found' });
-    if (!(await guardRoomAccess(request, reply, room, extractAccessFromHeaders(request)))) {
+    if (!(await guardRoomParticipation(request, reply, room))) {
       return reply;
     }
 

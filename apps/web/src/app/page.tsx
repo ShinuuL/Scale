@@ -203,7 +203,8 @@ function RoomCard({ room, onEnter }: { room: RoomListItem; onEnter: () => void }
             )}
           </div>
           <p className="text-xs text-slate-400">
-            Até {room.maxParticipants} participantes
+            {room.participantCount === 1 ? '1 pessoa na sala' : `${room.participantCount} pessoas na sala`}
+            {room.hasPassword ? ' · com senha' : ''}
           </p>
         </div>
         <div className="flex items-center gap-1 shrink-0">

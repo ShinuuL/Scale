@@ -9,6 +9,7 @@ import { authRoutes } from '../routes/auth.js';
 import { roomRoutes } from '../routes/rooms.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { guestParticipantHeaders } from './helpers/participation.js';
 
 /* ------------------------------------------------------------------ */
 /*  uploads lib (Task 6)                                               */
@@ -95,6 +96,14 @@ function multipartBody(
   };
 }
 
+/** Acrescenta headers (ex.: prova de participacao) a um corpo multipart. */
+function withHeaders(
+  extra: Record<string, string>,
+  body: { payload: Buffer; headers: Record<string, string> },
+): { payload: Buffer; headers: Record<string, string> } {
+  return { payload: body.payload, headers: { ...body.headers, ...extra } };
+}
+
 /** Build a minimal Fastify app that dynamically registers Task 7 routes. */
 async function buildRestApp(): Promise<Fastify.FastifyInstance> {
   const app = Fastify({ logger: false });
@@ -178,7 +187,7 @@ describe('REST messages', () => {
       })),
     });
 
-    const first = await app.inject({
+    const first = await app.inject({ headers: guestParticipantHeaders(persistRoomId),
       method: 'GET',
       url: `/api/rooms/${persistRoomId}/messages?limit=50`,
     });
@@ -191,7 +200,7 @@ describe('REST messages', () => {
     );
     expect(times).toEqual([...times].sort((a: number, b: number) => a - b));
 
-    const second = await app.inject({
+    const second = await app.inject({ headers: guestParticipantHeaders(persistRoomId),
       method: 'GET',
       url: `/api/rooms/${persistRoomId}/messages?limit=50&cursor=${page1.nextCursor}`,
     });
@@ -268,9 +277,9 @@ describe('REST files', () => {
     const bigRes = await app.inject({
       method: 'POST',
       url: `/api/rooms/${persistRoomId}/files`,
-      ...multipartBody([
+      ...withHeaders(guestParticipantHeaders(persistRoomId), multipartBody([
         { filename: 'big.png', contentType: 'image/png', content: big },
-      ]),
+      ])),
     });
     expect(bigRes.statusCode).toBe(413);
 
@@ -283,7 +292,7 @@ describe('REST files', () => {
     const sixRes = await app.inject({
       method: 'POST',
       url: `/api/rooms/${persistRoomId}/files`,
-      ...multipartBody(six),
+      ...withHeaders(guestParticipantHeaders(persistRoomId), multipartBody(six)),
     });
     expect(sixRes.statusCode).toBe(413);
 
@@ -291,13 +300,13 @@ describe('REST files', () => {
     const badMime = await app.inject({
       method: 'POST',
       url: `/api/rooms/${persistRoomId}/files`,
-      ...multipartBody([
+      ...withHeaders(guestParticipantHeaders(persistRoomId), multipartBody([
         {
           filename: 'evil.exe',
           contentType: 'application/x-msdownload',
           content: Buffer.from('MZ'),
         },
-      ]),
+      ])),
     });
     expect(badMime.statusCode).toBe(400);
 
@@ -305,9 +314,9 @@ describe('REST files', () => {
     const mismatch = await app.inject({
       method: 'POST',
       url: `/api/rooms/${persistRoomId}/files`,
-      ...multipartBody([
+      ...withHeaders(guestParticipantHeaders(persistRoomId), multipartBody([
         { filename: 'fake.png', contentType: 'image/png', content: ZIP },
-      ]),
+      ])),
     });
     expect(mismatch.statusCode).toBe(400);
 
@@ -316,9 +325,9 @@ describe('REST files', () => {
     const pdfContent = await app.inject({
       method: 'POST',
       url: `/api/rooms/${persistRoomId}/files`,
-      ...multipartBody([
+      ...withHeaders(guestParticipantHeaders(persistRoomId), multipartBody([
         { filename: 'evil.png', contentType: 'image/png', content: PDF },
-      ]),
+      ])),
     });
     expect(pdfContent.statusCode).toBe(400);
     expect(JSON.parse(pdfContent.payload).error).toMatch(/Magic bytes mismatch/i);
@@ -347,9 +356,9 @@ describe('REST files', () => {
     const quotaRes = await app.inject({
       method: 'POST',
       url: `/api/rooms/${quotaRoom.id}/files`,
-      ...multipartBody([
+      ...withHeaders(guestParticipantHeaders(quotaRoom.id), multipartBody([
         { filename: 'x.png', contentType: 'image/png', content: upload2mb },
-      ]),
+      ])),
     });
     expect(quotaRes.statusCode).toBe(413);
     await prisma.room.delete({ where: { id: quotaRoom.id } }).catch(() => {});
@@ -359,13 +368,13 @@ describe('REST files', () => {
     const res = await app.inject({
       method: 'POST',
       url: `/api/rooms/${persistRoomId}/files`,
-      ...multipartBody([
+      ...withHeaders(guestParticipantHeaders(persistRoomId), multipartBody([
         { filename: 'photo.png', contentType: 'image/png', content: PNG },
         { filename: 'doc.pdf', contentType: 'application/pdf', content: PDF },
         { filename: 'readme.txt', contentType: 'text/plain', content: TXT },
         { filename: 'song.mp3', contentType: 'audio/mpeg', content: MP3 },
         { filename: 'archive.zip', contentType: 'application/zip', content: ZIP },
-      ]),
+      ])),
     });
     expect(res.statusCode).toBe(201);
     const body = JSON.parse(res.payload);
@@ -374,7 +383,7 @@ describe('REST files', () => {
 
     // GET the first uploaded file
     const fileId = body.files[0].id;
-    const getRes = await app.inject({ method: 'GET', url: `/api/files/${fileId}` });
+    const getRes = await app.inject({ headers: guestParticipantHeaders(persistRoomId), method: 'GET', url: `/api/files/${fileId}` });
     expect(getRes.statusCode).toBe(200);
     expect(getRes.headers['content-type']).toMatch(/image\/png/);
     expect(getRes.headers['content-disposition']).toContain('attachment');
@@ -386,10 +395,10 @@ describe('REST files', () => {
     const res = await app.inject({
       method: 'POST',
       url: `/api/rooms/${persistRoomId}/files`,
-      ...multipartBody(
+      ...withHeaders(guestParticipantHeaders(persistRoomId), multipartBody(
         [{ filename: 'com-autor.zip', contentType: 'application/zip', content: ZIP }],
         { guestName: 'Guest-ab12', content: 'segue o pacote' },
-      ),
+      )),
     });
     expect(res.statusCode).toBe(201);
     const messageId = (JSON.parse(res.payload) as { messageId: string }).messageId;
@@ -403,10 +412,10 @@ describe('REST files', () => {
     const res = await app.inject({
       method: 'POST',
       url: `/api/rooms/${persistRoomId}/files`,
-      ...multipartBody(
+      ...withHeaders(guestParticipantHeaders(persistRoomId), multipartBody(
         [{ filename: 'sem-autor.zip', contentType: 'application/zip', content: ZIP }],
         { guestName: '   ' },
-      ),
+      )),
     });
     expect(res.statusCode).toBe(201);
     const messageId = (JSON.parse(res.payload) as { messageId: string }).messageId;
@@ -418,10 +427,10 @@ describe('REST files', () => {
     const res = await app.inject({
       method: 'POST',
       url: `/api/rooms/${persistRoomId}/files`,
-      ...multipartBody(
+      ...withHeaders(guestParticipantHeaders(persistRoomId), multipartBody(
         [{ filename: 'longo.zip', contentType: 'application/zip', content: ZIP }],
         { guestName: 'x'.repeat(200) },
-      ),
+      )),
     });
     expect(res.statusCode).toBe(201);
     const messageId = (JSON.parse(res.payload) as { messageId: string }).messageId;
@@ -455,7 +464,7 @@ describe('REST files', () => {
         deletedAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000),
       },
     });
-    const res = await app.inject({
+    const res = await app.inject({ headers: guestParticipantHeaders(room.id),
       method: 'GET',
       url: `/api/files/${fileId}`,
     });
@@ -491,7 +500,7 @@ describe('REST files', () => {
         path: 'package.json', // escapes uploads/
       },
     });
-    const res = await app.inject({
+    const res = await app.inject({ headers: guestParticipantHeaders(room.id),
       method: 'GET',
       url: `/api/files/${fileId}`,
     });
@@ -504,7 +513,7 @@ describe('REST files', () => {
 /*  Hardening Task 15 — membership (salas protegidas)                   */
 /* ------------------------------------------------------------------ */
 
-describe('REST membership hardening', () => {
+describe('REST membership hardening (participacao efetiva via room ticket)', () => {
   let app: Awaited<ReturnType<typeof buildRestApp>>;
   let privateRoomId: string;
   let privateToken: string;
@@ -550,135 +559,111 @@ describe('REST membership hardening', () => {
     await app.close();
   });
 
-  it('messages: 403 sem creds; 200 com inviteToken ou password', async () => {
-    const noCreds = await app.inject({
-      method: 'GET',
-      url: `/api/rooms/${privateRoomId}/messages`,
-    });
+  it('messages: 403 sem ticket, mesmo com inviteToken/senha certos no header; 200 com ticket', async () => {
+    const noCreds = await app.inject({ method: 'GET', url: `/api/rooms/${privateRoomId}/messages` });
     expect(noCreds.statusCode).toBe(403);
 
-    const withToken = await app.inject({
+    // Senha/convite so valem para o join-room: nos GETs nao substituem o ticket.
+    const withInvite = await app.inject({
       method: 'GET',
       url: `/api/rooms/${privateRoomId}/messages`,
       headers: { 'x-room-invite': privateToken },
     });
-    expect(withToken.statusCode).toBe(200);
-    expect(JSON.parse(withToken.payload).messages).toHaveLength(3);
-
+    expect(withInvite.statusCode).toBe(403);
     const withPass = await app.inject({
       method: 'GET',
       url: `/api/rooms/${passRoomId}/messages`,
       headers: { 'x-room-password': 'segredo123' },
     });
-    expect(withPass.statusCode).toBe(200);
+    expect(withPass.statusCode).toBe(403);
+
+    const withTicket = await app.inject({
+      method: 'GET',
+      url: `/api/rooms/${privateRoomId}/messages`,
+      headers: guestParticipantHeaders(privateRoomId),
+    });
+    expect(withTicket.statusCode).toBe(200);
+    expect(JSON.parse(withTicket.payload).messages).toHaveLength(3);
   });
 
-  it('files POST: 403 sem creds; 201 com inviteToken field', async () => {
+  it('files POST: 403 sem ticket (campos inviteToken/password ignorados); 201 com ticket', async () => {
     const noCreds = await app.inject({
       method: 'POST',
       url: `/api/rooms/${privateRoomId}/files`,
-      ...multipartBody([
-        { filename: 'a.png', contentType: 'image/png', content: PNG },
-      ]),
+      ...multipartBody([{ filename: 'a.png', contentType: 'image/png', content: PNG }], { inviteToken: privateToken }),
     });
     expect(noCreds.statusCode).toBe(403);
 
-    const withToken = await app.inject({
+    const passFields = await app.inject({
+      method: 'POST',
+      url: `/api/rooms/${passRoomId}/files`,
+      ...multipartBody([{ filename: 'a.png', contentType: 'image/png', content: PNG }], { password: 'segredo123' }),
+    });
+    expect(passFields.statusCode).toBe(403);
+
+    const withTicket = await app.inject({
       method: 'POST',
       url: `/api/rooms/${privateRoomId}/files`,
-      ...multipartBody(
-        [{ filename: 'b.png', contentType: 'image/png', content: PNG }],
-        { inviteToken: privateToken },
+      ...withHeaders(
+        guestParticipantHeaders(privateRoomId),
+        multipartBody([{ filename: 'b.png', contentType: 'image/png', content: PNG }]),
       ),
     });
-    expect(withToken.statusCode).toBe(201);
-  });
-
-  it('files POST: 403 sem creds; 201 com password field', async () => {
-    const noCreds = await app.inject({
-      method: 'POST',
-      url: `/api/rooms/${passRoomId}/files`,
-      ...multipartBody([
-        { filename: 'a.png', contentType: 'image/png', content: PNG },
-      ]),
-    });
-    expect(noCreds.statusCode).toBe(403);
-
-    const withPass = await app.inject({
-      method: 'POST',
-      url: `/api/rooms/${passRoomId}/files`,
-      ...multipartBody(
-        [{ filename: 'b.png', contentType: 'image/png', content: PNG }],
-        { password: 'segredo123' },
-      ),
-    });
-    expect(withPass.statusCode).toBe(201);
+    expect(withTicket.statusCode).toBe(201);
   });
 
   it('magic bytes ESTRITO: pdf content com image/png declarado → 400 e vice-versa', async () => {
-    // declared image/png, content PDF (mesmo com inviteToken válido → 400)
     const pngClaimed = await app.inject({
       method: 'POST',
       url: `/api/rooms/${privateRoomId}/files`,
-      ...multipartBody(
-        [{ filename: 'fake.png', contentType: 'image/png', content: PDF }],
-        { inviteToken: privateToken },
+      ...withHeaders(
+        guestParticipantHeaders(privateRoomId),
+        multipartBody([{ filename: 'fake.png', contentType: 'image/png', content: PDF }]),
       ),
     });
     expect(pngClaimed.statusCode).toBe(400);
     expect(JSON.parse(pngClaimed.payload).error).toMatch(/Magic bytes mismatch/i);
 
-    // declared application/pdf, content PNG → 400 (mismatch simétrico)
     const pdfClaimed = await app.inject({
       method: 'POST',
       url: `/api/rooms/${privateRoomId}/files`,
-      ...multipartBody(
-        [{ filename: 'fake.pdf', contentType: 'application/pdf', content: PNG }],
-        { inviteToken: privateToken },
+      ...withHeaders(
+        guestParticipantHeaders(privateRoomId),
+        multipartBody([{ filename: 'fake.pdf', contentType: 'application/pdf', content: PNG }]),
       ),
     });
     expect(pdfClaimed.statusCode).toBe(400);
     expect(JSON.parse(pdfClaimed.payload).declared).toBe('application/pdf');
   });
 
-  it('GET /files/:fileId: 403 sem creds ou token de outra sala; 200 com token da sala', async () => {
+  it('GET /files/:fileId: 403 sem ticket ou com ticket de outra sala; 200 com ticket da sala', async () => {
     const post = await app.inject({
       method: 'POST',
       url: `/api/rooms/${privateRoomId}/files`,
-      ...multipartBody(
-        [{ filename: 'guard.png', contentType: 'image/png', content: PNG }],
-        { inviteToken: privateToken },
+      ...withHeaders(
+        guestParticipantHeaders(privateRoomId),
+        multipartBody([{ filename: 'guard.png', contentType: 'image/png', content: PNG }]),
       ),
     });
     expect(post.statusCode).toBe(201);
     const fileId = (JSON.parse(post.payload) as { files: Array<{ id: string }> }).files[0].id;
 
-    const noCreds = await app.inject({
-      method: 'GET',
-      url: `/api/files/${fileId}`,
-    });
+    const noCreds = await app.inject({ method: 'GET', url: `/api/files/${fileId}` });
     expect(noCreds.statusCode).toBe(403);
 
-    const other = await prisma.room.create({
-      data: { name: 'REST Other', isPersistent: true },
-    });
-    try {
-      const wrongToken = await app.inject({
-        method: 'GET',
-        url: `/api/files/${fileId}`,
-        headers: { 'x-room-invite': other.inviteToken },
-      });
-      expect(wrongToken.statusCode).toBe(403);
-    } finally {
-      await prisma.room.delete({ where: { id: other.id } }).catch(() => {});
-    }
-
-    const withToken = await app.inject({
+    const wrongRoom = await app.inject({
       method: 'GET',
       url: `/api/files/${fileId}`,
-      headers: { 'x-room-invite': privateToken },
+      headers: guestParticipantHeaders(passRoomId),
     });
-    expect(withToken.statusCode).toBe(200);
-    expect(withToken.headers['content-type']).toMatch(/image\/png/);
+    expect(wrongRoom.statusCode).toBe(403);
+
+    const withTicket = await app.inject({
+      method: 'GET',
+      url: `/api/files/${fileId}`,
+      headers: guestParticipantHeaders(privateRoomId),
+    });
+    expect(withTicket.statusCode).toBe(200);
+    expect(withTicket.headers['content-type']).toMatch(/image\/png/);
   });
 });

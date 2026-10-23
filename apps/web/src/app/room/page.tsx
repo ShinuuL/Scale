@@ -22,7 +22,7 @@ import { ProfileMenu } from '@/components/ui/ProfileMenu';
 import { api } from '@/lib/api';
 import { copyText } from '@/lib/clipboard';
 import { roomUrl } from '@/lib/roomLink';
-import { roomAccessHeaders } from '@/lib/roomAccess';
+import { roomInviteHeaders } from '@/lib/roomAccess';
 
 /**
  * Sala privada sem credencial (nem dono, nem convite valido no header) vem
@@ -117,7 +117,7 @@ function RoomPageInner({ roomId }: { roomId: string }) {
   const inviteToken = urlInviteTokenRef.current ?? room?.room.inviteToken ?? undefined;
 
   const socket = useSocket();
-  const chat = useChat(roomId, socket.socket, inviteToken, roomPassword.trim() || undefined);
+  const chat = useChat(roomId, socket.socket);
   const chatRef = useRef(chat);
   chatRef.current = chat;
 
@@ -183,7 +183,7 @@ function RoomPageInner({ roomId }: { roomId: string }) {
         // (nome, teto, expiracao) para dono ou convite valido.
         const res = await fetch(`/api/rooms/${roomId}`, {
           credentials: 'include',
-          headers: roomAccessHeaders(urlInviteTokenRef.current ?? undefined),
+          headers: roomInviteHeaders(urlInviteTokenRef.current ?? undefined),
         });
 
         if (res.status === 404) {
@@ -624,8 +624,6 @@ function RoomPageInner({ roomId }: { roomId: string }) {
             onClose={() => setChatOpen(false)}
             isOwner={isOwner}
             guestName={displayName}
-            inviteToken={inviteToken}
-            password={roomPassword.trim() || undefined}
           />
         )}
       </div>

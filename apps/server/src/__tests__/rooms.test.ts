@@ -222,12 +222,30 @@ describe('Room API', () => {
     const body = JSON.parse(response.payload);
     expect(body.rooms).toBeDefined();
     expect(Array.isArray(body.rooms)).toBe(true);
-    // Should only include public rooms
+    const names = body.rooms.map((r: { name: string }) => r.name);
+    expect(names).toContain('List Room 1');
+    // Sala privada nunca aparece na listagem.
+    expect(names).not.toContain('List Room 2');
+    // Dados minimos: nada de dono, convite, teto ou historico.
     for (const r of body.rooms) {
-      expect(r.isPrivate).toBe(false);
-      // A listagem nunca expõe o dono (ownerId é usado só internamente para o
-      // gate do inviteToken).
-      expect(r.ownerId).toBeUndefined();
+      expect(Object.keys(r).sort()).toEqual(['hasPassword', 'id', 'isPersistent', 'name', 'participantCount']);
+      expect(typeof r.participantCount).toBe('number');
+    }
+  });
+
+  it('GET /api/rooms omite salas ENDED e expiradas', async () => {
+    const ended = await prisma.room.create({ data: { name: 'List Ended', isPersistent: true, status: 'ENDED' } });
+    const expired = await prisma.room.create({
+      data: { name: 'List Expired', isPersistent: false, expiresAt: new Date(Date.now() - 60_000) },
+    });
+    try {
+      const response = await app.inject({ method: 'GET', url: '/api/rooms', headers: auth });
+      expect(response.statusCode).toBe(200);
+      const ids = JSON.parse(response.payload).rooms.map((r: { id: string }) => r.id);
+      expect(ids).not.toContain(ended.id);
+      expect(ids).not.toContain(expired.id);
+    } finally {
+      await prisma.room.deleteMany({ where: { id: { in: [ended.id, expired.id] } } });
     }
   });
 

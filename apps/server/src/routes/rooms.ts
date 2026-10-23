@@ -6,6 +6,7 @@ import { prisma } from '../lib/prisma.js';
 import { isRoomCreateRateLimited } from '../lib/rateLimit.js';
 import { getClientIp } from '../lib/clientIp.js';
 import { createRoomSchema as sharedCreateRoomSchema } from '@scale/shared';
+import { getRoomPeersSnapshot } from '../socket/handler.js';
 
 // Campos comuns (nome, persistencia, teto, TTL) vem de @scale/shared; o server
 // acrescenta a senha da sala privada.
@@ -163,13 +164,17 @@ export async function roomRoutes(fastify: FastifyInstance): Promise<void> {
     });
   });
 
-  // GET /api/rooms - list active rooms
+  // GET /api/rooms - list active rooms ("Salas na rede")
   // Exige login: o app é publicado na internet (tunel) e a listagem enumera as
   // salas ativas da instância. Sem sessão → 401 antes de tocar o banco.
+  // So salas PUBLICAS e ATIVAS (nao expiradas), com dados minimos: id, nome,
+  // participantes conectados agora, persistencia e se pede senha. Nada de
+  // inviteToken, dono, teto ou historico — entrar continua exigindo o
+  // join-room (e o historico, o room ticket que ele emite).
   fastify.get(
     '/api/rooms',
     { preHandler: [fastify.authenticate as never] },
-    async (request, reply) => {
+    async (_request, reply) => {
       const rooms = await prisma.room.findMany({
         where: {
           status: 'ACTIVE',
@@ -183,31 +188,20 @@ export async function roomRoutes(fastify: FastifyInstance): Promise<void> {
           id: true,
           name: true,
           isPersistent: true,
-          isPrivate: true,
-          maxParticipants: true,
-          inviteToken: true,
-          ownerId: true,
-          createdAt: true,
+          passwordHash: true,
         },
         orderBy: { createdAt: 'desc' },
         take: 50,
       });
 
-      // Expose inviteToken only when the requester is the room owner. ownerId é
-      // usado só para essa checagem e NÃO vai para o payload — a listagem é
-      // pública para qualquer usuário logado e não precisa do dono.
-      const roomsPublic = rooms.map((room) => {
-        const isOwner = request.userId && room.ownerId === request.userId;
-        return {
-          id: room.id,
-          name: room.name,
-          isPersistent: room.isPersistent,
-          isPrivate: room.isPrivate,
-          maxParticipants: room.maxParticipants,
-          createdAt: room.createdAt,
-          inviteToken: isOwner ? room.inviteToken : undefined,
-        };
-      });
+      const counts = getRoomPeersSnapshot();
+      const roomsPublic = rooms.map((room) => ({
+        id: room.id,
+        name: room.name,
+        participantCount: counts.get(room.id) ?? 0,
+        isPersistent: room.isPersistent,
+        hasPassword: room.passwordHash !== null,
+      }));
 
       return reply.send({ rooms: roomsPublic });
     },

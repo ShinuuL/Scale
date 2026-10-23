@@ -68,6 +68,7 @@ function createChatMock(overrides: Partial<ChatApi> = {}): ChatApi {
     markRead: vi.fn(),
     setOpen: vi.fn(),
     setMessages: vi.fn(),
+    roomTicket: null,
     ...overrides,
   };
 }
@@ -254,41 +255,34 @@ describe('useChat (Task 9/10)', () => {
     expect(body.getAll('files')).toHaveLength(2);
   });
 
-  it('loadMore envia password em header (nunca na query) quando fornecida (sala protegida)', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue({
-        ok: true,
-        json: async () => ({ messages: [baseMessage({ id: 'old-1', content: 'antiga' })], nextCursor: null }),
-      });
-    vi.stubGlobal('fetch', fetchMock);
-
-    const { socket } = createMockSocket();
-    const { result } = renderHook(() => useChat(ROOM_ID, socket, undefined, 'segredo123'));
-
-    await act(() => result.current.loadMore());
-    expect(fetchMock).toHaveBeenCalledWith(
-      `/api/rooms/${ROOM_ID}/messages?limit=50`,
-      { credentials: 'include', headers: { 'X-Room-Password': 'segredo123' } },
-    );
-  });
-
-  it('uploadFiles inclui campo password no FormData quando fornecida', async () => {
+  it('room:ticket da sala atual vai no header X-Room-Ticket do loadMore e do upload (nunca na URL)', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ files: [], messageId: 'm-pass' }),
+      json: async () => ({ messages: [], nextCursor: null, files: [], messageId: 'm-t' }),
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    const { socket } = createMockSocket();
-    const { result } = renderHook(() => useChat(ROOM_ID, socket, undefined, 'segredo123'));
+    const { socket, emitSocket } = createMockSocket();
+    const { result } = renderHook(() => useChat(ROOM_ID, socket));
+    // Ticket de OUTRA sala e ignorado.
+    emitSocket('room:ticket', { roomId: 'outra-sala', ticket: 'ticket-alheio' });
+    expect(result.current.roomTicket).toBeNull();
+    emitSocket('room:ticket', { roomId: ROOM_ID, ticket: 'ticket-da-sala' });
+    expect(result.current.roomTicket).toBe('ticket-da-sala');
 
-    await act(() =>
-      result.current.uploadFiles([new File(['a'], 'a.txt', { type: 'text/plain' })], 'leg'),
-    );
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    await act(() => result.current.loadMore());
+    expect(fetchMock).toHaveBeenCalledWith(`/api/rooms/${ROOM_ID}/messages?limit=50`, {
+      credentials: 'include',
+      headers: { 'X-Room-Ticket': 'ticket-da-sala' },
+    });
+
+    await act(() => result.current.uploadFiles([new File(['a'], 'a.txt', { type: 'text/plain' })], 'leg'));
+    const [url, init] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(url).toBe(`/api/rooms/${ROOM_ID}/files`);
+    expect(init.headers).toEqual({ 'X-Room-Ticket': 'ticket-da-sala' });
     const body = init.body as FormData;
-    expect(body.get('password')).toBe('segredo123');
+    expect(body.get('password')).toBeNull();
+    expect(body.get('inviteToken')).toBeNull();
   });
 });
 
@@ -415,7 +409,7 @@ describe('ChatMessageItem (Task 10)', () => {
     expect(link?.textContent).toContain('doc.pdf');
   });
 
-  it('link de arquivo de sala com senha nao leva a senha na URL; clique baixa via fetch com header', async () => {
+  it('link de arquivo nao leva o ticket na URL; clique baixa via fetch com X-Room-Ticket', async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, blob: async () => new Blob(['x']) });
     vi.stubGlobal('fetch', fetchMock);
     URL.createObjectURL = vi.fn(() => 'blob:fake');
@@ -428,17 +422,17 @@ describe('ChatMessageItem (Task 10)', () => {
           files: [{ id: 'f-pw', filename: 'secret.pdf', mime: 'application/pdf', size: 4096 }],
         })}
         {...itemProps}
-        password="segredo123"
+        roomTicket="ticket-segredo"
       />
     );
     const link = container.querySelector('a[href="/api/files/f-pw"]') as HTMLAnchorElement;
     expect(link).toBeTruthy();
-    expect(container.innerHTML).not.toContain('segredo123');
+    expect(container.innerHTML).not.toContain('ticket-segredo');
     fireEvent.click(link);
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('/api/files/f-pw');
-    expect(init.headers).toEqual({ 'X-Room-Password': 'segredo123' });
+    expect(init.headers).toEqual({ 'X-Room-Ticket': 'ticket-segredo' });
     await waitFor(() => expect(clickSpy).toHaveBeenCalled());
     clickSpy.mockRestore();
   });
@@ -468,7 +462,9 @@ describe('ChatPanel (Task 10)', () => {
     const items = screen.getAllByTestId('chat-message');
     expect(items[0].textContent).toContain('Editar');
     expect(items[1].textContent).not.toContain('Editar');
-    expect(items[2].textContent).toContain('Editar');
+    // Convidado com o MESMO nome local nao ganha autoria: so o isMine do
+    // servidor (guestId do cookie) decide.
+    expect(items[2].textContent).not.toContain('Editar');
   });
 
   function renderChatPanel(overrides: { chat?: Partial<ChatApi>; open?: boolean; currentPeers?: string[] } = {}) {

@@ -43,15 +43,14 @@ export const roomResponseSchema = z.object({
 
 export type RoomResponse = z.infer<typeof roomResponseSchema>;
 
+// Listagem "Salas na rede" (GET /api/rooms): so salas publicas ativas, com o
+// minimo para o cartao. Entrar continua passando pelo join-room.
 export const roomListItemSchema = z.object({
   id: z.string().uuid(),
   name: z.string(),
+  participantCount: z.number().int().min(0),
   isPersistent: z.boolean(),
-  isPrivate: z.boolean(),
-  maxParticipants: z.number(),
-  createdAt: z.string(),
-  // Só presente na listagem quando o requester é o dono da sala
-  inviteToken: z.string().optional(),
+  hasPassword: z.boolean(),
 });
 
 export type RoomListItem = z.infer<typeof roomListItemSchema>;

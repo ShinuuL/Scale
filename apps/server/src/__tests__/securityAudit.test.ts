@@ -17,6 +17,7 @@ import { resetRateLimit, resetChatRateLimit, resetRoomAuthFailures } from '../li
 import bcrypt from 'bcryptjs';
 import { redactUrl } from '../lib/logger.js';
 import { signToken } from '../lib/auth.js';
+import { guestParticipantHeaders } from './helpers/participation.js';
 
 type Ack = Record<string, unknown>;
 
@@ -118,7 +119,7 @@ describe('item 1 — chat:delete limpa prevContent e leituras nao vazam conteudo
         carol.disconnect();
       }
 
-      const rest = await h.app.inject({ method: 'GET', url: `/api/rooms/${roomId}/messages` });
+      const rest = await h.app.inject({ headers: guestParticipantHeaders(roomId), method: 'GET', url: `/api/rooms/${roomId}/messages` });
       expect(rest.statusCode).toBe(200);
       const msg = (JSON.parse(rest.payload).messages as Array<Record<string, unknown>>).find(
         (m) => m.id === messageId,
@@ -136,7 +137,7 @@ describe('item 1 — chat:delete limpa prevContent e leituras nao vazam conteudo
     const msg = await prisma.chatMessage.create({
       data: { roomId, content: 'atual', prevContent: 'anterior', editedAt: new Date(), guestName: 'Alice' },
     });
-    const rest = await h.app.inject({ method: 'GET', url: `/api/rooms/${roomId}/messages` });
+    const rest = await h.app.inject({ headers: guestParticipantHeaders(roomId), method: 'GET', url: `/api/rooms/${roomId}/messages` });
     const found = (JSON.parse(rest.payload).messages as Array<Record<string, unknown>>).find((m) => m.id === msg.id);
     expect(found).not.toHaveProperty('prevContent');
     expect(found?.edited).toBe(true);
@@ -172,12 +173,12 @@ describe('item 2 — GET /api/files/:id de arquivo apagado responde 410 imediato
         deletedAt: new Date(Date.now() - 60_000),
       },
     });
-    const res = await h.app.inject({ method: 'GET', url: `/api/files/${file.id}` });
+    const res = await h.app.inject({ headers: guestParticipantHeaders(roomId), method: 'GET', url: `/api/files/${file.id}` });
     expect(res.statusCode).toBe(410);
   });
 });
 
-describe('item 3 — balde de falhas de credencial de sala + credencial por header', () => {
+describe('item 3 — balde de falhas de credencial (join-room) e prova de participacao so por header', () => {
   let h: Harness;
   let roomId: string;
   let fileId: string;
@@ -201,56 +202,39 @@ describe('item 3 — balde de falhas de credencial de sala + credencial por head
     await h.app.close();
   });
 
-  it('GET /messages: 10 senhas erradas → 403; 11ª → 429 com Retry-After (mesmo com senha certa)', async () => {
-    resetRoomAuthFailures(IP, roomId);
-    for (let i = 0; i < 10; i += 1) {
-      const res = await h.app.inject({
-        method: 'GET',
-        url: `/api/rooms/${roomId}/messages`,
-        remoteAddress: IP,
-        headers: { 'x-room-password': `errada-${i}xx` },
-      });
-      expect(res.statusCode).toBe(403);
-    }
-    const locked = await h.app.inject({
-      method: 'GET',
-      url: `/api/rooms/${roomId}/messages`,
-      remoteAddress: IP,
-      headers: { 'x-room-password': 'segredo123' },
-    });
-    expect(locked.statusCode).toBe(429);
-    expect(Number(locked.headers['retry-after'])).toBeGreaterThan(0);
-
-    // GET /files/:id compartilha o balde da sala
-    const fileLocked = await h.app.inject({ method: 'GET', url: `/api/files/${fileId}`, remoteAddress: IP });
-    expect(fileLocked.statusCode).toBe(429);
-
-    // outro IP nao e afetado
-    const other = await h.app.inject({
-      method: 'GET',
-      url: `/api/rooms/${roomId}/messages`,
-      remoteAddress: '198.51.100.78',
-      headers: { 'x-room-password': 'segredo123' },
-    });
-    expect(other.statusCode).toBe(200);
-    resetRoomAuthFailures(IP, roomId);
-  });
-
-  it('senha na query string NAO e mais aceita; header (percent-encoded) e', async () => {
-    const viaQuery = await h.app.inject({
-      method: 'GET',
-      url: `/api/rooms/${roomId}/messages?password=segredo123`,
-      remoteAddress: '198.51.100.79',
-    });
-    expect(viaQuery.statusCode).toBe(403);
+  it('GET /messages e /files com senha certa (header) SEM ticket → 403: senha so vale no join-room', async () => {
     const viaHeader = await h.app.inject({
       method: 'GET',
       url: `/api/rooms/${roomId}/messages`,
-      remoteAddress: '198.51.100.79',
+      remoteAddress: IP,
       headers: { 'x-room-password': encodeURIComponent('segredo123') },
     });
+    expect(viaHeader.statusCode).toBe(403);
+    const file = await h.app.inject({
+      method: 'GET',
+      url: `/api/files/${fileId}`,
+      remoteAddress: IP,
+      headers: { 'x-room-password': 'segredo123' },
+    });
+    expect(file.statusCode).toBe(403);
+  });
+
+  it('ticket na query string NAO e aceito; no header e', async () => {
+    const headers = guestParticipantHeaders(roomId);
+    const viaQuery = await h.app.inject({
+      method: 'GET',
+      url: `/api/rooms/${roomId}/messages?ticket=${headers['x-room-ticket']}`,
+      headers: { cookie: headers.cookie },
+    });
+    expect(viaQuery.statusCode).toBe(403);
+    const viaQueryNoExtra = await h.app.inject({
+      method: 'GET',
+      url: `/api/files/${fileId}?ticket=${headers['x-room-ticket']}`,
+      headers: { cookie: headers.cookie },
+    });
+    expect(viaQueryNoExtra.statusCode).toBe(403);
+    const viaHeader = await h.app.inject({ method: 'GET', url: `/api/rooms/${roomId}/messages`, headers });
     expect(viaHeader.statusCode).toBe(200);
-    resetRoomAuthFailures('198.51.100.79', roomId);
   });
 
   it('join-room: 10 falhas → 11ª bloqueada mesmo com senha certa', async () => {
@@ -346,7 +330,7 @@ describe('item 4 — guestName validado (zod) no handshake e no upload', () => {
       method: 'POST',
       url: `/api/rooms/${roomId}/files`,
       payload,
-      headers: { 'content-type': `multipart/form-data; boundary=${boundary}` },
+      headers: { ...guestParticipantHeaders(roomId), ...{ 'content-type': `multipart/form-data; boundary=${boundary}` } },
     });
     expect(res.statusCode).toBe(201);
     const msg = await prisma.chatMessage.findUnique({ where: { id: JSON.parse(res.payload).messageId } });
@@ -487,6 +471,8 @@ describe('item 7 — DTOs publicos sem path/uploadedBy/authorId; isMine por dest
     try {
       const joinA = await emitAck(author, 'join-room', { roomId });
       expectClean(joinA);
+      const authorTicket = joinA.ticket as string;
+      expect(typeof authorTicket).toBe('string');
       const peerJoined = nextEvent<Record<string, unknown>>(author, 'room:peer-joined');
       await emitAck(reader, 'join-room', { roomId });
       const peer = await peerJoined;
@@ -517,7 +503,11 @@ describe('item 7 — DTOs publicos sem path/uploadedBy/authorId; isMine por dest
         method: 'POST',
         url: `/api/rooms/${roomId}/files`,
         payload,
-        headers: { 'content-type': `multipart/form-data; boundary=${boundary}`, cookie: `token=${token}` },
+        headers: {
+          'content-type': `multipart/form-data; boundary=${boundary}`,
+          cookie: `token=${token}`,
+          'x-room-ticket': authorTicket,
+        },
       });
       expect(up.statusCode).toBe(201);
       expectClean(JSON.parse(up.payload));
@@ -528,13 +518,19 @@ describe('item 7 — DTOs publicos sem path/uploadedBy/authorId; isMine por dest
       const rest = await h.app.inject({
         method: 'GET',
         url: `/api/rooms/${roomId}/messages`,
-        headers: { cookie: `token=${token}` },
+        headers: { cookie: `token=${token}`, 'x-room-ticket': authorTicket },
       });
       expectClean(JSON.parse(rest.payload));
       const mine = (JSON.parse(rest.payload).messages as Array<Record<string, unknown>>).filter((m) => m.isMine);
       expect(mine.length).toBe(2);
 
-      const anon = await h.app.inject({ method: 'GET', url: `/api/rooms/${roomId}/messages` });
+      // Outro participante (convidado com ticket proprio): nada e dele.
+      const anon = await h.app.inject({
+        method: 'GET',
+        url: `/api/rooms/${roomId}/messages`,
+        headers: guestParticipantHeaders(roomId),
+      });
+      expect(anon.statusCode).toBe(200);
       expect((JSON.parse(anon.payload).messages as Array<Record<string, unknown>>).some((m) => m.isMine)).toBe(false);
 
       // edit/delete do autor continuam funcionando
@@ -620,7 +616,12 @@ describe('item 8 — /api/metrics exige admin (allowlist) ou token de servico', 
 describe('item 10 — upload: sala inativa/expirada e SVG fora da allowlist', () => {
   let h: Harness;
 
-  function txtUpload(contentType = 'text/plain', body: Buffer = Buffer.from('ola\n'), filename = 'a.txt') {
+  function txtUpload(
+    contentType = 'text/plain',
+    body: Buffer = Buffer.from('ola\n'),
+    filename = 'a.txt',
+    extraHeaders: Record<string, string> = {},
+  ) {
     const boundary = '----audit10';
     return {
       payload: Buffer.concat([
@@ -630,7 +631,7 @@ describe('item 10 — upload: sala inativa/expirada e SVG fora da allowlist', ()
         body,
         Buffer.from(`\r\n--${boundary}--\r\n`),
       ]),
-      headers: { 'content-type': `multipart/form-data; boundary=${boundary}` },
+      headers: { 'content-type': `multipart/form-data; boundary=${boundary}`, ...extraHeaders },
     };
   }
 
@@ -666,7 +667,7 @@ describe('item 10 — upload: sala inativa/expirada e SVG fora da allowlist', ()
     const res = await h.app.inject({
       method: 'POST',
       url: `/api/rooms/${room.id}/files`,
-      ...txtUpload('image/svg+xml', svg, 'x.svg'),
+      ...txtUpload('image/svg+xml', svg, 'x.svg', guestParticipantHeaders(room.id)),
     });
     expect(res.statusCode).toBe(400);
   });

@@ -4,28 +4,31 @@
  *
  * Nunca saem: `prevContent` (conteudo anterior a edicao), o conteudo e os
  * arquivos de mensagem apagada, `ChatFile.path` (caminho no disco),
- * `uploadedBy` e `authorId`. A autoria vira `isMine`, calculado POR
+ * `uploadedBy`, `authorId` e `guestId`. A autoria vira `isMine`, calculado POR
  * DESTINATARIO (quem le), e `isGuest`.
  */
 
 /** Quem esta lendo a mensagem (para calcular `isMine`). */
 export interface MessageViewer {
   userId: string | null;
-  /** Nome de convidado do leitor (handshake do socket); ausente no REST. */
-  guestName?: string;
+  /** guestId do leitor convidado (cookie assinado); null/ausente se nao houver. */
+  guestId?: string | null;
 }
 
 /**
  * Regra de autoria (a mesma do chat:edit/chat:delete): mensagem de usuario
- * logado pertence ao `authorId`; mensagem de convidado, ao `guestName`.
+ * logado pertence ao `authorId`; mensagem de convidado, ao `guestId` emitido
+ * pelo servidor (lib/guestId.ts). O `guestName` NUNCA concede autoria (e so
+ * nome de exibicao, forjavel). Mensagem de convidado sem guestId (anterior a
+ * esta regra) nao pertence a ninguem.
  */
 export function isMessageAuthor(
-  msg: { authorId: string | null; guestName?: string | null },
+  msg: { authorId: string | null; guestId?: string | null },
   viewer: MessageViewer | undefined,
 ): boolean {
   if (!viewer) return false;
   if (msg.authorId) return msg.authorId === viewer.userId;
-  return viewer.guestName !== undefined && msg.guestName === viewer.guestName;
+  return Boolean(msg.guestId) && Boolean(viewer.guestId) && msg.guestId === viewer.guestId;
 }
 
 export const DELETED_MESSAGE_CONTENT = '[mensagem apagada]';
@@ -45,6 +48,7 @@ export interface ChatMessageSource {
   content: string;
   authorId: string | null;
   guestName?: string | null;
+  guestId?: string | null;
   createdAt: Date;
   editedAt?: Date | null;
   deletedAt?: Date | null;

@@ -1,4 +1,4 @@
-import type { Server as HttpServer } from 'http';
+import type { Server as HttpServer, IncomingMessage } from 'http';
 import { Server, Socket } from 'socket.io';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../lib/prisma.js';
@@ -11,6 +11,8 @@ import {
   isRoomAuthLocked,
   recordRoomAuthFailure,
 } from '../lib/rateLimit.js';
+import { GUEST_COOKIE_NAME, newGuestId, serializeGuestCookie, verifyGuestCookie } from '../lib/guestId.js';
+import { signRoomTicket, ticketSubject } from '../lib/roomTicket.js';
 import { incChatMessages, incChatEdits, incChatDeletes } from '../lib/metrics.js';
 import {
   toPublicMessage,
@@ -40,6 +42,8 @@ interface SocketUser {
   email: string | null;
   name: string;
   guestName?: string;
+  /** Convidado: UUID do cookie assinado (autoria). Logado: ausente. */
+  guestId?: string;
 }
 
 interface RoomPeer {
@@ -47,9 +51,12 @@ interface RoomPeer {
   userId: string | null;
   name: string;
   guestName?: string;
+  guestId?: string;
 }
 
 const roomPeers = new Map<string, Map<string, RoomPeer>>();
+/** guestId resolvido no handshake do engine, por request HTTP. */
+const handshakeGuestIds = new WeakMap<IncomingMessage, string>();
 const emptyTimers = new Map<string, NodeJS.Timeout>();
 
 // MAX_PARTICIPANTS vem de @scale/shared (teto da malha, mesmo valor do cliente).
@@ -63,6 +70,7 @@ export interface ChatMessageRow {
   content: string;
   authorId: string | null;
   guestName?: string;
+  guestId?: string | null;
   createdAt: Date;
 }
 
@@ -107,6 +115,24 @@ export function createSocketServer(httpServer: HttpServer): Server {
     pingInterval: 25000,
   });
 
+  // guestId do convidado (lib/guestId.ts) resolvido no PRIMEIRO response HTTP
+  // do engine (polling ou upgrade do WebSocket): cookie com assinatura valida e
+  // reaproveitado; ausente/adulterado gera um guestId novo e o devolve em
+  // Set-Cookie no proprio handshake. Assim o cookie existe antes de qualquer
+  // mensagem sem o cliente chamar nada (useSocket nao muda).
+  io.engine.on('initial_headers', (headers: Record<string, string | string[]>, req: IncomingMessage) => {
+    const existing = verifyGuestCookie(readCookie(req.headers.cookie, GUEST_COOKIE_NAME));
+    if (existing) {
+      handshakeGuestIds.set(req, existing);
+      return;
+    }
+    const guestId = newGuestId();
+    handshakeGuestIds.set(req, guestId);
+    const previous = headers['set-cookie'];
+    const cookie = serializeGuestCookie(guestId);
+    headers['set-cookie'] = previous === undefined ? [cookie] : [...(Array.isArray(previous) ? previous : [previous]), cookie];
+  });
+
   // Optional auth middleware
   io.use(async (socket, next) => {
     // O JWT do login vive num cookie HttpOnly (`token`), que o JS da página não
@@ -120,6 +146,12 @@ export function createSocketServer(httpServer: HttpServer): Server {
     // guestName vem do cliente: validado com zod (trim, 1..40, sem controle);
     // invalido ou ausente vira 'Guest' (mesma regra do upload).
     const guestName = parseGuestName(socket.handshake.auth?.guestName);
+    // Cookie verificado no initial_headers; fallback: verificar aqui (ex.:
+    // request sem passar pelo hook). Nunca vem do payload do cliente.
+    const guestId =
+      handshakeGuestIds.get(socket.request) ??
+      verifyGuestCookie(readCookie(socket.handshake.headers?.cookie, GUEST_COOKIE_NAME)) ??
+      undefined;
 
     if (token) {
       try {
@@ -136,6 +168,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
           email: null,
           name: guestName,
           guestName,
+          guestId,
         } satisfies SocketUser;
       }
     } else {
@@ -144,6 +177,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
         email: null,
         name: guestName,
         guestName,
+        guestId,
       } satisfies SocketUser;
     }
     next();
@@ -258,6 +292,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
           userId: user.userId,
           name: user.name,
           guestName: user.guestName,
+          guestId: user.guestId,
         });
         roomPeers.set(roomId, peers);
 
@@ -307,11 +342,19 @@ export function createSocketServer(httpServer: HttpServer): Server {
             .map((m) => toPublicMessage(m, viewerOf(user)));
         }
 
+        // Room ticket: prova de participacao para historico/arquivos/upload
+        // (lib/roomTicket.ts). Vai no ack E num evento proprio — o useSocket
+        // repassa so peers/history do ack, o useChat escuta `room:ticket`.
+        const subject = ticketSubject({ userId: user.userId, guestId: user.guestId ?? null });
+        const ticket = subject ? signRoomTicket(roomId, subject) : undefined;
+        if (ticket) socket.emit('room:ticket', { roomId, ticket });
+
         callback?.({
           success: true,
           peers: peersList,
           roomId,
           history,
+          ticket,
         });
 
         // emitir chat:system para a sala
@@ -528,6 +571,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
             content,
             authorId: user.userId,
             guestName: user.guestName ?? user.name,
+            guestId: user.userId ? null : (user.guestId ?? null),
           },
         });
         savedMsg = created as ChatMessageRow;
@@ -541,6 +585,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
           // Nome exibido: o authorId nunca sai do servidor, entao usuario
           // logado tambem precisa do nome aqui (igual a sala persistente).
           guestName: user.guestName ?? user.name,
+          guestId: user.userId ? null : (user.guestId ?? null),
           createdAt: new Date(),
         };
         const buf = chatBuffers.get(roomId) ?? [];
@@ -752,8 +797,8 @@ function handleLeaveRoom(
 }
 
 /** Leitor (para isMine) a partir do usuario do socket. */
-function viewerOf(user: { userId: string | null; guestName?: string; name: string }): MessageViewer {
-  return { userId: user.userId, guestName: user.guestName ?? user.name };
+function viewerOf(user: { userId: string | null; guestId?: string }): MessageViewer {
+  return { userId: user.userId, guestId: user.guestId ?? null };
 }
 
 /**
@@ -767,7 +812,7 @@ export function emitChatMessage(io: Server, roomId: string, msg: ChatMessageSour
   for (const [sid, peer] of peers) {
     io.to(sid).emit(
       'chat:message',
-      toPublicMessage(msg, { userId: peer.userId, guestName: peer.guestName ?? peer.name }),
+      toPublicMessage(msg, viewerOf(peer)),
     );
   }
 }

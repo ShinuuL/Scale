@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
 import { prisma } from './lib/prisma.js';
 import { getEnv } from './lib/env.js';
+import { getGuestCookieSecret } from './lib/guestId.js';
 import { authPlugin } from './plugins/auth.js';
 import { corsPlugin } from './plugins/cors.js';
 import { helmetPlugin } from './plugins/helmet.js';
@@ -20,6 +21,9 @@ import { buildLoggerOptions } from './lib/logger.js';
 import multipart from '@fastify/multipart';
 
 const env = getEnv();
+// Fail-fast: em producao GUEST_COOKIE_SECRET (>= 32 caracteres) e obrigatorio
+// para assinar o cookie do guestId (lib/guestId.ts). Sem ele o processo nao sobe.
+getGuestCookieSecret();
 
 const server = Fastify({
   // Serializer de `req` redige password/inviteToken/token da query string e

@@ -51,10 +51,8 @@ export interface ChatMessageItemProps {
   currentPeers: string[];
   onEdit: (id: string, content: string) => void;
   onDelete: (id: string) => void;
-  /** inviteToken de sala protegida — enviado em header no download (membership hardening). */
-  accessToken?: string;
-  /** senha de sala protegida — alternativa ao inviteToken, enviada em header no download. */
-  password?: string;
+  /** Room ticket do join-room — vai no header X-Room-Ticket do download. */
+  roomTicket?: string | null;
 }
 
 const EDIT_WINDOW_MS = 15 * 60 * 1000;
@@ -71,8 +69,7 @@ export function ChatMessageItem({
   currentPeers,
   onEdit,
   onDelete,
-  accessToken,
-  password,
+  roomTicket,
 }: ChatMessageItemProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(message.content);
@@ -145,18 +142,15 @@ export function ChatMessageItem({
             <li key={file.id}>
               <a
                 href={`/api/files/${file.id}`}
-                // Sala protegida: o <a href> nao envia header, entao o clique
-                // baixa via fetch com a credencial no header (nunca na URL).
-                onClick={
-                  accessToken || password
-                    ? (event) => {
-                        event.preventDefault();
-                        downloadRoomFile(file.id, file.filename, accessToken, password).catch((err: unknown) => {
-                          console.warn(err);
-                        });
-                      }
-                    : undefined
-                }
+                // Download exige participacao (room ticket): o <a href> nao
+                // envia header, entao o clique baixa via fetch com o ticket no
+                // header (nunca na URL).
+                onClick={(event) => {
+                  event.preventDefault();
+                  downloadRoomFile(file.id, file.filename, roomTicket).catch((err: unknown) => {
+                    console.warn(err);
+                  });
+                }}
                 target="_blank"
                 rel="noopener"
                 className="text-xs underline text-moss-400 hover:text-moss-300"

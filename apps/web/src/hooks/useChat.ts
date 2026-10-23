@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import type { Socket } from 'socket.io-client';
 import { CHAT_MESSAGE_MAX } from '@scale/shared';
 import { chatMessageClientSchema, chatEditClientSchema } from '@/lib/validation';
-import { roomAccessHeaders } from '@/lib/roomAccess';
+import { roomTicketHeaders } from '@/lib/roomAccess';
 
 // ─── Tipos públicos ────────────────────────────────────────────
 export interface ChatFileInfo {
@@ -48,6 +48,11 @@ export interface ChatApi {
   markRead: () => void;
   setOpen: (open: boolean) => void;
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
+  /**
+   * Room ticket emitido pelo servidor no join-room (evento `room:ticket`):
+   * prova de participacao exigida por historico, download e upload.
+   */
+  roomTicket: string | null;
 }
 
 const MENTION_SOUND_URL = '/sounds/mention.mp3';
@@ -68,8 +73,9 @@ function playMentionSound(): void {
  * mantém paginação (GET /api/rooms/:id/messages, cursor 50) e upload
  * (POST /api/rooms/:id/files). `unread` só incrementa quando o painel está fechado.
  *
- * `accessToken` (inviteToken) e `password` de salas protegidas são anexados aos
- * REST calls para satisfazer o membership check server-side (hardening Task 15).
+ * Historico, download e upload exigem participacao efetiva: o servidor emite
+ * um room ticket no join-room (evento `room:ticket`) e ele vai no header
+ * `X-Room-Ticket` (nunca na URL). Senha/convite so valem para o join-room.
  */
 /** Mensagem legível para a falha de upload (o backend responde em inglês). */
 export function uploadErrorMessage(status: number, serverError?: string): string {
@@ -94,28 +100,15 @@ export function uploadErrorMessage(status: number, serverError?: string): string
   }
 }
 
-export function useChat(
-  roomId: string,
-  socket: Socket | null,
-  accessToken?: string,
-  password?: string,
-): ChatApi {
+export function useChat(roomId: string, socket: Socket | null): ChatApi {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [hasMore, setHasMore] = useState(true);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [unread, setUnread] = useState(0);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const isOpenRef = useRef(false);
-  const accessTokenRef = useRef<string | undefined>(undefined);
-  const passwordRef = useRef<string | undefined>(undefined);
-
-  useEffect(() => {
-    accessTokenRef.current = accessToken;
-  }, [accessToken]);
-
-  useEffect(() => {
-    passwordRef.current = password;
-  }, [password]);
+  const [roomTicket, setRoomTicket] = useState<string | null>(null);
+  const roomTicketRef = useRef<string | null>(null);
 
   const setOpen = useCallback((open: boolean) => {
     isOpenRef.current = open;
@@ -165,6 +158,14 @@ export function useChat(
       setMessages((prev) => [...prev, systemMessage]);
     };
 
+    // Ticket novo a cada join/re-join; so o da sala atual interessa.
+    const onTicket = (payload: { roomId?: string; ticket?: string }) => {
+      if (payload?.roomId !== roomId || typeof payload.ticket !== 'string') return;
+      roomTicketRef.current = payload.ticket;
+      setRoomTicket(payload.ticket);
+    };
+
+    socket.on('room:ticket', onTicket);
     socket.on('chat:message', onMessage);
     socket.on('chat:edit', onEdit);
     socket.on('chat:delete', onDelete);
@@ -172,6 +173,7 @@ export function useChat(
     socket.on('chat:system', onSystem);
 
     return () => {
+      socket.off('room:ticket', onTicket);
       socket.off('chat:message', onMessage);
       socket.off('chat:edit', onEdit);
       socket.off('chat:delete', onDelete);
@@ -214,11 +216,10 @@ export function useChat(
     try {
       const params = new URLSearchParams({ limit: '50' });
       if (nextCursor) params.set('cursor', nextCursor);
-      // Credencial da sala vai por header (X-Room-Invite / X-Room-Password),
-      // nunca na URL.
+      // Prova de participacao no header X-Room-Ticket, nunca na URL.
       const res = await fetch(`/api/rooms/${roomId}/messages?${params.toString()}`, {
         credentials: 'include',
-        headers: roomAccessHeaders(accessTokenRef.current, passwordRef.current),
+        headers: roomTicketHeaders(roomTicketRef.current),
       });
       const data = (await res.json()) as { messages: ChatMessage[]; nextCursor: string | null };
       if (res.ok) {
@@ -237,16 +238,15 @@ export function useChat(
       const trimmedContent = content?.trim();
       if (trimmedContent) form.append('content', trimmedContent.slice(0, CHAT_MESSAGE_MAX));
       // O backend e quem monta a mensagem: sem o nome aqui o autor do arquivo
-      // aparece como "Anon" (ChatMessageItem.tsx). Vai ANTES dos arquivos para
-      // que a checagem de membership do servidor ja veja os campos.
+      // aparece como "Anon" (ChatMessageItem.tsx). O nome e so exibicao: a
+      // autoria e o guestId do cookie HttpOnly emitido pelo servidor.
       if (guestName) form.append('guestName', guestName);
-      if (accessTokenRef.current) form.append('inviteToken', accessTokenRef.current);
-      if (passwordRef.current) form.append('password', passwordRef.current);
       files.slice(0, 5).forEach((file) => form.append('files', file));
       const res = await fetch(`/api/rooms/${roomId}/files`, {
         method: 'POST',
         body: form,
         credentials: 'include',
+        headers: roomTicketHeaders(roomTicketRef.current),
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -270,5 +270,6 @@ export function useChat(
     markRead,
     setOpen,
     setMessages,
+    roomTicket,
   };
 }
