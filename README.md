@@ -25,22 +25,25 @@
 npm install
 
 # Gerar Prisma Client
-cd backend && npx prisma generate && cd ..
+npx prisma generate --schema=apps/server/prisma/schema.prisma
 
 # Rodar migrations
-cd backend && npx prisma db push && cd ..
+(cd apps/server && npx prisma db push)
 
 # Iniciar em modo dev
 npm run dev
 ```
 
-O frontend estara em `http://localhost:3000` e o backend em `http://localhost:4100`.
+O frontend (`next dev`) estara em `http://localhost:3000` e o backend em `http://localhost:4100`.
+Em dev o `/api` e reescrito pelo `next dev` e o socket conecta direto no backend
+(`NEXT_PUBLIC_DEV_WS_URL`, so na fase de dev). No Docker o app e servido em
+`http://localhost:${PROXY_PORT}` (Caddy), sempre no mesmo origin.
 
 ### Docker Compose
 
 ```bash
-# Sobe frontend + backend + proxy interno (Caddy). O proxy e o roteador HTTP
-# que fica atras do tunel (default profile).
+# Sobe backend + proxy (Caddy com o frontend estatico embutido). O proxy e a
+# entrada do app e fica atras do tunel (default profile).
 docker compose up --build
 
 # Sobe com o tunel publico (profile tunnel): gera uma URL efemera
@@ -67,7 +70,6 @@ Copie `.env.example` para `.env` e configure:
 JWT_SECRET=sua-chave-secreta-aqui
 DATABASE_URL=file:./data.db
 ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8080
-NEXT_PUBLIC_BACKEND_URL=http://localhost:4100
 ENABLE_TURN=false
 PROXY_PORT=8080
 PORT=4100
@@ -80,7 +82,6 @@ NODE_ENV=development
 | `JWT_SECRET` | Chave secreta para JWT (min 8 chars) | `change-me-in-production` |
 | `DATABASE_URL` | URL do SQLite | `file:./data.db` |
 | `ALLOWED_ORIGINS` | Origens CORS permitidas (CSV) | `http://localhost:3000,http://localhost:8080` |
-| `NEXT_PUBLIC_BACKEND_URL` | URL publica do backend | `http://localhost:4100` |
 | `ENABLE_TURN` | Habilitar servidor TURN | `false` |
 | `PROXY_PORT` | Porta do proxy interno (Caddy) no host | `8080` |
 | `PORT` | Porta do backend em dev no host (container sempre 4000) | `4100` |
@@ -91,37 +92,29 @@ NODE_ENV=development
 
 ```
 /
-├── frontend/          # Next.js 15 App Router
-│   ├── src/
-│   │   ├── app/       # Pages (App Router)
-│   │   ├── components/# React components
-│   │   ├── hooks/     # Custom hooks (useSocket, useWebRTC)
-│   │   └── lib/       # Utilities (api, validation)
-│   └── Dockerfile
-├── backend/           # Fastify 5 + Socket.io + Prisma
-│   ├── src/
-│   │   ├── lib/       # Auth, env, prisma, rateLimit
-│   │   ├── plugins/   # Fastify plugins (cors, helmet, auth)
-│   │   ├── routes/    # HTTP routes (auth, rooms, turn, messages, files, metrics)
-│   │   └── socket/    # Socket.io handlers
-│   ├── prisma/        # Prisma schema
-│   └── Dockerfile
-├── mcp/               # MCP server (Docker profile mcp)
-│   ├── src/
-│   │   └── index.ts   # MCP validator
-│   └── Dockerfile
+├── apps/
+│   ├── web/           # Next.js 15 App Router, export estatico (output: 'export')
+│   │   ├── src/       # app/ (rotas), components/, hooks/, lib/
+│   │   ├── public/    # assets + theme-boot.js (tema antes da 1a pintura)
+│   │   ├── scripts/   # csp.mjs: gera a CSP (sha256 dos scripts inline)
+│   │   └── Dockerfile # imagem do proxy: build estatico + Caddy
+│   ├── server/        # Fastify 5 + Socket.io + Prisma
+│   │   ├── src/       # lib/, plugins/, routes/, socket/
+│   │   ├── prisma/    # Prisma schema
+│   │   └── Dockerfile
+│   └── mcp/           # MCP server (Docker profile mcp)
+├── packages/
+│   └── shared/        # @scale/shared: schemas zod, tipos de eventos, limites
 ├── docs/
-│   ├── branding.md    # Identidade visual Scale
-│   └── tunnel-setup.md # Tunel publico (cloudflared)
 ├── docker-compose.yml
-├── Caddyfile          # Proxy interno (HTTP, sem TLS) que roteia por path atras do tunel
+├── Caddyfile          # estaticos + /api + /socket.io + headers de seguranca
 ├── AGENTS.md
 └── README.md
 ```
 
 ## Servicos
 
-### Frontend (porta 3000)
+### Frontend (estatico, servido pelo proxy; `next dev` na 3000)
 
 - Interface de videochamadas com WebRTC
 - Wizard de onboarding em 5 passos (boas-vindas, criar conta ou entrar, criar ou entrar numa sala, compartilhar o link, microfone e tela), com tutorial interativo em `/tutorial`
@@ -143,9 +136,12 @@ NODE_ENV=development
 
 ### Proxy interno (Caddy, default)
 
-- Roteia por path: `/socket.io/*` → `backend:4000`, todo o resto → `frontend:3000`
-- Existe porque o tunel rapido aponta para um unico servico e os rewrites do
-  Next.js nao fazem upgrade de WebSocket
+- Serve o export estatico do frontend (`try_files` com fallback) e roteia
+  `/api/*` e `/socket.io/*` → `backend:4000`
+- Headers: CSP sem `'unsafe-inline'` em `script-src` (hashes gerados no build),
+  `nosniff`, `Referrer-Policy: no-referrer`, `Permissions-Policy`, cache
+  imutavel em `/_next/static/*`
+- Links antigos `/room/<id>` redirecionam (302) para `/room?id=<id>`
 - Publica `${PROXY_PORT:-8080}`
 
 ### Cloudflared (profile `tunnel`)
@@ -195,7 +191,7 @@ Resposta (JSON):
 
 ### GET /metrics (frontend)
 
-Dashboard em `http://localhost:3000/metrics` com cards (uptime, salas, peers, memoria) e auto-refresh a cada 10s. Consome `/api/metrics` via proxy same-origin do Next.js. Como o endpoint exige JWT, **sem sessao a pagina mostra "Requer login"** (com link para `/login`) em vez de quebrar.
+Dashboard em `/metrics` com cards (uptime, salas, peers, memoria) e auto-refresh a cada 10s. Consome `/api/metrics` no mesmo origin (Caddy). Como o endpoint exige JWT, **sem sessao a pagina mostra "Requer login"** (com link para `/login`) em vez de quebrar.
 
 ### GET /mcp/metrics (MCP server, profile `mcp`)
 

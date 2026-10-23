@@ -27,13 +27,16 @@ Se você reiniciar o `cloudflared`, os links antigos morrem.
 ## Como funciona por dentro (proxy interno)
 
 O túnel rápido aponta para **um único serviço** (`http://proxy:8080`). Por isso
-existe um **proxy interno** (serviço `proxy`, Caddy) entre o túnel e o app: ele
-roteia por path, já que o app tem dois alvos:
+existe um **proxy interno** (serviço `proxy`, Caddy) entre o túnel e o app. Ele
+serve o frontend **estático** (export do Next embutido na imagem, sem servidor
+Node) e roteia por path para o backend:
 
 | Path | Destino | Por quê |
 |------|---------|---------|
-| `/socket.io/*` | `backend:4000` | os rewrites do Next.js (frontend) **não** fazem upgrade de WebSocket (vercel/next.js#23147); o Caddy faz o upgrade nativamente |
-| todo o resto | `frontend:3000` | páginas + `/api` via rewrites same-origin do Next |
+| `/api/*` | `backend:4000` | API REST, mesmo origin |
+| `/socket.io/*` | `backend:4000` | signaling; o Caddy faz o upgrade de WebSocket nativamente |
+| `/room/<id>` | 302 → `/room?id=<id>` | compatibilidade com links antigos (preserva a query) |
+| todo o resto | arquivos em `/srv` | `try_files {path} {path}.html {path}/ /index.html` + CSP e headers de segurança |
 
 O `Caddyfile` é esse roteador interno. O `cloudflared` só recebe o tráfego e
 repassa para `http://proxy:8080`.
@@ -42,8 +45,9 @@ Fluxo:
 
 ```
 browser ──https──> Cloudflare ──túnel──> cloudflared ──http──> proxy (Caddy :8080)
+                                                                 ├── /api/*       ─> backend:4000
                                                                  ├── /socket.io/* ─> backend:4000
-                                                                 └── /*          ─> frontend:3000
+                                                                 └── /*           ─> estaticos (/srv)
 ```
 
 ---
@@ -51,7 +55,7 @@ browser ──https──> Cloudflare ──túnel──> cloudflared ──http
 ## Como subir
 
 ```bash
-# Sobe backend + frontend + proxy (default) + cloudflared (profile tunnel)
+# Sobe backend + proxy com estaticos (default) + cloudflared (profile tunnel)
 docker compose --profile tunnel up -d --build
 
 # Confira os serviços no ar
@@ -96,9 +100,9 @@ Sem o túnel, o app continua acessível em HTTP pelos caminhos de sempre:
 
 | Cenário | URL |
 |---------|-----|
-| Frontend (dev no host) | `http://localhost:3000` |
-| Proxy interno (Caddy) | `http://localhost:8080` |
-| Backend direto (WebSocket em HTTP puro) | `http://localhost:<BACKEND_PORT>` |
+| App (Docker, Caddy) | `http://localhost:<PROXY_PORT>` (8080 default; 8090 nesta máquina) |
+| Frontend em dev (`npm run dev`) | `http://localhost:3000` |
+| Backend direto (diagnóstico, loopback) | `http://localhost:<BACKEND_PORT>` |
 
 A porta do proxy no host é configurável por `PROXY_PORT` (default `8080`). Se
 você mudar `PROXY_PORT`, ajuste também `ALLOWED_ORIGINS` no `.env` (a origem
@@ -107,35 +111,32 @@ você mudar `PROXY_PORT`, ajuste também `ALLOWED_ORIGINS` no `.env` (a origem
 ### Exposição de LAN (leia se está em rede compartilhada)
 
 Por padrão, **só o `proxy` é publicado em `0.0.0.0`** (é a entrada do app). As
-portas de `backend` e `frontend` ficam **só no loopback** (`127.0.0.1`):
+porta do `backend` fica **só no loopback** (`127.0.0.1`). Não existe mais
+container de frontend (o app é estático, servido pelo próprio `proxy`):
 
 | Serviço | Publicação default | Quem alcança |
 |---------|--------------------|--------------|
 | `proxy` (Caddy) | `0.0.0.0:${PROXY_PORT:-8080}` | qualquer host da LAN (`http://<seu-IP>:8080`) |
 | `backend` | `127.0.0.1:${BACKEND_PORT}` | só a própria máquina |
-| `frontend` | `127.0.0.1:3000` | só a própria máquina |
 
-**Por que `backend` e `frontend` são loopback-only.** Publicá-los em `0.0.0.0`
-abre um **bypass de rate limit medirado**: quem alcança a porta direto (ou o
-Next, cujo rewrite `/api` repassa o `X-Forwarded-For` recebido) consegue forjar o
+**Por que o `backend` é loopback-only.** Publicá-lo em `0.0.0.0` abre um
+**bypass de rate limit**: quem alcança a porta direto consegue forjar o
 header e, com isso, furar **todos** os baldes por IP (login, registro, upload).
 Isso anula a Etapa 4. Nada do fluxo real precisa dessas portas fora do loopback:
 
 - o **túnel** fala com o `proxy` interno (que roteia para os containers pela rede
-  Docker), nunca com `:3000`/`:4100`;
-- o **navegador local** em `http://localhost:8090` fala só com o `proxy`;
-- `NEXT_PUBLIC_BACKEND_URL=http://localhost:4100` (usado pelo browser em HTTP
-  puro no host para o WebSocket) continua funcionando: `localhost` é loopback.
+  Docker), nunca com `:4100`;
+- o **navegador local** em `http://localhost:8090` fala só com o `proxy`
+  (páginas, `/api` e WebSocket no mesmo origin).
 
 Se você **realmente** precisa de acesso direto pela LAN (ex.: testar de outro
-dispositivo em HTTP puro no `:3000`/`:4100`), descomente no `docker-compose.yml`
-a variante antiga de cada porta (logo abaixo da versão loopback):
+dispositivo direto no `:4100`), descomente no `docker-compose.yml` a variante
+antiga da porta (logo abaixo da versão loopback). Para usar o app pela LAN isso
+**não** é necessário: o `proxy` já está em `0.0.0.0`.
 
 ```yaml
 # backend
 - "${BACKEND_PORT:-4000}:4000"   # 0.0.0.0 — REINTRODUZ a superfície de spoof
-# frontend
-- "3000:3000"                    # 0.0.0.0 — idem
 ```
 
 **AVISO:** essa variante reintroduz exatamente o buraco descrito acima — a LAN
@@ -155,20 +156,16 @@ Pelo túnel, o app é **same-origin**: o browser carrega a página em
 **mesmo origin**. Requisições same-origin não passam por CORS, então não há nada
 para adicionar em `ALLOWED_ORIGINS` — mesmo que a URL mude a cada start.
 
-Em HTTP local, as origens usadas (`http://localhost:3000` e
-`http://localhost:8080`) já estão em `ALLOWED_ORIGINS` no `.env`.
+Em HTTP local pelo proxy (`http://localhost:<PROXY_PORT>`) o app também é
+same-origin. `http://localhost:3000` continua em `ALLOWED_ORIGINS` só para o
+`npm run dev`, em que o WebSocket vai direto ao backend (cross-origin).
 
-### Acesso por IP da LAN (HTTP puro) — origem extra no WebSocket
+### Acesso por IP da LAN (HTTP puro)
 
-Em HTTP puro (sem túnel), o `getWsUrl()` do frontend aponta para
-`<seu-host>:<BACKEND_PORT>` — ou seja, o WebSocket conecta **cross-origin** no
-backend. Se você abrir o app por `http://192.168.x.y:8080` (ou `:3000`), essa
-origem precisa estar em `ALLOWED_ORIGINS`, senão o handshake do Socket.io é
-rejeitado. Exemplo no `.env`:
-
-```env
-ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8080,http://192.168.x.y:8080,http://192.168.x.y:3000
-```
+Pelo proxy (`http://192.168.x.y:<PROXY_PORT>`) o app é same-origin: páginas,
+`/api` e WebSocket vão para o mesmo host, então não é preciso acrescentar a
+origem em `ALLOWED_ORIGINS`. (Lembre que microfone e tela exigem contexto
+seguro: fora de `localhost`, use o túnel HTTPS.)
 
 Pelo túnel (HTTPS) isso **não** é necessário: o app é same-origin e o CORS não
 entra em jogo.
@@ -190,7 +187,7 @@ O que **realmente** protege o app nesse cenário:
 
 1. **Rate limit por IP real do cliente.** O container roda com
    `NODE_ENV=production` e `TRUST_PROXY` apontando **apenas para os hops reais**
-   (frontend, proxy e cloudflared — ver "Modelo de confiança" abaixo). Nesse
+   (proxy e cloudflared — ver "Modelo de confiança" abaixo). Nesse
    arranjo o Caddy anexa o IP real do cliente e o backend o usa como chave dos
    baldes. Ex.: `POST /api/rooms` é limitado a 10 salas / 5s por IP (429 acima
    disso); login 10/5min; registro 5/hora; upload 30/min.
@@ -204,13 +201,12 @@ Os baldes de rate limit são por IP. A pergunta de segurança é: **em quem o
 backend confia para informar o IP do cliente?** A resposta está em dois lugares,
 e os dois precisam estar certos.
 
-**1) Backend — `TRUST_PROXY` (docker-compose.yml).** Confia só nos três hops
+**1) Backend — `TRUST_PROXY` (docker-compose.yml).** Confia só nos dois hops
 reais da rede Docker, cada um com IP estático fixado em `ipv4_address`:
 
 | Hop | IP | Por que entra |
 |-----|----|---------------|
-| `frontend` (Next) | `172.28.0.3/32` | os rewrites `/api` repassam o request (com o XFF já saneado pelo Caddy) para o backend |
-| `proxy` (Caddy) | `172.28.0.4/32` | `/socket.io/*` vai **direto** ao backend, sem passar pelo Next |
+| `proxy` (Caddy) | `172.28.0.4/32` | único hop HTTP na frente do backend (`/api/*` e `/socket.io/*`) |
 | `cloudflared` | `172.28.0.5/32` | último hop do `X-Forwarded-For` quando o request cruza o túnel |
 
 **O gateway `172.28.0.1` NÃO entra na lista.** Ele é o peer de quem alcança uma
@@ -259,26 +255,14 @@ docker compose restart backend; Start-Sleep 12
 node xff-probe.mjs "http://localhost:8090/api/auth/login" 15
 ```
 
-Em `:3000`/`:4100` **fora do loopback** a conexão deve ser **recusada** (nada
-publicado). No loopback os dois respondem, e o comportamento é **diferente**:
+Em `:4100` **fora do loopback** a conexão deve ser **recusada** (nada
+publicado). No loopback, `localhost:4100` (backend direto) é seguro: o peer é o
+gateway `172.28.0.1`, que **não** está no `TRUST_PROXY`, então o
+`X-Forwarded-For` forjado é ignorado e o balde fica com uma chave estável.
 
-- `localhost:4100` (backend direto): seguro. O peer é o gateway `172.28.0.1`,
-  que **não** está no `TRUST_PROXY`, então o `X-Forwarded-For` forjado é
-  ignorado e o balde fica com uma chave estável.
-- `localhost:3000` (rewrite `/api` do Next): **ainda fura**. Medido: 15 logins
-  com `X-Forwarded-For` rotativo → 15× `401`, nenhum `429`; e com um XFF **fixo**
-  o 429 aparece só na 11ª — ou seja, o header forjado **é** a chave do balde.
-  Motivo: o Next repassa o `X-Forwarded-For` recebido e o container do
-  `frontend` precisa continuar confiável (é o hop do caminho túnel). Não há,
-  nesse caminho, quem saneie o header.
-
-**Risco residual (aceito, e por isso documentado):** esse furo exige um processo
-que **já roda no host** — a porta é `127.0.0.1`-only e a LAN é recusada (medido).
-Quem está no host já pode falar direto com o SQLite, então o ganho do atacante é
-marginal. Fechar de vez pede sanitização do header no Next (`middleware.ts` ou
-route handler); um `strip` puro **não** serve, porque reabriria o balde
-compartilhado no caminho `/api` (o backend passaria a usar o peer
-`172.28.0.3`).
+O antigo risco residual de `localhost:3000` (rewrite `/api` do Next repassando o
+`X-Forwarded-For` recebido, com o container do frontend confiável) **deixou de
+existir**: o frontend agora é estático e o Caddy é o único hop HTTP até o backend.
 
 **IP real sobrevive ao túnel?** Faça uma requisição pelo túnel e leia o log do
 backend — o `remoteAddress` deve ser **o seu IP público atual**, nunca
@@ -408,7 +392,7 @@ sobrevivendo ao proxy. Verifique:
    172.28.0.5/32 }`? Sem ele o Caddy substitui o `X-Forwarded-For` pelo IP do
    `cloudflared` e todo o túnel vira uma chave só.
 2. `TRUST_PROXY` no `docker-compose.yml` ainda lista os hops reais
-   (`172.28.0.3/32,172.28.0.4/32,172.28.0.5/32`) e **não** a subnet inteira nem
+   (`172.28.0.4/32,172.28.0.5/32`) e **não** a subnet inteira nem
    `true`?
 3. O log do backend mostra `remoteAddress` = **seu IP público** para uma linha
    com `host=<tunel>.trycloudflare.com`? Se mostrar `172.28.x.x`, o IP real se
