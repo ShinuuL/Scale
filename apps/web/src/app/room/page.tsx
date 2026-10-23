@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useSocket } from '@/hooks/useSocket';
 import { useWebRTC } from '@/hooks/useWebRTC';
+import { useDisconnectNotice } from '@/hooks/useDisconnectNotice';
 import { useSpeaking } from '@/hooks/useSpeaking';
 import { useChat } from '@/hooks/useChat';
 import { ChatPanel } from '@/components/ChatPanel';
@@ -335,14 +336,12 @@ function RoomPageInner({ roomId }: { roomId: string }) {
     });
   }, [socket, performJoin]);
 
-  // Aviso não bloqueante quando o socket desconecta (ex.: backend caiu, rede
-  // instável). Nada de bloquear a UI:
-  // o effect de reconnect acima refaz o join assim que o socket voltar.
-  useEffect(() => {
-    if (!socket.connected && !loading) {
-      toast('Desconectado — tentando reconectar...', 'error');
-    }
-  }, [socket.connected, loading, toast]);
+  // Aviso não bloqueante quando o socket CAI (backend caiu, rede instável) —
+  // só na transição conectado → desconectado, nunca na conexão inicial. O
+  // effect de reconnect acima refaz o join assim que o socket voltar.
+  useDisconnectNotice(socket.connected, () => {
+    toast('Desconectado — tentando reconectar...', 'error');
+  });
 
   // Diagnóstico rápido no console: estado do socket x peers x mídia.
   useEffect(() => {
