@@ -229,6 +229,15 @@ export function createSocketServer(httpServer: HttpServer): Server {
           return;
         }
 
+        // Um socket esta em UMA sala por vez: entrar em B sai de A antes (peers
+        // de A recebem room:peer-left e o socket deixa o canal de A). Sem isto
+        // o socket ficava em roomPeers de A recebendo e sinalizando para ela.
+        const previousRoomId = socket.data.roomId as string | undefined;
+        if (previousRoomId && previousRoomId !== roomId) {
+          handleLeaveRoom(io, socket, previousRoomId);
+          socket.data.roomId = undefined;
+        }
+
         // Cancela timer de auto-delete se alguém voltou (sala reocupada)
         const existingTimer = emptyTimers.get(roomId);
         if (existingTimer) {

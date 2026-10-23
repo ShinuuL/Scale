@@ -414,3 +414,47 @@ describe('item 5 — sinalizacao exige que o remetente esteja na sala', () => {
     }
   });
 });
+
+describe('item 6 — join-room em outra sala sai da sala anterior', () => {
+  let h: Harness;
+  let roomA: string;
+  let roomB: string;
+
+  beforeAll(async () => {
+    h = await buildHarness();
+    roomA = (await prisma.room.create({ data: { name: 'Audit Item6', isPersistent: true } })).id;
+    roomB = (await prisma.room.create({ data: { name: 'Audit Item6', isPersistent: true } })).id;
+  });
+
+  afterAll(async () => {
+    await prisma.room.deleteMany({ where: { name: 'Audit Item6' } }).catch(() => {});
+    await h.app.close();
+  });
+
+  it('peer de A recebe peer-left; mover nao recebe mais eventos de A nem sinaliza para A', async () => {
+    const stay = await connect(h.port, { guestName: 'Stay' });
+    const mover = await connect(h.port, { guestName: 'Mover' });
+    try {
+      await emitAck(stay, 'join-room', { roomId: roomA });
+      await emitAck(mover, 'join-room', { roomId: roomA });
+      const left = nextEvent<Record<string, unknown>>(stay, 'room:peer-left');
+      expect((await emitAck(mover, 'join-room', { roomId: roomB })).success).toBe(true);
+      expect((await left).peerId).toBe(mover.id);
+
+      let leaked = 0;
+      mover.on('chat:message', () => (leaked += 1));
+      await emitAck(stay, 'chat:message', { roomId: roomA, content: 'so para A' });
+      const offer = await emitAck(mover, 'signal:offer', {
+        roomId: roomA,
+        targetPeerId: stay.id,
+        offer: { type: 'offer', sdp: 'x' },
+      });
+      expect(offer.error).toBe('Not in room');
+      await new Promise((r) => setTimeout(r, 50));
+      expect(leaked).toBe(0);
+    } finally {
+      stay.disconnect();
+      mover.disconnect();
+    }
+  });
+});
