@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
 import './globals.css';
-import { PALETTE_BOOT_SCRIPT } from '@/lib/theme';
+import { PALETTE_BOOT_SRC } from '@/lib/theme';
 
 export const metadata: Metadata = {
   title: 'Scale — P2P Video Calls',
@@ -24,8 +24,11 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
       <head>
-        {/* Tema salvo aplicado antes da 1a pintura (texto estático, sem dado do usuário) */}
-        <script dangerouslySetInnerHTML={{ __html: PALETTE_BOOT_SCRIPT }} />
+        {/* Tema salvo aplicado antes da 1a pintura. Sincrono de proposito (precisa
+            rodar antes do body pintar) e arquivo estatico para a CSP nao exigir
+            'unsafe-inline' em script-src. */}
+        {/* eslint-disable-next-line @next/next/no-sync-scripts */}
+        <script src={PALETTE_BOOT_SRC} />
       </head>
       <body className="min-h-screen bg-forest-950 text-slate-100 antialiased">
         {/* Skip to content link for accessibility */}

@@ -23,11 +23,11 @@ const STEPS: Step[] = [
 export function ShareTutorial() {
   const [activeStep, setActiveStep] = useState(1);
   const [copied, setCopied] = useState(false);
-  const [shareLink, setShareLink] = useState('/room/<UUID-da-sala>');
+  const [shareLink, setShareLink] = useState('/room?id=<UUID-da-sala>');
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      setShareLink(`${window.location.origin}/room/<UUID-da-sala>`);
+      setShareLink(`${window.location.origin}/room?id=<UUID-da-sala>`);
     }
   }, []);
 

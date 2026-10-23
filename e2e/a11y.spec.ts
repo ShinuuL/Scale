@@ -264,7 +264,7 @@ async function createRoom(page: Page): Promise<string> {
 }
 
 async function joinRoom(page: Page, roomId: string): Promise<void> {
-  await page.goto(`/room/${roomId}`);
+  await page.goto(`/room?id=${roomId}`);
   await expect(page.getByText('Conectado')).toBeVisible({ timeout: 20_000 });
 }
 

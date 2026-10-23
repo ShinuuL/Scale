@@ -5,24 +5,19 @@ import { io, Socket } from 'socket.io-client';
 import type { ChatMessage } from '@/hooks/useChat';
 import type { JoinRoomPayload, PeerInfo, PeerLeftEvent, ScreenShareStateEvent } from '@scale/shared';
 
-function getWsUrl(): string {
-  // Porta do backend para HTTP simples. Exposta como variável (default 4000)
-  // porque o backend pode rodar em outra porta — ver .env (PORT).
-  // Deliberadamente NAO usamos uma URL fixa aqui: o hostname vem de
-  // window.location para que acesso remoto (domínio publico/IP da LAN) continue valendo.
-  const port = process.env.NEXT_PUBLIC_BACKEND_PORT || '4000';
-
-  if (typeof window !== 'undefined') {
-    // On HTTPS pages (Caddy / tunel), signaling must stay on the same
-    // origin: the proxy forwards /socket.io to the backend. Mixed http(s)://host:port
-    // would be blocked by the browser.
-    if (window.location.protocol === 'https:') {
-      return window.location.origin;
-    }
-    // Plain HTTP (default): connect straight to the backend port.
-    return `${window.location.protocol}//${window.location.hostname}:${port}`;
-  }
-  return process.env.NEXT_PUBLIC_WS_URL || `http://localhost:${port}`;
+/**
+ * URL do signaling. Producao (frontend estatico servido pelo Caddy): SEMPRE o
+ * mesmo origin — o Caddy encaminha `/socket.io/*` ao backend, tanto em
+ * http://localhost:<PROXY_PORT> quanto pelo tunel HTTPS.
+ *
+ * Dev (`next dev`): o Next nao faz upgrade de WebSocket nos rewrites, entao o
+ * next.config.js define `NEXT_PUBLIC_DEV_WS_URL` (backend no host) SO na fase
+ * de desenvolvimento. No build exportado ela e vazia.
+ */
+export function getWsUrl(): string {
+  const devUrl = process.env.NEXT_PUBLIC_DEV_WS_URL;
+  if (devUrl) return devUrl;
+  return typeof window !== 'undefined' ? window.location.origin : '';
 }
 
 // Shape do wire definido uma vez para web e server.

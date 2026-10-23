@@ -19,7 +19,7 @@ test.describe('wizard de onboarding', () => {
     // Passo 3: criar sala exige login.
     await expect(page.getByText('Faça login para criar uma sala')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Criar Sala' })).toBeDisabled();
-    // Continua no wizard: nenhuma navegacao para /room/...
+    // Continua no wizard: nenhuma navegacao para /room?id=...
     await expect(page).toHaveURL('http://localhost:3000/');
   });
 
@@ -34,7 +34,7 @@ test.describe('wizard de onboarding', () => {
     await page.getByRole('button', { name: 'Entrar na Sala' }).click();
 
     await expect(page).toHaveURL(
-      /\/room\/11111111-1111-4111-8111-111111111111$/,
+      /\/room\?id=11111111-1111-4111-8111-111111111111$/,
       { timeout: 15_000 },
     );
   });
@@ -52,7 +52,7 @@ test.describe('wizard de onboarding', () => {
     await page.getByLabel('Nome da sala').fill('Wizard E2E');
     await page.getByRole('button', { name: 'Criar Sala' }).click();
 
-    await expect(page).toHaveURL(/\/room\/[0-9a-f-]{36}$/, { timeout: 15_000 });
+    await expect(page).toHaveURL(/\/room\?id=[0-9a-f-]{36}$/, { timeout: 15_000 });
     await expect(page.getByRole('heading', { name: 'Wizard E2E' })).toBeVisible({
       timeout: 15_000,
     });

@@ -2,16 +2,10 @@ import { z } from 'zod';
 import type { CreateRoomInput, RoomResponse, RoomListItem, AuthResponse, LoginInput, RegisterInput, Metrics } from './validation';
 import { createRoomSchema, authResponseSchema, roomResponseSchema, roomListItemSchema, metricsSchema } from './validation';
 
-function resolveBaseUrl(): string {
-  // No browser, use SAME-ORIGIN via Next.js rewrites (/api -> backend:4000) para evitar CORS
-  // Isso funciona tanto para localhost:3000 quanto para um host público/HTTPS atrás de túnel.
-  if (typeof window !== 'undefined') {
-    return '';
-  }
-  // SSR: use backend interno Docker ou localhost
-  return process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000';
-}
-const BASE_URL = resolveBaseUrl();
+// Caminhos SEMPRE relativos (`/api/...`): em producao o Caddy serve o frontend
+// estatico e encaminha `/api` ao backend no mesmo origin; em `next dev` o
+// next.config.js reescreve `/api` para o backend no host. Nao ha SSR.
+const BASE_URL = '';
 
 interface ApiError {
   error: string;

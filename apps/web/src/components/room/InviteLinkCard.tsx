@@ -4,13 +4,14 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
+import { roomUrl } from '@/lib/roomLink';
 
 interface InviteLinkCardProps {
   /** ID da sala (UUID) */
   roomId: string;
   /**
    * Token de convite. Quando presente, o link gerado é
-   * `{origin}/room/{roomId}?token={inviteToken}` — necessário para salas privadas.
+   * `{origin}/room?id={roomId}&token={inviteToken}` — necessário para salas privadas.
    */
   inviteToken?: string;
   /**
@@ -34,7 +35,7 @@ export function InviteLinkCard({
   // o mesmo padrão usado em RoomControls e na página da sala.
   const inviteUrl =
     typeof window !== 'undefined'
-      ? `${window.location.origin}/room/${roomId}${inviteToken ? `?token=${inviteToken}` : ''}`
+      ? roomUrl(roomId, inviteToken)
       : '';
 
   const handleCopy = async () => {

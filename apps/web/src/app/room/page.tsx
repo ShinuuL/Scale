@@ -1,6 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef, use } from 'react';
+import { Suspense, useState, useEffect, useCallback, useRef } from 'react';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useSocket } from '@/hooks/useSocket';
 import { useWebRTC } from '@/hooks/useWebRTC';
 import { useSpeaking } from '@/hooks/useSpeaking';
@@ -18,6 +20,7 @@ import { Icon } from '@/components/ui/Icon';
 import { ProfileMenu } from '@/components/ui/ProfileMenu';
 import { api } from '@/lib/api';
 import { copyText } from '@/lib/clipboard';
+import { roomUrl } from '@/lib/roomLink';
 
 interface RoomData {
   room: {
@@ -36,16 +39,50 @@ interface RoomData {
   };
 }
 
-export default function RoomPage({ params }: { params: Promise<{ id: string }> }) {
+/**
+ * Rota estatica `/room?id=<uuid>&token=<convite>`. O frontend e exportado como
+ * arquivos estaticos (`output: 'export'`), entao nao existe rota dinamica
+ * `/room/[id]`: o id vem da query. Links antigos `/room/<id>` sao
+ * redirecionados pelo Caddy para este formato (ver Caddyfile).
+ *
+ * `useSearchParams` exige um limite de Suspense no export estatico.
+ */
+export default function RoomPage() {
   return (
     <ToastProvider>
-      <RoomPageInner params={params} />
+      <Suspense fallback={<RoomLoading />}>
+        <RoomRoute />
+      </Suspense>
     </ToastProvider>
   );
 }
 
-function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
-  const { id: roomId } = use(params);
+function RoomLoading() {
+  return (
+    <main id="main-content" className="flex min-h-screen items-center justify-center p-6">
+      <Skeleton className="h-8 w-48" />
+    </main>
+  );
+}
+
+function RoomRoute() {
+  const searchParams = useSearchParams();
+  const roomId = searchParams.get('id')?.trim() ?? '';
+  if (!roomId) {
+    return (
+      <main id="main-content" className="flex min-h-screen flex-col items-center justify-center gap-4 p-6 text-center">
+        <p className="text-slate-300">Link de sala incompleto: falta o identificador da sala.</p>
+        <Link href="/" className="text-moss-400 underline">
+          Voltar ao inicio
+        </Link>
+      </main>
+    );
+  }
+  // key: trocar de sala pela URL remonta o estado inteiro da sala.
+  return <RoomPageInner key={roomId} roomId={roomId} />;
+}
+
+function RoomPageInner({ roomId }: { roomId: string }) {
   const { toast } = useToast();
   const [room, setRoom] = useState<RoomData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -435,8 +472,8 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
   const isPrivate = room?.room.isPrivate ?? false;
   const inviteLink =
     isPrivate && inviteToken
-      ? `${typeof window !== 'undefined' ? window.location.origin : ''}/room/${roomId}?token=${inviteToken}`
-      : `${typeof window !== 'undefined' ? window.location.origin : ''}/room/${roomId}`;
+      ? roomUrl(roomId, inviteToken)
+      : roomUrl(roomId);
 
   const isOwner = room?.room.ownerId != null && room?.room.ownerId === currentUserId;
   // Nomes para o autocomplete de menções: quem está na sala agora (guestNames)

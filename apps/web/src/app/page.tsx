@@ -16,6 +16,7 @@ import { ProfileMenu } from '@/components/ui/ProfileMenu';
 import { api, FETCH_RETRY_MAX_ATTEMPTS } from '@/lib/api';
 import type { RoomListItem } from '@/lib/validation';
 import { ROOM_NAME_MIN, ROOM_NAME_MAX } from '@/lib/validation';
+import { roomPath, roomUrl } from '@/lib/roomLink';
 
 const STORAGE_KEY = 'scale.onboardingDone';
 const RECENT_ROOMS_KEY = 'scale.recentRooms';
@@ -108,9 +109,7 @@ function InviteModal({
             <Button
               onClick={() => {
                 addRecentRoom(roomId);
-                window.location.href = inviteToken
-                  ? `/room/${roomId}?token=${inviteToken}`
-                  : `/room/${roomId}`;
+                window.location.href = roomPath(roomId, inviteToken);
               }}
               className="flex-1"
             >
@@ -176,7 +175,7 @@ function RoomCard({ room, onEnter }: { room: RoomListItem; onEnter: () => void }
 
   const handleCopyLink = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    const url = `${window.location.origin}/room/${room.id}`;
+    const url = roomUrl(room.id);
     await navigator.clipboard.writeText(url);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -375,7 +374,7 @@ function HomePageInner() {
         setCreatedInvite({ roomId: result.room.id, inviteToken: result.room.inviteToken });
         return;
       }
-      window.location.href = `/room/${result.room.id}`;
+      window.location.href = roomPath(result.room.id);
     } catch {
       toast('Falha ao criar sala. Tente novamente.', 'error');
     } finally {
@@ -388,12 +387,12 @@ function HomePageInner() {
     if (!joinCode.trim()) return;
     localStorage.setItem(STORAGE_KEY, 'true');
     addRecentRoom(joinCode.trim());
-    window.location.href = `/room/${joinCode.trim()}`;
+    window.location.href = roomPath(joinCode.trim());
   };
 
   const handleEnterRoom = (roomId: string) => {
     addRecentRoom(roomId);
-    window.location.href = `/room/${roomId}`;
+    window.location.href = roomPath(roomId);
   };
 
   const handleShowGuide = () => setShowWizard(true);

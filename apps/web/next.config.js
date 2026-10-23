@@ -1,50 +1,51 @@
 const path = require('node:path');
 const fs = require('node:fs');
+const { PHASE_DEVELOPMENT_SERVER } = require('next/constants');
 
-// Carrega o .env da RAIZ do monorepo. O Next so olha para frontend/.env, entao
-// sem isto `next dev` roda com os defaults e aponta para o lugar errado.
-//
-// Seguranca:
-//  - loadEnvFile NAO sobrescreve variaveis ja presentes no ambiente, entao o
-//    que vier do docker-compose / script de dev tem precedencia.
-//  - No build do Docker este arquivo nao existe (o Dockerfile copia apenas
-//    frontend/ e package.json), portanto e ignorado sem erro.
-const rootEnv = path.resolve(__dirname, '..', '.env');
-if (fs.existsSync(rootEnv)) {
-  process.loadEnvFile(rootEnv);
-}
+/**
+ * Frontend 100% estatico (`output: 'export'`): `next build` gera `out/`, que o
+ * Caddy do servico `proxy` serve junto com o roteamento `/api` e `/socket.io`
+ * para o backend. Nao existe servidor Next em producao — logo nao ha rewrites,
+ * nem SSR, nem env server-side. O browser fala SEMPRE com o mesmo origin.
+ *
+ * Desenvolvimento (`next dev`, fase PHASE_DEVELOPMENT_SERVER):
+ *  - `/api/*` e reescrito para o backend no host (rewrites so existem aqui;
+ *    com `output: 'export'` eles nao funcionam e nem sao declarados no build).
+ *    Mantem a API same-origin (cookie HttpOnly SameSite=Strict de primeira
+ *    parte) e o `page.request` dos testes E2E apontando para :3000.
+ *  - O WebSocket do socket.io NAO passa por rewrites do Next (sem upgrade), entao
+ *    em dev o cliente conecta direto no backend via `NEXT_PUBLIC_DEV_WS_URL`,
+ *    definido SO nesta fase. No build de producao a variavel fica vazia e o
+ *    socket usa o mesmo origin (Caddy encaminha `/socket.io`).
+ */
+module.exports = (phase) => {
+  if (phase !== PHASE_DEVELOPMENT_SERVER) {
+    /** @type {import('next').NextConfig} */
+    const exportConfig = {
+      output: 'export',
+      images: { unoptimized: true },
+      env: { NEXT_PUBLIC_DEV_WS_URL: '' },
+    };
+    return exportConfig;
+  }
 
-// Porta que o BROWSER usa para falar com o backend (WebSocket). Precisa bater
-// com a porta exposta no host: 4100 por padrao, para nao colidir com um
-// PostgreSQL local que costuma ocupar a 4000.
-const browserPort =
-  process.env.NEXT_PUBLIC_BACKEND_PORT || process.env.BACKEND_PORT || '4000';
-const localBackend = `http://localhost:${browserPort}`;
+  // Dev no host: carrega o .env da RAIZ do monorepo (o Next so olharia
+  // apps/web/.env). loadEnvFile NAO sobrescreve variaveis ja definidas, entao o
+  // que vier de scripts/dev.mjs tem precedencia.
+  const rootEnv = path.resolve(__dirname, '..', '..', '.env');
+  if (fs.existsSync(rootEnv)) process.loadEnvFile(rootEnv);
 
-/** @type {import('next').NextConfig} */
-const nextConfig = {
-  output: 'standalone',
-  env: {
-    NEXT_PUBLIC_BACKEND_URL: process.env.NEXT_PUBLIC_BACKEND_URL || localBackend,
-    NEXT_PUBLIC_WS_URL: process.env.NEXT_PUBLIC_WS_URL || localBackend,
-    NEXT_PUBLIC_BACKEND_PORT: browserPort,
-  },
-  async rewrites() {
-    // BACKEND_URL e o alvo SERVER-SIDE do proxy /api (o browser chama /api no
-    // mesmo origin e o Next encaminha).
-    //  - Docker: http://backend:4000 (DNS do servico na rede interna).
-    //  - Dev no host: http://localhost:<porta>, injetado por scripts/dev.mjs.
-    // O fallback depende do NODE_ENV porque rewrites() e resolvido em BUILD
-    // time: no `next build` (Docker) NODE_ENV=production, no `next dev` nao.
-    const backendUrl = process.env.BACKEND_URL
-      || (process.env.NODE_ENV === 'development' ? localBackend : 'http://backend:4000');
-    return [
-      {
-        source: '/api/:path*',
-        destination: `${backendUrl}/api/:path*`,
-      },
-    ];
-  },
+  // Porta do backend no host (4100 no .env desta maquina; 4000 e de um
+  // PostgreSQL local).
+  const backendPort = process.env.BACKEND_PORT || process.env.PORT || '4000';
+  const backendUrl = process.env.BACKEND_URL || `http://localhost:${backendPort}`;
+
+  /** @type {import('next').NextConfig} */
+  const devConfig = {
+    env: { NEXT_PUBLIC_DEV_WS_URL: process.env.NEXT_PUBLIC_DEV_WS_URL || backendUrl },
+    async rewrites() {
+      return [{ source: '/api/:path*', destination: `${backendUrl}/api/:path*` }];
+    },
+  };
+  return devConfig;
 };
-
-module.exports = nextConfig;

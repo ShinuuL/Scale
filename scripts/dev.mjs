@@ -22,7 +22,7 @@ const envFile = path.join(root, '.env');
 if (existsSync(envFile)) process.loadEnvFile(envFile);
 
 const backendPort = process.env.PORT || '4100';
-const browserPort = process.env.BACKEND_PORT || process.env.NEXT_PUBLIC_BACKEND_PORT || backendPort;
+const browserPort = process.env.BACKEND_PORT || backendPort;
 const backendUrl = `http://localhost:${browserPort}`;
 
 const targets = [
@@ -35,12 +35,11 @@ const targets = [
     name: 'frontend',
     args: ['run', 'dev', '-w', 'scale-frontend'],
     env: {
-      // Alvo server-side do proxy /api (rewrites do Next).
+      // So existem em `next dev` (ver apps/web/next.config.js): alvo do rewrite
+      // /api e URL do WebSocket direto no backend (o Next nao faz upgrade de
+      // WebSocket). O build estatico de producao nao usa nenhuma das duas.
       BACKEND_URL: backendUrl,
-      NEXT_PUBLIC_BACKEND_URL: backendUrl,
-      NEXT_PUBLIC_WS_URL: backendUrl,
-      // Lido pelo getWsUrl() no browser — ver apps/web/src/hooks/useSocket.ts.
-      NEXT_PUBLIC_BACKEND_PORT: String(browserPort),
+      NEXT_PUBLIC_DEV_WS_URL: backendUrl,
     },
   },
 ];

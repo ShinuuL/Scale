@@ -1,14 +1,14 @@
 # Caddyfile — roteador INTERNO do Scale (HTTP puro, sem TLS)
 #
-# Papel novo (Etapa 5): este Caddy NAO termina TLS e NAO esta preso a nenhuma
-# interface privada. Ele e o roteador interno que fica ATRAS do tunel: recebe
-# HTTP em :8080 e distribui por path entre frontend e backend. Quem termina o
-# TLS e o cloudflared (ver docker-compose.yml, profile `tunnel` e docs/tunnel-setup.md).
+# Este Caddy NAO termina TLS e NAO esta preso a nenhuma interface privada. Ele
+# fica ATRAS do tunel: recebe HTTP em :8080, SERVE o frontend estatico (export
+# do Next, copiado para /srv na imagem — ver apps/web/Dockerfile) e encaminha
+# `/api/*` e `/socket.io/*` ao backend. Quem termina o TLS e o cloudflared (ver
+# docker-compose.yml, profile `tunnel` e docs/tunnel-setup.md).
 #
-# Por que o proxy interno existe: o tunel rapido do cloudflared aponta para um
-# UNICO servico upstream. Como o app precisa de DOIS alvos (frontend + backend),
-# o roteamento por path precisa acontecer aqui. Em especial, /socket.io precisa
-# chegar ao backend COM O PREFIXO INTACTO.
+# Nao existe mais servidor Next: o browser fala com UM origin e o roteamento por
+# path acontece aqui. /socket.io e /api precisam chegar ao backend COM O PREFIXO
+# INTACTO.
 #
 # Cuidado com `handle_path`: ele REMOVE o prefixo casado antes do reverse_proxy.
 # Com `handle_path /socket.io/*` o backend recebe `/?EIO=4&transport=polling` e
@@ -38,13 +38,48 @@
 }
 
 :8080 {
-	# socket.io signaling -> backend, preservando o path /socket.io (handle, nao handle_path)
+	# API REST e signaling -> backend, preservando o path (handle, nao handle_path).
+	# O Caddy e o UNICO hop entre o browser/tunel e o backend: o backend confia
+	# apenas nele (172.28.0.4) e no cloudflared (172.28.0.5) em TRUST_PROXY.
+	handle /api/* {
+		reverse_proxy backend:4000
+	}
 	handle /socket.io/* {
 		reverse_proxy backend:4000
 	}
 
-	# todo o resto -> frontend (paginas e /api via rewrite same-origin)
+	# Compatibilidade: links antigos /room/<id>[?token=...] -> /room?id=<id>[&token=...].
+	# O export estatico nao tem rota dinamica. Com query string ela e anexada com
+	# `&`; sem query, nao sobra `&` no fim. O id so aceita [0-9A-Za-z-].
+	@oldroom path_regexp oldroom ^/room/([0-9A-Za-z-]{1,64})/?$
+	handle @oldroom {
+		@withquery expression {query} != ""
+		redir @withquery /room?id={re.oldroom.1}&{query} 302
+		redir * /room?id={re.oldroom.1} 302
+	}
+
+	# Todo o resto -> frontend estatico.
 	handle {
-		reverse_proxy frontend:3000
+		root * /srv
+
+		# CSP com os sha256 dos scripts inline do export (gerada no build por
+		# apps/web/scripts/csp.mjs): script-src sem 'unsafe-inline'.
+		import csp.caddy
+		header {
+			X-Content-Type-Options nosniff
+			Referrer-Policy no-referrer
+			X-Frame-Options DENY
+			Permissions-Policy "microphone=(self), display-capture=(self), camera=(), geolocation=(), payment=(), usb=()"
+			-Server
+		}
+
+		# Assets com hash no nome: cache longo e imutavel. HTML sempre revalidado.
+		@hashed path /_next/static/*
+		header @hashed Cache-Control "public, max-age=31536000, immutable"
+		@html not path /_next/static/*
+		header @html Cache-Control "no-cache"
+
+		try_files {path} {path}.html {path}/ /index.html
+		file_server
 	}
 }

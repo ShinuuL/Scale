@@ -19,3 +19,4 @@ playwright-report
 .superpowers
 docs
 e2e
+apps/web/.caddy

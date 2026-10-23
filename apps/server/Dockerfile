@@ -12,7 +12,7 @@ RUN npx prisma generate --schema=apps/server/prisma/schema.prisma
 COPY packages/shared ./packages/shared
 RUN npm run build --workspace=@scale/shared
 COPY apps/server ./apps/server
-RUN npm run build --workspace=scale-backend
+RUN npm run build --workspace=scale-backend && mkdir -p apps/server/node_modules
 
 # ---- run stage ----
 FROM node:20-alpine AS runner
@@ -27,7 +27,8 @@ RUN mkdir -p /app/data /app/uploads && chown appuser:nodejs /app/data /app/uploa
 COPY --from=builder /app/apps/server/dist ./dist
 # Workspace-local deps that npm could not hoist into the root tree live in
 # apps/server/node_modules (e.g. @fastify/multipart + its fastify-plugin@5 while
-# the root tree uses fastify-plugin@6). Copy them beside dist/ so ESM
+# the root tree uses fastify-plugin@6; may be empty, hence the mkdir -p above).
+# Copy them beside dist/ so ESM
 # resolution from dist/*.js finds them without clobbering root versions.
 COPY --from=builder /app/apps/server/node_modules ./dist/node_modules
 COPY --from=builder /app/node_modules ./node_modules

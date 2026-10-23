@@ -56,7 +56,7 @@ async function waitConnected(page: Page): Promise<void> {
 
 /** Entra na sala e abre o painel de chat pelo controle da propria sala. */
 async function joinAndOpenChat(page: Page, roomId: string): Promise<void> {
-  await page.goto(`/room/${roomId}`);
+  await page.goto(`/room?id=${roomId}`);
   await waitConnected(page);
   await page.getByRole('button', { name: 'Abrir chat' }).click();
   await expect(page.getByTestId('chat-panel')).toBeVisible();
@@ -145,7 +145,7 @@ test.describe('chat da sala', () => {
     const a = await peer(browser);
     const roomId = await createRoom(a.page, { isPersistent: true });
 
-    await a.page.goto(`/room/${roomId}`);
+    await a.page.goto(`/room?id=${roomId}`);
     await waitConnected(a.page);
     // estado inicial: sem nada salvo, o chat comeca fechado
     await expect(a.page.getByTestId('chat-panel')).toBeHidden();

@@ -9,6 +9,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { Icon } from '@/components/ui/Icon';
 import { Input } from '@/components/ui/Input';
 import { ROOM_NAME_MIN, ROOM_NAME_MAX } from '@/lib/validation';
+import { roomPath } from '@/lib/roomLink';
 
 const STORAGE_KEY = 'scale.onboardingDone';
 const STEPS = [
@@ -34,7 +35,7 @@ export function OnboardingWizard({ onComplete, onSkip, isAuthenticated }: Onboar
   const [error, setError] = useState<string | null>(null);
   const [nameTouched, setNameTouched] = useState(false);
   const [isInsecureContext, setIsInsecureContext] = useState(false);
-  const [shareLink, setShareLink] = useState('/room/<UUID-da-sala>');
+  const [shareLink, setShareLink] = useState('/room?id=<UUID-da-sala>');
 
   const trimmedName = roomName.trim();
   const nameError =
@@ -49,7 +50,7 @@ export function OnboardingWizard({ onComplete, onSkip, isAuthenticated }: Onboar
   // Contexto inseguro (HTTP fora do localhost) bloqueia micro/tela no browser.
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    setShareLink(`${window.location.origin}/room/<UUID-da-sala>`);
+    setShareLink(`${window.location.origin}/room?id=<UUID-da-sala>`);
     if (!window.isSecureContext) {
       setIsInsecureContext(true);
     }
@@ -73,7 +74,7 @@ export function OnboardingWizard({ onComplete, onSkip, isAuthenticated }: Onboar
       });
       localStorage.setItem(STORAGE_KEY, 'true');
       onComplete();
-      window.location.href = `/room/${result.room.id}`;
+      window.location.href = roomPath(result.room.id);
     } catch (err) {
       setError('Falha ao criar sala. Tente novamente.');
       console.error(err);
@@ -86,7 +87,7 @@ export function OnboardingWizard({ onComplete, onSkip, isAuthenticated }: Onboar
     if (!roomCode.trim()) return;
     localStorage.setItem(STORAGE_KEY, 'true');
     onComplete();
-    window.location.href = `/room/${roomCode.trim()}`;
+    window.location.href = roomPath(roomCode.trim());
   };
 
   const nextStep = () => setStep((s) => Math.min(s + 1, STEPS.length));

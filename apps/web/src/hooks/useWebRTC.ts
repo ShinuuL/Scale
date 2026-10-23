@@ -113,7 +113,7 @@ interface IceRestartState {
 
 async function fetchIceServers(): Promise<RTCConfiguration> {
   try {
-    const url = typeof window !== 'undefined' ? '/api/turn/credentials' : `${process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000'}/api/turn/credentials`;
+    const url = '/api/turn/credentials';
     const res = await fetch(url, {
       signal: AbortSignal.timeout(3000),
     });

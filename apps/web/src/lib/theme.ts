@@ -34,11 +34,11 @@ export function readStoredPalette(): PaletteId {
 }
 
 /**
- * Script inline do <head>: aplica o tema salvo ANTES da primeira pintura, para
- * a página não piscar em verde. Texto estático (sem dado do usuário) e com
- * allowlist — o valor do storage nunca vira atributo sem passar por ela.
+ * Caminho do script de boot do tema (public/theme-boot.js), carregado de forma
+ * sincrona no <head> para aplicar o tema salvo antes da primeira pintura. E um
+ * arquivo estatico (nao inline) para a CSP dispensar 'unsafe-inline'.
  */
-export const PALETTE_BOOT_SCRIPT = `(function(){try{var p=localStorage.getItem('${PALETTE_STORAGE_KEY}');if(p==='grafite'||p==='safira')document.documentElement.setAttribute('data-palette',p);}catch(e){}})();`;
+export const PALETTE_BOOT_SRC = '/theme-boot.js';
 
 export function usePalette(): [PaletteId, (id: PaletteId) => void] {
   const [palette, setPaletteState] = useState<PaletteId>(DEFAULT_PALETTE);

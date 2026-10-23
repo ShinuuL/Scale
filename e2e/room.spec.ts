@@ -40,7 +40,7 @@ test('sala conecta e mostra Conectado', async ({ page }) => {
   // no context do `page` antes do POST /api/rooms.
   const roomId = await registerAndCreateRoom(page, { name: 'E2E', isPersistent: false });
 
-  await page.goto(`/room/${roomId}`);
+  await page.goto(`/room?id=${roomId}`);
 
   // Aguarda badge Conectado (socket conectado via Socket.io handshake)
   await expect(page.getByText('Conectado')).toBeVisible({ timeout: 15000 });

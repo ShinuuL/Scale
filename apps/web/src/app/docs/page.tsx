@@ -39,7 +39,7 @@ const SECTIONS: DocSection[] = [
     title: 'Entrar numa sala',
     description: 'Duas formas: pelo link ou pelo código da sala.',
     items: [
-      'Abra o link /room/<ID> que alguém enviou',
+      'Abra o link /room?id=<ID> que alguém enviou',
       'Ou cole o ID da sala no campo “Entrar numa Sala” da tela inicial',
       'Seu nome aparece para os outros participantes assim que você entra',
     ],
@@ -50,7 +50,7 @@ const SECTIONS: DocSection[] = [
     description: 'Cada sala tem uma URL única com o ID dela.',
     items: [
       'Dentro da sala, use o card de convite para copiar o link',
-      'Formato: https://<endereço-do-app>/room/<ID-da-sala>',
+      'Formato: https://<endereço-do-app>/room?id=<ID-da-sala>',
       'Envie o link por qualquer mensageiro — quem abrir entra na chamada',
     ],
   },
