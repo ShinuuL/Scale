@@ -719,3 +719,45 @@ describe('item 11 — login/register/refresh nao devolvem token no JSON', () => 
     expect(refresh.cookies.find((c) => c.name === 'token')?.value).toBeTruthy();
   });
 });
+
+describe('item 12 — error handler global: 5xx sem detalhes, 4xx com mensagem', () => {
+  let app: FastifyInstance;
+
+  beforeAll(async () => {
+    const { securityPlugin } = await import('../plugins/security.js');
+    app = Fastify({ logger: false });
+    await app.register(securityPlugin);
+    app.get('/boom', async () => {
+      throw new Error('SQLITE_ERROR: no such table at /app/data/data.db');
+    });
+    app.get('/bad', async () => {
+      const err = new Error('Campo invalido') as Error & { statusCode: number };
+      err.statusCode = 400;
+      throw err;
+    });
+    app.register(async (child) => {
+      child.get('/child-boom', async () => {
+        throw new Error('segredo interno');
+      });
+    });
+    await app.ready();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('500 responde so Internal Server Error (inclusive em plugin filho)', async () => {
+    for (const url of ['/boom', '/child-boom']) {
+      const res = await app.inject({ method: 'GET', url });
+      expect(res.statusCode).toBe(500);
+      expect(JSON.parse(res.payload)).toEqual({ error: 'Internal Server Error' });
+    }
+  });
+
+  it('4xx mantem a mensagem', async () => {
+    const res = await app.inject({ method: 'GET', url: '/bad' });
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.payload)).toEqual({ error: 'Campo invalido' });
+  });
+});

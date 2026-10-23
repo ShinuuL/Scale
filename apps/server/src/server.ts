@@ -5,6 +5,7 @@ import { getEnv } from './lib/env.js';
 import { authPlugin } from './plugins/auth.js';
 import { corsPlugin } from './plugins/cors.js';
 import { helmetPlugin } from './plugins/helmet.js';
+import { securityPlugin } from './plugins/security.js';
 import { authRoutes } from './routes/auth.js';
 import { roomRoutes } from './routes/rooms.js';
 import { turnRoutes } from './routes/turn.js';
@@ -38,6 +39,8 @@ const server = Fastify({
 await server.register(cookie);
 await server.register(corsPlugin);
 await server.register(helmetPlugin);
+// Error handler global (5xx sem detalhes) e Cache-Control: no-store.
+await server.register(securityPlugin);
 await server.register(authPlugin);
 await server.register(multipart, {
   limits: { fileSize: MAX_FILE_SIZE_BYTES, files: MAX_FILES_PER_MESSAGE },
