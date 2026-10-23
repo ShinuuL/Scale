@@ -97,6 +97,10 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
     hadConnectedRef.current = false;
     const sock = io(wsUrl, {
       auth: { guestName },
+      // Envia o cookie HttpOnly do login no handshake também quando o socket
+      // vai direto à porta do backend (http na LAN) — é por ele que o servidor
+      // sabe o nome do usuário logado.
+      withCredentials: true,
       transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionAttempts: 10,

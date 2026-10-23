@@ -61,6 +61,23 @@ export function getRoomPeersSnapshot(): Map<string, number> {
   return snapshot;
 }
 
+/** Valor de um cookie no header `Cookie` do handshake (undefined se ausente). */
+export function readCookie(header: string | undefined, name: string): string | undefined {
+  if (!header) return undefined;
+  for (const pair of header.split(';')) {
+    const idx = pair.indexOf('=');
+    if (idx === -1) continue;
+    if (pair.slice(0, idx).trim() !== name) continue;
+    const raw = pair.slice(idx + 1).trim();
+    try {
+      return decodeURIComponent(raw) || undefined;
+    } catch {
+      return raw || undefined;
+    }
+  }
+  return undefined;
+}
+
 export function createSocketServer(httpServer: HttpServer): Server {
   const io = new Server(httpServer, {
     cors: {
@@ -75,9 +92,13 @@ export function createSocketServer(httpServer: HttpServer): Server {
 
   // Optional auth middleware
   io.use(async (socket, next) => {
+    // O JWT do login vive num cookie HttpOnly (`token`), que o JS da página não
+    // lê — mas o browser o envia no handshake (mesma origem via proxy/túnel).
+    // Sem ler o cookie, todo usuário logado entrava como `Guest-xxxx`.
     const token =
       socket.handshake.auth?.token ??
-      socket.handshake.headers?.authorization?.replace('Bearer ', '');
+      socket.handshake.headers?.authorization?.replace('Bearer ', '') ??
+      readCookie(socket.handshake.headers?.cookie, 'token');
 
     if (token) {
       try {

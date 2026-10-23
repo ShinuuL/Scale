@@ -4,7 +4,7 @@ import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
 import { io as ioClient, Socket } from 'socket.io-client';
 import { prisma } from '../lib/prisma.js';
-import { createSocketServer } from '../socket/handler.js';
+import { createSocketServer, readCookie } from '../socket/handler.js';
 import { metricsRoutes } from '../routes/metrics.js';
 import { authPlugin } from '../plugins/auth.js';
 import { signToken } from '../lib/auth.js';
@@ -229,5 +229,45 @@ describe('Socket.io Handler', () => {
 
     expect(result.error).toBe('Invalid payload');
     client.disconnect();
+  });
+
+  it('usuário logado pelo cookie HttpOnly entra com o nome do cadastro (não Guest)', async () => {
+    const roomId = (app as unknown as Record<string, string>).testRoomId;
+    const observer = await connectClient();
+    await new Promise<void>((resolve) => {
+      observer.emit('join-room', { roomId }, () => resolve());
+    });
+
+    const joinedPromise = new Promise<Record<string, unknown>>((resolve) => {
+      observer.on('room:peer-joined', (data: Record<string, unknown>) => resolve(data));
+    });
+
+    // Igual ao browser: o JWT só viaja no header Cookie do handshake.
+    const logged = await new Promise<Socket>((resolve, reject) => {
+      const client = ioClient(`http://127.0.0.1:${port}`, {
+        auth: { guestName: 'Guest-abcd' },
+        transports: ['websocket'],
+        extraHeaders: { Cookie: `theme=dark; token=${token}` },
+      });
+      client.on('connect', () => resolve(client));
+      client.on('connect_error', (err) => reject(err));
+    });
+    await new Promise<void>((resolve) => {
+      logged.emit('join-room', { roomId }, () => resolve());
+    });
+
+    const peerJoined = await joinedPromise;
+    expect(peerJoined.name).toBe('Socket Tester');
+    expect(peerJoined.userId).toBe('user-socket-test');
+
+    observer.disconnect();
+    logged.disconnect();
+  });
+
+  it('readCookie extrai o valor certo do header Cookie', () => {
+    expect(readCookie('a=1; token=abc.def; b=2', 'token')).toBe('abc.def');
+    expect(readCookie('xtoken=nope', 'token')).toBeUndefined();
+    expect(readCookie(undefined, 'token')).toBeUndefined();
+    expect(readCookie('token=', 'token')).toBeUndefined();
   });
 });
