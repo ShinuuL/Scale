@@ -616,3 +616,58 @@ describe('item 8 — /api/metrics exige admin (allowlist) ou token de servico', 
     }
   });
 });
+
+describe('item 10 — upload: sala inativa/expirada e SVG fora da allowlist', () => {
+  let h: Harness;
+
+  function txtUpload(contentType = 'text/plain', body: Buffer = Buffer.from('ola\n'), filename = 'a.txt') {
+    const boundary = '----audit10';
+    return {
+      payload: Buffer.concat([
+        Buffer.from(
+          `--${boundary}\r\nContent-Disposition: form-data; name="files"; filename="${filename}"\r\nContent-Type: ${contentType}\r\n\r\n`,
+        ),
+        body,
+        Buffer.from(`\r\n--${boundary}--\r\n`),
+      ]),
+      headers: { 'content-type': `multipart/form-data; boundary=${boundary}` },
+    };
+  }
+
+  beforeAll(async () => {
+    h = await buildHarness();
+  });
+
+  afterAll(async () => {
+    await prisma.room.deleteMany({ where: { name: 'Audit Item10' } }).catch(() => {});
+    await h.app.close();
+  });
+
+  it('sala ENDED → 409; sala expirada → 410', async () => {
+    const ended = await prisma.room.create({ data: { name: 'Audit Item10', isPersistent: true, status: 'ENDED' } });
+    const r1 = await h.app.inject({ method: 'POST', url: `/api/rooms/${ended.id}/files`, ...txtUpload() });
+    expect(r1.statusCode).toBe(409);
+
+    const expired = await prisma.room.create({
+      data: { name: 'Audit Item10', isPersistent: true, expiresAt: new Date(Date.now() - 60_000) },
+    });
+    const r2 = await h.app.inject({ method: 'POST', url: `/api/rooms/${expired.id}/files`, ...txtUpload() });
+    expect(r2.statusCode).toBe(410);
+  });
+
+  it('image/svg+xml e rejeitado; png continua aceito', async () => {
+    const { ALLOWED_MIME_RE } = await import('@scale/shared');
+    expect(ALLOWED_MIME_RE.test('image/svg+xml')).toBe(false);
+    expect(ALLOWED_MIME_RE.test('image/png')).toBe(true);
+    expect(ALLOWED_MIME_RE.test('audio/mpeg')).toBe(true);
+
+    const room = await prisma.room.create({ data: { name: 'Audit Item10', isPersistent: true } });
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
+    const res = await h.app.inject({
+      method: 'POST',
+      url: `/api/rooms/${room.id}/files`,
+      ...txtUpload('image/svg+xml', svg, 'x.svg'),
+    });
+    expect(res.statusCode).toBe(400);
+  });
+});

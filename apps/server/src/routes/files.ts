@@ -37,6 +37,11 @@ export async function filesRoutes(fastify: FastifyInstance): Promise<void> {
     const room = await prisma.room.findUnique({ where: { id: roomId } });
     if (!room) return reply.code(404).send({ error: 'Room not found' });
     if (!room.isPersistent) return reply.code(400).send({ error: 'Temporary rooms do not support files' });
+    // Sala encerrada ou expirada nao aceita arquivo (mesma regra do chat:message).
+    if (room.status !== 'ACTIVE') return reply.code(409).send({ error: 'Room is no longer active' });
+    if (room.expiresAt && room.expiresAt.getTime() < Date.now()) {
+      return reply.code(410).send({ error: 'Room has expired' });
+    }
 
     // Membership ANTES de bufferizar (DoS hardening — critic): request.parts()
     // yield fields E files; coletamos os fields (inviteToken/password) e só então,

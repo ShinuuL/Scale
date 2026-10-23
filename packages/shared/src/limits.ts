@@ -15,8 +15,15 @@ export const MAX_FILES_PER_MESSAGE = 5;
 /**
  * Allowlist de MIME aceitos no upload do chat. O servidor ainda confere os
  * magic bytes do conteudo; o MIME declarado sozinho nao basta.
+ * `image/svg+xml` fica FORA: SVG e documento ativo (script/links) e nao tem
+ * magic bytes para conferir.
  */
-export const ALLOWED_MIME_RE = /^(image\/.*|application\/pdf|text\/plain|audio\/.*|application\/zip)$/;
+export const ALLOWED_MIME_RE =
+  /^(image\/(?!svg\+xml$)[a-z0-9.+-]+|application\/pdf|text\/plain|audio\/[a-z0-9.+-]+|application\/zip)$/;
+
+/** Valor do `accept` do input de arquivo do chat (espelha ALLOWED_MIME_RE). */
+export const CHAT_FILE_ACCEPT =
+  'image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,audio/*,application/zip';
 
 /** Limites do nome da sala. */
 export const ROOM_NAME_MIN = 3;

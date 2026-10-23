@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import type { Socket } from 'socket.io-client';
 import type { ChatApi, ChatMessage } from '@/hooks/useChat';
-import { CHAT_MESSAGE_MAX, MAX_FILES_PER_MESSAGE } from '@scale/shared';
+import { CHAT_FILE_ACCEPT, CHAT_MESSAGE_MAX, MAX_FILES_PER_MESSAGE } from '@scale/shared';
 import { chatMessageClientSchema, fileClientSchema } from '@/lib/validation';
 import { ChatMessageItem } from '@/components/ChatMessageItem';
 import { Icon, type IconName } from '@/components/ui/Icon';
@@ -370,7 +370,7 @@ export function ChatPanel({
                   handleFiles(e.target.files);
                   e.target.value = '';
                 }}
-                accept="image/*,application/pdf,text/plain,audio/*,application/zip"
+                accept={CHAT_FILE_ACCEPT}
               />
             </label>
             <button
