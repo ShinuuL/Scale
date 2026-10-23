@@ -34,3 +34,6 @@ apps/web/.caddy/
 # Desktop (Electron): bundle do esbuild e instaladores do electron-builder
 apps/desktop/dist/
 apps/desktop/release/
+
+# Worktrees de agentes do Claude Code
+.claude/worktrees/
