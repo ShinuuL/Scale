@@ -159,16 +159,18 @@ NODE_ENV=development
 
 ### GET /api/metrics (backend)
 
-Requer autenticacao (JWT): cookie `token` (enviado pelo browser) ou header
-`Authorization: Bearer <jwt>` (uso programatico/CLI). Sem credencial responde
-**401** e nao expoe contagem alguma. O JWT sai de `POST /api/auth/login`:
+Restrito a administradores. Aceita:
+
+- usuario logado (cookie `token`) cujo email esta em `METRICS_ADMIN_EMAILS`
+  (CSV; vazio = ninguem). Usuario comum recebe **403**;
+- token de servico `Authorization: Bearer $METRICS_SERVICE_TOKEN` (>= 32
+  caracteres, comparado em tempo constante) — e o que o MCP usa.
+
+Sem credencial responde **401**. Login/register/refresh nao devolvem mais o JWT
+no corpo (so no cookie HttpOnly).
 
 ```bash
-JWT=$(curl -s -X POST http://localhost:4100/api/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"voce@exemplo.com","password":"sua-senha"}' | jq -r .token)
-
-curl -s -H "Authorization: Bearer $JWT" http://localhost:4100/api/metrics | jq .
+curl -s -H "Authorization: Bearer $METRICS_SERVICE_TOKEN" http://localhost:4100/api/metrics | jq .
 ```
 
 Resposta (JSON):
@@ -178,27 +180,25 @@ Resposta (JSON):
   "uptimeSeconds": 3600,
   "rooms": { "total": 12, "active": 5, "withPeers": 2 },
   "peers": { "total": 4, "perRoom": [2] },
-  "memory": { "rss": 41943040, "heapTotal": 33554432, "heapUsed": 20971520, "external": 1048576 },
-  "version": "0.1.0"
+  "chat": { "messagesPersistent": 0, "messagesTemporary": 0, "edits": 0, "deletes": 0, "filesBytes": 0, "quotaExceeded": 0 }
 }
 ```
 
 - `rooms.total` / `rooms.active`: contagens via Prisma.
 - `rooms.withPeers` e `peers.total` / `peers.perRoom`: snapshot do signaling (Socket.io) — salas com participantes conectados agora. `perRoom` traz **apenas as contagens** por sala: o `roomId` (uuid que dá acesso à sala) nunca sai deste endpoint.
 - `POST /api/rooms` é limitado a 10 salas / 5s por IP (429 acima disso).
-- `memory`: `process.memoryUsage()` em bytes.
-- `version`: versao do pacote backend.
+- `memory`/`version` nao sao expostos (fingerprint do servidor).
 
 ### GET /metrics (frontend)
 
-Dashboard em `/metrics` com cards (uptime, salas, peers, memoria) e auto-refresh a cada 10s. Consome `/api/metrics` no mesmo origin (Caddy). Como o endpoint exige JWT, **sem sessao a pagina mostra "Requer login"** (com link para `/login`) em vez de quebrar.
+Dashboard em `/metrics` com cards (uptime, salas, peers) e auto-refresh a cada 10s. Consome `/api/metrics` no mesmo origin (Caddy). Como o endpoint exige JWT, **sem sessao a pagina mostra "Requer login"** (com link para `/login`) em vez de quebrar.
 
 ### GET /mcp/metrics (MCP server, profile `mcp`)
 
 Proxy do backend com dois tokens distintos:
 
 - `MCP_TOKEN`: quem chama o MCP (`curl -H "Authorization: Bearer $MCP_TOKEN" http://localhost:4001/mcp/metrics`).
-- `BACKEND_TOKEN`: JWT que o MCP usa para chamar `/api/metrics` no backend (o MCP nao tem sessao). Gere com um login normal e exporte antes de subir o compose. Sem ele, `/mcp/metrics` responde **503** com instrucao (nao vaza metrica nem inventa token).
+- `METRICS_SERVICE_TOKEN`: token de servico (>= 32 caracteres) que o MCP usa para chamar `/api/metrics`; o backend le o mesmo valor do `.env` e compara em tempo constante. Sem ele, `/mcp/metrics` responde **503** com instrucao. Usuarios logados so leem `/api/metrics` se o email estiver em `METRICS_ADMIN_EMAILS` (vazio = ninguem; demais recebem 403).
 
 ## Testes
 

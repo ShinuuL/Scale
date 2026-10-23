@@ -20,12 +20,6 @@ function formatUptime(seconds: number): string {
   return `${s}s`;
 }
 
-function formatBytes(bytes: number): string {
-  const mb = bytes / (1024 * 1024);
-  if (mb >= 1024) return `${(mb / 1024).toFixed(2)} GB`;
-  return `${mb.toFixed(1)} MB`;
-}
-
 interface MetricCardProps {
   label: string;
   value: string;
@@ -79,6 +73,10 @@ export default function MetricsPage() {
           if (status === 401) {
             setNeedsAuth(true);
             setError('As métricas exigem autenticação. Entre com sua conta para vê-las.');
+          } else if (status === 403) {
+            // Logado, mas fora da allowlist METRICS_ADMIN_EMAILS do backend.
+            setNeedsAuth(false);
+            setError('As métricas são restritas a administradores.');
           } else {
             setNeedsAuth(false);
             setError('Não foi possível carregar as métricas do backend');
@@ -126,7 +124,7 @@ export default function MetricsPage() {
             </h1>
             <p className="text-slate-400 text-sm">
               {metrics
-                ? `Atualizado a cada 10s · v${metrics.version}`
+                ? 'Atualizado a cada 10s'
                 : needsAuth
                   ? 'Acesso restrito'
                   : 'Carregando métricas...'}
@@ -197,12 +195,6 @@ export default function MetricsPage() {
             value={metrics ? String(metrics.peers.total) : '—'}
             hint="Participantes em salas via Socket.io"
             accent="emerald"
-          />
-          <MetricCard
-            label="Memória RSS"
-            value={metrics ? formatBytes(metrics.memory.rss) : '—'}
-            hint={`Heap ${metrics ? formatBytes(metrics.memory.heapUsed) : '—'} usado`}
-            accent="amber"
           />
         </section>
 

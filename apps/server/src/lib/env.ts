@@ -49,3 +49,37 @@ export function getAllowedOrigins(): string[] {
 export function resetEnv(): void {
   _env = undefined;
 }
+
+const metricsAuthSchema = z.object({
+  // CSV de emails (normalizados) que podem ler /api/metrics. Vazio = ninguem.
+  METRICS_ADMIN_EMAILS: z.string().default(''),
+  // Token de servico (MCP) para /api/metrics. Vazio = desligado; < 32
+  // caracteres e ignorado (fail-closed).
+  METRICS_SERVICE_TOKEN: z.string().default(''),
+});
+
+export interface MetricsAuthConfig {
+  adminEmails: Set<string>;
+  serviceToken: string | null;
+}
+
+/** Minimo de caracteres de um token de servico aceito. */
+export const SERVICE_TOKEN_MIN_LENGTH = 32;
+
+/**
+ * Config de acesso a /api/metrics, lida do ambiente a cada chamada (barato e
+ * permite que os testes troquem a allowlist sem reiniciar o cache do getEnv).
+ */
+export function getMetricsAuthConfig(): MetricsAuthConfig {
+  const parsed = metricsAuthSchema.parse(process.env);
+  const adminEmails = new Set(
+    parsed.METRICS_ADMIN_EMAILS.split(',')
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean),
+  );
+  const token = parsed.METRICS_SERVICE_TOKEN.trim();
+  return {
+    adminEmails,
+    serviceToken: token.length >= SERVICE_TOKEN_MIN_LENGTH ? token : null,
+  };
+}

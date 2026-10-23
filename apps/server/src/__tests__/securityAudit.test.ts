@@ -548,3 +548,71 @@ describe('item 7 — DTOs publicos sem path/uploadedBy/authorId; isMine por dest
     }
   });
 });
+
+describe('item 8 — /api/metrics exige admin (allowlist) ou token de servico', () => {
+  let app: FastifyInstance;
+  const SERVICE = 's'.repeat(40);
+
+  beforeAll(async () => {
+    process.env.JWT_SECRET = 'test-secret-for-unit-tests';
+    process.env.METRICS_ADMIN_EMAILS = 'Admin@Exemplo.com';
+    process.env.METRICS_SERVICE_TOKEN = SERVICE;
+    const { metricsRoutes } = await import('../routes/metrics.js');
+    app = Fastify({ logger: false });
+    await app.register(cookie);
+    await app.register(authPlugin);
+    await app.register(metricsRoutes);
+    await app.ready();
+  });
+
+  afterAll(async () => {
+    delete process.env.METRICS_SERVICE_TOKEN;
+    delete process.env.METRICS_ADMIN_EMAILS;
+    await app.close();
+  });
+
+  it('usuario comum → 403; admin → 200 sem memory/version', async () => {
+    const user = signToken({ userId: 'u-common', email: 'comum@exemplo.com', name: 'Comum' });
+    const common = await app.inject({ method: 'GET', url: '/api/metrics', cookies: { token: user } });
+    expect(common.statusCode).toBe(403);
+    expect(common.payload).not.toContain('peers');
+
+    const admin = signToken({ userId: 'u-admin', email: 'admin@exemplo.com', name: 'Admin' });
+    const ok = await app.inject({ method: 'GET', url: '/api/metrics', cookies: { token: admin } });
+    expect(ok.statusCode).toBe(200);
+    const body = JSON.parse(ok.payload);
+    expect(body).not.toHaveProperty('memory');
+    expect(body).not.toHaveProperty('version');
+    expect(body).toHaveProperty('peers');
+  });
+
+  it('token de servico → 200; token errado → 401; token curto e ignorado', async () => {
+    const svc = await app.inject({ method: 'GET', url: '/api/metrics', headers: { authorization: `Bearer ${SERVICE}` } });
+    expect(svc.statusCode).toBe(200);
+    const wrong = await app.inject({
+      method: 'GET',
+      url: '/api/metrics',
+      headers: { authorization: `Bearer ${'x'.repeat(40)}` },
+    });
+    expect(wrong.statusCode).toBe(401);
+
+    process.env.METRICS_SERVICE_TOKEN = 'curto';
+    try {
+      const short = await app.inject({ method: 'GET', url: '/api/metrics', headers: { authorization: 'Bearer curto' } });
+      expect(short.statusCode).toBe(401);
+    } finally {
+      process.env.METRICS_SERVICE_TOKEN = SERVICE;
+    }
+  });
+
+  it('allowlist vazia = ninguem', async () => {
+    process.env.METRICS_ADMIN_EMAILS = '';
+    try {
+      const admin = signToken({ userId: 'u-admin', email: 'admin@exemplo.com', name: 'Admin' });
+      const res = await app.inject({ method: 'GET', url: '/api/metrics', cookies: { token: admin } });
+      expect(res.statusCode).toBe(403);
+    } finally {
+      process.env.METRICS_ADMIN_EMAILS = 'Admin@Exemplo.com';
+    }
+  });
+});

@@ -4,10 +4,10 @@ import cors from '@fastify/cors';
 const PORT = Number(process.env.PORT) || 4001;
 const MCP_TOKEN = process.env.MCP_TOKEN || '';
 const BACKEND_URL = process.env.BACKEND_URL || 'http://backend:4000';
-// JWT de usuario (POST /api/auth/login) para o MCP autenticar no backend.
-// /api/metrics exige JWT desde que o app passou a ser exposto publicamente;
-// sem isto o backend responde 401 e /mcp/metrics devolve 503 com a instrucao.
-const BACKEND_TOKEN = process.env.BACKEND_TOKEN || '';
+// Token de servico (>= 32 chars) que o backend aceita em /api/metrics
+// (mesmo valor de METRICS_SERVICE_TOKEN no backend). Sem ele /mcp/metrics
+// devolve 503 com a instrucao.
+const METRICS_SERVICE_TOKEN = process.env.METRICS_SERVICE_TOKEN || '';
 
 const server = Fastify({ logger: true });
 
@@ -40,13 +40,13 @@ class BackendHttpError extends Error {
 }
 
 /**
- * `auth: true` anexa o JWT (BACKEND_TOKEN). Só `/api/metrics` pede — anexar o
+ * `auth: true` anexa o token de servico (METRICS_SERVICE_TOKEN). Só `/api/metrics` pede — anexar o
  * JWT a todas as rotas mudaria a resposta das demais (ex.: GET /api/rooms/:id
  * devolve `inviteToken` para o dono autenticado, dado que o MCP não precisa).
  */
 async function backendFetch<T>(path: string, opts: { auth?: boolean } = {}): Promise<T> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (opts.auth && BACKEND_TOKEN) headers.Authorization = `Bearer ${BACKEND_TOKEN}`;
+  if (opts.auth && METRICS_SERVICE_TOKEN) headers.Authorization = `Bearer ${METRICS_SERVICE_TOKEN}`;
 
   const res = await fetch(`${BACKEND_URL}${path}`, {
     headers,
@@ -71,15 +71,15 @@ server.get('/mcp/rooms', async (_request, reply) => {
 
 // ─── GET /mcp/metrics ─────────────────────────────────────────
 // Requer Bearer MCP_TOKEN (verificada no onRequest hook) e, do lado do
-// backend, um JWT valido (BACKEND_TOKEN). Falta de token ou token vencido
+// backend, o token de servico (METRICS_SERVICE_TOKEN). Falta de token ou token errado
 // vira 503 com a instrucao — o backend está no ar, então 502 "unavailable"
 // mentiria sobre a causa.
 server.get('/mcp/metrics', async (_request, reply) => {
-  if (!BACKEND_TOKEN) {
+  if (!METRICS_SERVICE_TOKEN) {
     return reply.code(503).send({
       error:
-        'BACKEND_TOKEN não configurado — /api/metrics exige JWT. ' +
-        'Defina BACKEND_TOKEN com um token de POST /api/auth/login.',
+        'METRICS_SERVICE_TOKEN não configurado — /api/metrics exige token de serviço. ' +
+        'Defina o mesmo METRICS_SERVICE_TOKEN (>= 32 caracteres) no backend e no MCP.',
     });
   }
   try {
@@ -90,8 +90,8 @@ server.get('/mcp/metrics', async (_request, reply) => {
     if (err instanceof BackendHttpError && err.status === 401) {
       return reply.code(503).send({
         error:
-          'BACKEND_TOKEN inválido ou expirado (backend respondeu 401). ' +
-          'Renove o token com POST /api/auth/login.',
+          'METRICS_SERVICE_TOKEN rejeitado pelo backend (401). ' +
+          'Confira se o valor é o mesmo no backend e no MCP (>= 32 caracteres).',
       });
     }
     return reply.code(502).send({ error: 'Backend unavailable' });

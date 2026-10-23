@@ -25,6 +25,7 @@ describe('Socket.io Handler', () => {
     process.env.JWT_SECRET = 'test-secret-for-unit-tests';
     process.env.NODE_ENV = 'test';
     process.env.ALLOWED_ORIGINS = 'http://localhost:3000';
+    process.env.METRICS_ADMIN_EMAILS = 'socket@exemplo.com';
 
     token = signToken({ userId: 'user-socket-test', email: 'socket@exemplo.com', name: 'Socket Tester' });
 

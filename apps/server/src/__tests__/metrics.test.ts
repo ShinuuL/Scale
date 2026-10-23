@@ -87,6 +87,8 @@ describe('GET /api/metrics', () => {
   beforeAll(async () => {
     process.env.NODE_ENV = 'test';
     process.env.JWT_SECRET = 'test-secret-for-unit-tests';
+    // /api/metrics exige admin: o usuario destes testes esta na allowlist.
+    process.env.METRICS_ADMIN_EMAILS = 'metrics@exemplo.com';
     // getEnv() cacheia o ambiente no primeiro acesso; como os tokens são
     // assinados aqui, garante que o secret acima já está valendo.
     resetEnv();

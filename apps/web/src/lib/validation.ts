@@ -89,13 +89,7 @@ export const metricsSchema = z.object({
     // Contagens por sala SEM identificadores (o roomId da acesso a sala).
     perRoom: z.array(z.number()),
   }),
-  memory: z.object({
-    rss: z.number(),
-    heapTotal: z.number(),
-    heapUsed: z.number(),
-    external: z.number(),
-  }),
-  version: z.string(),
+  // memory/version nao saem mais do backend (fingerprint do servidor).
 });
 
 export type Metrics = z.infer<typeof metricsSchema>;

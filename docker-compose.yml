@@ -140,9 +140,10 @@ services:
       - PORT=4001
       - MCP_TOKEN=${MCP_TOKEN}
       - BACKEND_URL=http://backend:4000
-      # JWT de usuario para o MCP autenticar em /api/metrics (obrigatorio para
-      # /mcp/metrics; sem ele o endpoint responde 503 com a instrucao).
-      - BACKEND_TOKEN=${BACKEND_TOKEN:-}
+      # Token de servico para o MCP ler /api/metrics: o MESMO valor de
+      # METRICS_SERVICE_TOKEN do backend (lido do .env). Sem ele /mcp/metrics
+      # responde 503 com a instrucao.
+      - METRICS_SERVICE_TOKEN=${METRICS_SERVICE_TOKEN:-}
     depends_on:
       backend:
         condition: service_healthy
