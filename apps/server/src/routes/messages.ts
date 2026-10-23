@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { toPublicMessage } from '../lib/publicDto.js';
-import { extractAccessFromHeaders, guardRoomAccess } from '../lib/roomAccess.js';
+import { guardRoomParticipation } from '../lib/roomAccess.js';
 
 const querySchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(50),
@@ -20,11 +20,9 @@ export async function messagesRoutes(fastify: FastifyInstance): Promise<void> {
     if (!room) return reply.code(404).send({ error: 'Room not found' });
     if (!room.isPersistent) return reply.code(400).send({ error: 'Temporary rooms have no persisted history' });
 
-    // Membership: salas protegidas exigem JWT do dono, inviteToken ou password
-    // (mesma regra do join-room). Salas públicas continuam abertas.
-    // Credencial via header (X-Room-Password / X-Room-Invite), com balde de
-    // falhas por IP+sala.
-    if (!(await guardRoomAccess(request, reply, room, extractAccessFromHeaders(request)))) {
+    // Participacao efetiva (inclusive sala publica): room ticket do join-room
+    // no header X-Room-Ticket, ou dono por JWT. Sala ENDED/expirada: 403.
+    if (!(await guardRoomParticipation(request, reply, room))) {
       return reply;
     }
 
@@ -44,9 +42,9 @@ export async function messagesRoutes(fastify: FastifyInstance): Promise<void> {
     });
     const asc = rows.reverse();
     const nextCursor = rows.length === limit && asc.length ? asc[0].id : null;
-    // isMine no REST: so o usuario logado e identificavel (convidado = false;
-    // a UI cai no isGuest + nome local).
-    const viewer = { userId: request.userId ?? null };
+    // isMine no REST: usuario logado pelo JWT, convidado pelo guestId do
+    // cookie assinado (nunca pelo nome).
+    const viewer = { userId: request.userId ?? null, guestId: request.guestId ?? null };
     return reply.send({ messages: asc.map((m) => toPublicMessage(m, viewer)), nextCursor });
   });
 }

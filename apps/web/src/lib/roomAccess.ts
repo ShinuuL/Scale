@@ -1,31 +1,34 @@
 /**
- * Credenciais de sala protegida para os GET do chat (historico e download).
- *
- * Vao SEMPRE por header — nunca pela query string, que fica em log de proxy,
- * historico do navegador e Referer. A senha e percent-encoded: headers HTTP sao
- * Latin-1 e o servidor decodifica (apps/server/src/lib/roomAccess.ts).
+ * Prova de participacao na sala para os REST do chat (historico, download e
+ * upload): o room ticket que o servidor emite no join-room (evento
+ * `room:ticket`). Vai SEMPRE por header — nunca pela query string, que fica em
+ * log de proxy, historico do navegador e Referer.
  */
-export function roomAccessHeaders(inviteToken?: string, password?: string): Record<string, string> {
-  const headers: Record<string, string> = {};
-  if (inviteToken) headers['X-Room-Invite'] = inviteToken;
-  if (password) headers['X-Room-Password'] = encodeURIComponent(password);
-  return headers;
+export function roomTicketHeaders(ticket: string | null | undefined): Record<string, string> {
+  return ticket ? { 'X-Room-Ticket': ticket } : {};
 }
 
 /**
- * Download de arquivo de sala protegida: um `<a href>` nao envia header, entao
- * buscamos com fetch (credencial no header), geramos um blob e disparamos o
- * download por um link temporario. Nada sensivel vai para a URL.
+ * Convite da URL para o GET /api/rooms/:id (detalhes de sala privada antes do
+ * join). Tambem por header.
+ */
+export function roomInviteHeaders(inviteToken?: string): Record<string, string> {
+  return inviteToken ? { 'X-Room-Invite': inviteToken } : {};
+}
+
+/**
+ * Download de arquivo: um `<a href>` nao envia header, entao buscamos com
+ * fetch (ticket no header), geramos um blob e disparamos o download por um link
+ * temporario. Nada sensivel vai para a URL.
  */
 export async function downloadRoomFile(
   fileId: string,
   filename: string,
-  inviteToken?: string,
-  password?: string,
+  ticket: string | null | undefined,
 ): Promise<void> {
   const res = await fetch(`/api/files/${encodeURIComponent(fileId)}`, {
     credentials: 'include',
-    headers: roomAccessHeaders(inviteToken, password),
+    headers: roomTicketHeaders(ticket),
   });
   if (!res.ok) throw new Error(`Falha no download (HTTP ${res.status}).`);
   const blob = await res.blob();

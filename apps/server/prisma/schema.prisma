@@ -50,6 +50,8 @@ model ChatMessage {
   roomId      String
   authorId    String?
   guestName   String?
+  /// Autoria de convidado: UUID emitido pelo servidor (cookie assinado). Null = usuario logado ou mensagem anterior ao guestId.
+  guestId     String?
   content     String
   prevContent String?
   editedAt    DateTime?
@@ -73,6 +75,8 @@ model ChatFile {
   size        Int
   path        String
   uploadedBy  String?
+  /// guestId do convidado que enviou (null para usuario logado).
+  guestId     String?
   createdAt   DateTime  @default(now())
   deletedAt   DateTime?
 

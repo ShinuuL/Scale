@@ -48,6 +48,7 @@ export function buildLoggerOptions(level: string): FastifyServerOptions['logger'
         'req.headers.cookie',
         'req.headers["x-room-password"]',
         'req.headers["x-room-invite"]',
+        'req.headers["x-room-ticket"]',
         'res.headers["set-cookie"]',
       ],
       censor: '[REDACTED]',
