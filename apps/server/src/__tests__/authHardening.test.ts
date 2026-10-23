@@ -97,7 +97,7 @@ describe('Etapa 4 — hardening de exposição pública', () => {
       payload: { email: ownerEmail, password: 'pass12345', name: 'Owner' },
     });
     expect(reg.statusCode).toBe(201);
-    auth = { authorization: `Bearer ${JSON.parse(reg.payload).token}` };
+    auth = { authorization: `Bearer ${reg.cookies.find((c) => c.name === 'token')?.value}` };
 
     const persist = await prisma.room.create({
       data: { name: 'Hardening Upload', isPersistent: true, ownerId: null },

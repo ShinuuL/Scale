@@ -671,3 +671,51 @@ describe('item 10 — upload: sala inativa/expirada e SVG fora da allowlist', ()
     expect(res.statusCode).toBe(400);
   });
 });
+
+describe('item 11 — login/register/refresh nao devolvem token no JSON', () => {
+  let app: FastifyInstance;
+  const email = `audit11-${Date.now()}@exemplo.com`;
+
+  beforeAll(async () => {
+    process.env.JWT_SECRET = 'test-secret-for-unit-tests';
+    const { authRoutes } = await import('../routes/auth.js');
+    app = Fastify({ logger: false });
+    await app.register(cookie);
+    await app.register(authPlugin);
+    await app.register(authRoutes);
+    await app.ready();
+  });
+
+  afterAll(async () => {
+    await prisma.user.deleteMany({ where: { email } }).catch(() => {});
+    await app.close();
+  });
+
+  it('corpo sem token; cookie HttpOnly setado', async () => {
+    const reg = await app.inject({
+      method: 'POST',
+      url: '/api/auth/register',
+      payload: { email, password: 'pass12345', name: 'Audit 11' },
+    });
+    expect(reg.statusCode).toBe(201);
+    expect(JSON.parse(reg.payload)).not.toHaveProperty('token');
+    const regCookie = reg.cookies.find((c) => c.name === 'token');
+    expect(regCookie?.httpOnly).toBe(true);
+
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { email, password: 'pass12345' },
+    });
+    expect(login.statusCode).toBe(200);
+    expect(JSON.parse(login.payload)).not.toHaveProperty('token');
+    const jwt = login.cookies.find((c) => c.name === 'token')?.value;
+    expect(jwt).toBeTruthy();
+    expect(login.payload).not.toContain(jwt as string);
+
+    const refresh = await app.inject({ method: 'POST', url: '/api/auth/refresh', cookies: { token: jwt as string } });
+    expect(refresh.statusCode).toBe(200);
+    expect(JSON.parse(refresh.payload)).not.toHaveProperty('token');
+    expect(refresh.cookies.find((c) => c.name === 'token')?.value).toBeTruthy();
+  });
+});

@@ -50,7 +50,8 @@ describe('Room API', () => {
       },
     });
     expect(reg.statusCode).toBe(201);
-    auth = { authorization: `Bearer ${JSON.parse(reg.payload).token}` };
+    // O JWT so vem no cookie HttpOnly (o corpo nao traz token).
+    auth = { authorization: `Bearer ${reg.cookies.find((c) => c.name === 'token')?.value}` };
   });
 
   afterAll(async () => {
@@ -242,7 +243,7 @@ describe('Room API', () => {
         payload: { email: ownerEmail, password: 'pass12345', name: 'Owner PW' },
       });
       expect(regRes.statusCode).toBe(201);
-      const { token } = JSON.parse(regRes.payload);
+      const token = regRes.cookies.find((c) => c.name === 'token')?.value;
 
       // 2. Create persistent room with password (authenticated so ownerId is set)
       const res = await app.inject({
@@ -286,7 +287,7 @@ describe('Room API', () => {
         url: '/api/auth/register',
         payload: { email: guestEmail, password: 'pass12345', name: 'Guest PW' },
       });
-      const { token: guestToken } = JSON.parse(regGuest.payload);
+      const guestToken = regGuest.cookies.find((c) => c.name === 'token')?.value;
 
       const rotGuest = await app.inject({
         method: 'POST',
@@ -339,7 +340,7 @@ describe('Room API', () => {
         url: '/api/auth/register',
         payload: { email: ownerEmail404, password: 'pass12345', name: 'Owner 404' },
       });
-      const { token } = JSON.parse(regRes.payload);
+      const token = regRes.cookies.find((c) => c.name === 'token')?.value;
 
       const rot = await app.inject({
         method: 'POST',

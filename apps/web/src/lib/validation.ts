@@ -69,9 +69,9 @@ export const userResponseSchema = z.object({
 
 export type UserResponse = z.infer<typeof userResponseSchema>;
 
+// O JWT vive so no cookie HttpOnly: o corpo de login/register nao traz token.
 export const authResponseSchema = z.object({
   user: userResponseSchema,
-  token: z.string(),
 });
 
 export type AuthResponse = z.infer<typeof authResponseSchema>;

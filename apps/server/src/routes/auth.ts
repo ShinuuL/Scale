@@ -106,7 +106,9 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
       maxAge: 7 * 24 * 60 * 60, // 7 days
     });
 
-    return reply.code(201).send({ user, token });
+    // O JWT vai SO no cookie HttpOnly: no corpo ele ficaria ao alcance de JS
+    // (XSS) e de logs/ferramentas que registram respostas.
+    return reply.code(201).send({ user });
   });
 
   // POST /api/auth/login
@@ -191,7 +193,6 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
         name: user.name,
         createdAt: user.createdAt,
       },
-      token,
     });
   });
 
@@ -258,6 +259,6 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
       maxAge: 7 * 24 * 60 * 60,
     });
 
-    return reply.send({ token });
+    return reply.send({ success: true });
   });
 }
