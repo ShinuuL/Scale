@@ -1,19 +1,18 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { prisma } from '../lib/prisma.js';
 import { getChatMetricsSnapshot, getChatMetricsText, getUptimeSeconds } from '../lib/metrics.js';
-import { getMetricsAuthConfig } from '../lib/env.js';
+import { isSystemAdmin } from '../lib/env.js';
 import { getRoomPeersSnapshot } from '../socket/handler.js';
 
 export async function metricsRoutes(fastify: FastifyInstance): Promise<void> {
   /**
    * Acesso a /api/metrics: so usuario logado cujo email esta em
-   * METRICS_ADMIN_EMAILS. Usuario comum -> 403; sem credencial -> 401.
+   * ADMIN_EMAILS (ou o legado METRICS_ADMIN_EMAILS). Usuario comum -> 403; sem credencial -> 401.
    */
   async function requireMetricsAdmin(request: FastifyRequest, reply: FastifyReply): Promise<void> {
     await fastify.authenticate(request, reply);
     if (reply.sent) return;
-    const email = request.userEmail?.trim().toLowerCase();
-    if (!email || !getMetricsAuthConfig().adminEmails.has(email)) {
+    if (!isSystemAdmin(request.userEmail)) {
       await reply.code(403).send({ error: 'Forbidden' });
     }
   }

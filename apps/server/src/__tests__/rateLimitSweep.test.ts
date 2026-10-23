@@ -37,6 +37,7 @@ describe('expurgo dos baldes de rate limit', () => {
       'register',
       'roomAuthFail',
       'roomCreate',
+      'roomDelete',
       'signal',
       'turn',
       'upload',

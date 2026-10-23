@@ -287,7 +287,7 @@ describe('participacao efetiva: historico, download e upload exigem room ticket 
     expect(res.statusCode).toBe(200);
     const rooms = JSON.parse(res.payload).rooms as Array<Record<string, unknown>>;
     const mine = rooms.find((r) => r.id === roomId);
-    expect(mine).toEqual({ id: roomId, name: ROOM_NAME, participantCount: 0, isPersistent: true, hasPassword: false });
+    expect(mine).toEqual({ id: roomId, name: ROOM_NAME, participantCount: 0, isPersistent: true, hasPassword: false, canDelete: true });
     expect(res.payload).not.toContain('inviteToken');
     expect(res.payload).not.toContain('historico secreto');
   });

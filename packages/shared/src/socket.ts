@@ -103,6 +103,13 @@ export interface PeerLeftEvent {
   peerId: string;
 }
 
+/**
+ * Payload de `room:deleted`: a sala foi apagada (dono ou admin). O servidor
+ * emite antes de tirar todos os sockets da sala; o cliente encerra a chamada.
+ */
+export const roomDeletedEventSchema = z.object({ roomId: z.string().uuid() });
+export type RoomDeletedEvent = z.infer<typeof roomDeletedEventSchema>;
+
 /** Payload de `signal:screen-share-state` recebido pelo peer alvo. */
 export interface ScreenShareStateEvent {
   fromPeerId: string;

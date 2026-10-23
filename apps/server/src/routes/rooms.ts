@@ -3,15 +3,33 @@ import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../lib/prisma.js';
-import { isRoomCreateRateLimited } from '../lib/rateLimit.js';
+import { isRoomCreateRateLimited, isRoomDeleteRateLimited } from '../lib/rateLimit.js';
+import { isSystemAdmin } from '../lib/env.js';
+import { removeRoomUploads } from '../lib/uploads.js';
 import { getClientIp } from '../lib/clientIp.js';
 import { createRoomSchema as sharedCreateRoomSchema } from '@scale/shared';
-import { getRoomPeersSnapshot } from '../socket/handler.js';
+import { evictRoom, getRoomPeersSnapshot } from '../socket/handler.js';
 
 // Campos comuns (nome, persistencia, teto, TTL) vem de @scale/shared; o server
 // acrescenta a senha da sala privada.
 /** Convite enviado no header X-Room-Invite (GET /api/rooms/:id). */
 const inviteHeaderSchema = z.string().uuid();
+
+/** `:id` das rotas de sala que mudam estado: sempre um uuid. */
+const roomIdParamSchema = z.object({ id: z.string().uuid() });
+
+/**
+ * Pode apagar a sala: o dono (ownerId) ou um admin do sistema (ADMIN_EMAILS /
+ * METRICS_ADMIN_EMAILS). Anonimo nunca.
+ */
+function canDeleteRoom(
+  room: { ownerId: string | null },
+  userId: string | undefined,
+  email: string | undefined,
+): boolean {
+  if (!userId) return false;
+  return room.ownerId === userId || isSystemAdmin(email);
+}
 
 const createRoomSchema = sharedCreateRoomSchema.extend({
   password: z.string().min(8).max(128).optional(),
@@ -126,6 +144,7 @@ export async function roomRoutes(fastify: FastifyInstance): Promise<void> {
 
     // Don't expose inviteToken unless requester is the owner
     const isOwner = Boolean(request.userId && room.ownerId === request.userId);
+    const canDelete = canDeleteRoom(room, request.userId, request.userEmail);
 
     // Sala PRIVADA sem credencial (nem dono, nem X-Room-Invite valido): so o
     // minimo para a tela de entrada decidir o fluxo (pedir senha/convite).
@@ -160,6 +179,7 @@ export async function roomRoutes(fastify: FastifyInstance): Promise<void> {
         status: room.status,
         ownerId: isOwner ? room.ownerId : undefined,
         hasPassword: room.passwordHash !== null,
+        canDelete,
       },
     });
   });
@@ -174,7 +194,7 @@ export async function roomRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.get(
     '/api/rooms',
     { preHandler: [fastify.authenticate as never] },
-    async (_request, reply) => {
+    async (request, reply) => {
       const rooms = await prisma.room.findMany({
         where: {
           status: 'ACTIVE',
@@ -189,6 +209,7 @@ export async function roomRoutes(fastify: FastifyInstance): Promise<void> {
           name: true,
           isPersistent: true,
           passwordHash: true,
+          ownerId: true,
         },
         orderBy: { createdAt: 'desc' },
         take: 50,
@@ -201,6 +222,8 @@ export async function roomRoutes(fastify: FastifyInstance): Promise<void> {
         participantCount: counts.get(room.id) ?? 0,
         isPersistent: room.isPersistent,
         hasPassword: room.passwordHash !== null,
+        // Permissao calculada para QUEM pede; o ownerId em si nao sai.
+        canDelete: canDeleteRoom(room, request.userId, request.userEmail),
       }));
 
       return reply.send({ rooms: roomsPublic });
@@ -250,7 +273,7 @@ export async function roomRoutes(fastify: FastifyInstance): Promise<void> {
     },
   );
 
-  // DELETE /api/rooms/:id (owner only)
+  // DELETE /api/rooms/:id — exclusao DEFINITIVA, pelo dono ou admin do sistema.
   fastify.delete<{ Params: { id: string } }>(
     '/api/rooms/:id',
     { preHandler: [fastify.authenticate as never] },
@@ -260,7 +283,19 @@ export async function roomRoutes(fastify: FastifyInstance): Promise<void> {
         return reply.code(401).send({ error: 'Authentication required' });
       }
 
-      const { id } = request.params;
+      const params = roomIdParamSchema.safeParse(request.params);
+      if (!params.success) {
+        return reply.code(400).send({ error: 'Invalid room id' });
+      }
+      const { id } = params.data;
+
+      const limit = isRoomDeleteRateLimited(userId);
+      if (limit.limited) {
+        return reply
+          .code(429)
+          .header('Retry-After', String(limit.retryAfterSeconds))
+          .send({ error: 'Too many rooms deleted. Try again later.' });
+      }
 
       const room = await prisma.room.findUnique({
         where: { id },
@@ -271,14 +306,39 @@ export async function roomRoutes(fastify: FastifyInstance): Promise<void> {
         return reply.code(404).send({ error: 'Room not found' });
       }
 
-      if (room.ownerId !== userId) {
-        return reply.code(403).send({ error: 'Only the room owner can delete it' });
+      const isOwner = room.ownerId === userId;
+      const isAdmin = isSystemAdmin(request.userEmail);
+      if (!isOwner && !isAdmin) {
+        return reply
+          .code(403)
+          .send({ error: 'Only the room owner or a system admin can delete it' });
       }
 
-      await prisma.room.update({
-        where: { id },
-        data: { status: 'ENDED' },
-      });
+      // 1) Avisa e tira todo mundo da sala (antes de sumir com o banco, para
+      //    nenhum peer continuar sinalizando numa sala inexistente).
+      const io = (fastify as unknown as { io?: import('socket.io').Server }).io;
+      evictRoom(io, id);
+
+      // 2) Banco: tudo numa transacao (o schema ja tem onDelete: Cascade, mas
+      //    apagar explicitamente nao depende do PRAGMA foreign_keys).
+      await prisma.$transaction([
+        prisma.chatFile.deleteMany({ where: { roomId: id } }),
+        prisma.chatMessage.deleteMany({ where: { roomId: id } }),
+        prisma.roomMember.deleteMany({ where: { roomId: id } }),
+        prisma.room.delete({ where: { id } }),
+      ]);
+
+      // 3) Disco em best-effort: falhar aqui nao desfaz a exclusao.
+      try {
+        await removeRoomUploads(id);
+      } catch (err) {
+        request.log.error({ err, roomId: id }, 'room delete: failed to remove uploads dir');
+      }
+
+      request.log.info(
+        { roomId: id, userId, deletedAs: isOwner ? 'owner' : 'admin' },
+        'room deleted',
+      );
 
       return reply.send({ success: true });
     },

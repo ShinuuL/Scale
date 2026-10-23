@@ -306,6 +306,20 @@ export function resetFileUploadRateLimit(ip: string): void {
   reset(uploadStore, ip);
 }
 
+// Exclusao de sala: 20 / 10 min por USUARIO (chave = userId). A rota exige
+// login, entao o balde nao depende de IP; sem isencao de loopback.
+const ROOM_DELETE_WINDOW_MS = 10 * 60_000;
+const ROOM_DELETE_MAX = 20;
+const roomDeleteStore = createBucket('roomDelete');
+
+export function isRoomDeleteRateLimited(userId: string): RateLimitResult {
+  return take(roomDeleteStore, userId, ROOM_DELETE_WINDOW_MS, ROOM_DELETE_MAX);
+}
+
+export function resetRoomDeleteRateLimit(userId: string): void {
+  reset(roomDeleteStore, userId);
+}
+
 // Credenciais TURN: 30 / min por IP. Hoje ENABLE_TURN=false (so STUN), mas
 // quando ligado o endpoint entrega credenciais do coturn.
 const TURN_WINDOW_MS = 60_000;

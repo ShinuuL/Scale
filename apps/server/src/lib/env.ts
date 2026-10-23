@@ -50,25 +50,49 @@ export function resetEnv(): void {
   _env = undefined;
 }
 
-const metricsAuthSchema = z.object({
-  // CSV de emails (normalizados) que podem ler /api/metrics. Vazio = ninguem.
+const adminAuthSchema = z.object({
+  // CSV de emails (normalizados) dos administradores do sistema. Vazio = ninguem.
+  ADMIN_EMAILS: z.string().default(''),
+  // Sinonimo LEGADO de ADMIN_EMAILS (nome antigo, da epoca em que so o
+  // /api/metrics tinha admin). Continua aceito; os dois sao unidos.
   METRICS_ADMIN_EMAILS: z.string().default(''),
 });
+
+function parseEmailCsv(csv: string): string[] {
+  return csv
+    .split(',')
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+/**
+ * Emails dos administradores do sistema: ADMIN_EMAILS ∪ METRICS_ADMIN_EMAILS
+ * (legado). Lido do ambiente a cada chamada (barato; os testes trocam a lista
+ * sem reiniciar o cache do getEnv). Fonte UNICA para toda checagem de admin.
+ */
+export function getAdminEmails(): Set<string> {
+  const parsed = adminAuthSchema.parse(process.env);
+  return new Set([
+    ...parseEmailCsv(parsed.ADMIN_EMAILS),
+    ...parseEmailCsv(parsed.METRICS_ADMIN_EMAILS),
+  ]);
+}
+
+/** true quando o email (do JWT) pertence a um administrador do sistema. */
+export function isSystemAdmin(email: string | null | undefined): boolean {
+  const normalized = email?.trim().toLowerCase();
+  if (!normalized) return false;
+  return getAdminEmails().has(normalized);
+}
 
 export interface MetricsAuthConfig {
   adminEmails: Set<string>;
 }
 
 /**
- * Config de acesso a /api/metrics, lida do ambiente a cada chamada (barato e
+ * Config de acesso a /api/metrics (= admins do sistema), lida do ambiente a cada chamada (barato e
  * permite que os testes troquem a allowlist sem reiniciar o cache do getEnv).
  */
 export function getMetricsAuthConfig(): MetricsAuthConfig {
-  const parsed = metricsAuthSchema.parse(process.env);
-  const adminEmails = new Set(
-    parsed.METRICS_ADMIN_EMAILS.split(',')
-      .map((email) => email.trim().toLowerCase())
-      .filter(Boolean),
-  );
-  return { adminEmails };
+  return { adminEmails: getAdminEmails() };
 }

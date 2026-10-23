@@ -48,6 +48,19 @@ export async function saveFile(roomId: string, fileId: string, filename: string,
   return path.relative(process.cwd(), resolvedFile);
 }
 
+/**
+ * Remove o diretorio `uploads/<roomId>` inteiro (exclusao definitiva da sala).
+ * Sandbox: o caminho resolvido tem de ser um filho direto de UPLOADS_ROOT —
+ * nunca a propria raiz nem algo fora dela. Diretorio ausente nao e erro.
+ */
+export async function removeRoomUploads(roomId: string): Promise<void> {
+  const dir = path.resolve(UPLOADS_ROOT, roomId);
+  if (!dir.startsWith(UPLOADS_ROOT + path.sep) || path.dirname(dir) !== UPLOADS_ROOT) {
+    throw new Error('Invalid roomId');
+  }
+  await fs.rm(dir, { recursive: true, force: true });
+}
+
 export async function getQuotaUsage(roomId: string): Promise<number> {
   const sevenDaysAgo = new Date(Date.now() - 7*24*60*60*1000);
   const agg = await prisma.chatFile.aggregate({

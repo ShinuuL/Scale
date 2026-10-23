@@ -228,7 +228,7 @@ describe('Room API', () => {
     expect(names).not.toContain('List Room 2');
     // Dados minimos: nada de dono, convite, teto ou historico.
     for (const r of body.rooms) {
-      expect(Object.keys(r).sort()).toEqual(['hasPassword', 'id', 'isPersistent', 'name', 'participantCount']);
+      expect(Object.keys(r).sort()).toEqual(['canDelete', 'hasPassword', 'id', 'isPersistent', 'name', 'participantCount']);
       expect(typeof r.participantCount).toBe('number');
     }
   });

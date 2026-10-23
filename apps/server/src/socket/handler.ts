@@ -35,6 +35,7 @@ import {
   MAX_PARTICIPANTS,
   parseGuestName,
   type PeerInfo,
+  type RoomDeletedEvent,
 } from '@scale/shared';
 
 interface SocketUser {
@@ -748,6 +749,33 @@ export function createSocketServer(httpServer: HttpServer): Server {
   });
 
   return io;
+}
+
+/**
+ * Expulsa TODOS da sala (sala apagada): avisa com `room:deleted`, tira os
+ * sockets do canal e limpa o estado em memoria (peers, buffer do chat e timer
+ * de auto-delete). Chamado pela rota DELETE /api/rooms/:id.
+ */
+export function evictRoom(io: Server | undefined, roomId: string): void {
+  if (io) {
+    const payload: RoomDeletedEvent = { roomId };
+    io.to(roomId).emit('room:deleted', payload);
+    const peers = roomPeers.get(roomId);
+    if (peers) {
+      for (const socketId of peers.keys()) {
+        const sock = io.sockets.sockets.get(socketId);
+        if (sock && sock.data.roomId === roomId) sock.data.roomId = undefined;
+      }
+    }
+    io.in(roomId).socketsLeave(roomId);
+  }
+  roomPeers.delete(roomId);
+  chatBuffers.delete(roomId);
+  const timer = emptyTimers.get(roomId);
+  if (timer) {
+    clearTimeout(timer);
+    emptyTimers.delete(roomId);
+  }
 }
 
 function handleLeaveRoom(
