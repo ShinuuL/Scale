@@ -4,7 +4,9 @@ copyright: Copyright (c) Mastersys
 electronVersion: 44.7.0
 
 directories:
-  output: release
+  # Instaladores sempre em release/ na RAIZ do repositorio, um subdiretorio
+  # por app (ignorado pelo git).
+  output: ../../release/desktop
   buildResources: build
 
 # Tudo e bundlado pelo esbuild em dist/; nenhum node_modules vai no pacote.

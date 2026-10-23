@@ -60,7 +60,7 @@ npm run lint -w scale-desktop
 npm run dist:desktop
 ```
 
-Saída: `apps/desktop/release/Scale-Setup-<versão>-x64.exe` (NSIS, por usuário,
+Saída: `release/desktop/Scale-Setup-<versão>-x64.exe` (NSIS, por usuário,
 permite escolher a pasta). O hook `scripts/after-pack.cjs` grava os fuses do
 Electron antes do instalador. Sem certificado de assinatura configurado o
 instalador sai **sem assinatura** (SmartScreen vai alertar).
