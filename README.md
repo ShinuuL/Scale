@@ -8,11 +8,14 @@
 
 | Camada | Tecnologia |
 |--------|------------|
-| Frontend | Next.js 15 (App Router) |
+| Frontend | Next.js 15 (App Router), export estatico |
+| Desktop | Electron 44 (Windows; abre o servidor configurado) |
 | Backend | Fastify 5 |
 | WebSocket | Socket.io 4 |
 | ORM | Prisma 6 |
 | Database | SQLite |
+| Proxy | Caddy 2 (estaticos + `/api` + `/socket.io`) |
+| Compartilhado | `@scale/shared` (schemas zod, tipos, limites) |
 | Containerizacao | Docker Compose |
 | Testes | Vitest (unit/integration) + Playwright (e2e) |
 
@@ -64,28 +67,27 @@ docker compose --profile mcp --profile turn --profile tunnel up --build
 
 ### Variaveis de Ambiente
 
-Copie `.env.example` para `.env` e configure:
+Copie `.env.example` para `.env` e preencha. Os segredos marcados como
+obrigatorios fazem o servico **recusar o start** em producao se estiverem
+ausentes ou curtos: isso e intencional. Gere valores aleatorios, por exemplo:
 
-```env
-JWT_SECRET=sua-chave-secreta-aqui
-DATABASE_URL=file:./data.db
-ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8080
-ENABLE_TURN=false
-PROXY_PORT=8080
-PORT=4100
-BACKEND_PORT=4100
-NODE_ENV=development
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
 ```
 
 | Variavel | Descricao | Padrao |
 |----------|-----------|--------|
-| `JWT_SECRET` | Chave secreta para JWT (min 8 chars) | `change-me-in-production` |
+| `JWT_SECRET` | Chave dos JWT de sessao (deriva tambem a chave do room ticket) | `change-me-in-production` |
+| `GUEST_COOKIE_SECRET` | Assina o cookie `guestId` do convidado. **Obrigatorio em producao, >= 32 caracteres.** Trocar o valor faz convidados perderem a autoria das mensagens antigas | derivado do `JWT_SECRET` so em dev/teste |
+| `METRICS_ADMIN_EMAILS` | E-mails (CSV) que podem ver `/api/metrics` e o painel `/metrics` | vazio = ninguem |
+| `METRICS_SERVICE_TOKEN` | Token de servico (>= 32) que o MCP usa em `/api/metrics` | vazio |
+| `MCP_TOKEN` | Token de quem chama o MCP. **Obrigatorio para o profile `mcp`, >= 32 caracteres** | — |
 | `DATABASE_URL` | URL do SQLite | `file:./data.db` |
 | `ALLOWED_ORIGINS` | Origens CORS permitidas (CSV) | `http://localhost:3000,http://localhost:8080` |
 | `ENABLE_TURN` | Habilitar servidor TURN | `false` |
-| `PROXY_PORT` | Porta do proxy interno (Caddy) no host | `8080` |
+| `PROXY_PORT` | Porta do proxy (Caddy) no host: e a entrada do app | `8080` |
 | `PORT` | Porta do backend em dev no host (container sempre 4000) | `4100` |
-| `BACKEND_PORT` | Porta do backend publicada no host pelo compose | `4100` |
+| `BACKEND_PORT` | Porta do backend publicada no host (so loopback) | `4100` |
 | `NODE_ENV` | Ambiente (`development`, `production`, `test`) | `development` |
 
 ## Arquitetura
@@ -102,9 +104,13 @@ NODE_ENV=development
 │   │   ├── src/       # lib/, plugins/, routes/, socket/
 │   │   ├── prisma/    # Prisma schema
 │   │   └── Dockerfile
+│   ├── desktop/       # Electron: src/core (logica pura testada), main, preload,
+│   │                  # renderer (setup e seletor de tela), electron-builder.yml
 │   └── mcp/           # MCP server (Docker profile mcp)
 ├── packages/
 │   └── shared/        # @scale/shared: schemas zod, tipos de eventos, limites
+├── release/           # instaladores gerados (ignorado pelo git), ex. release/desktop/
+├── e2e/               # Playwright
 ├── docs/
 ├── docker-compose.yml
 ├── Caddyfile          # estaticos + /api + /socket.io + headers de seguranca
@@ -118,7 +124,20 @@ NODE_ENV=development
 
 - Interface de videochamadas com WebRTC
 - Wizard de onboarding em 5 passos (boas-vindas, criar conta ou entrar, criar ou entrar numa sala, compartilhar o link, microfone e tela), com tutorial interativo em `/tutorial`
-- Salas com grid de video e controles
+- Sala em `/room?id=<id>` no estilo canal de voz: lateral com quem fala, palco
+  de transmissao de tela (Go Live) com foco, miniaturas e tela cheia
+- Temas Jade, Grafite e Safira (menu de perfil), lembrados no navegador
+
+### Desktop (Electron, `apps/desktop`)
+
+- Abre a URL do servidor Scale configurada na primeira execucao (so `https://`,
+  ou `localhost` em dev); o login por cookie HttpOnly funciona igual ao navegador
+- Janela endurecida (sandbox, contextIsolation, sem Node na pagina, navegacao
+  presa a origin, so microfone e captura de tela liberados) e fuses aplicados
+- Seletor proprio de tela/janela para o compartilhamento
+- Instalador: `npm run dist:desktop` gera `release/desktop/Scale-Setup-<versao>-x64.exe`
+  (sem assinatura de codigo por enquanto: o SmartScreen alerta)
+- Guia: `docs/desktop.md`
 
 ### Backend (porta 4100 no host em dev; 4000 no container)
 
@@ -126,7 +145,30 @@ NODE_ENV=development
 - WebSocket (Socket.io 4) para signaling WebRTC
 - Prisma 6 com SQLite para persistencia
 - Rate limiting (30 msg/s por conexao)
-- JWT em cookie HttpOnly
+- JWT em cookie HttpOnly (nunca no corpo da resposta)
+
+## Seguranca
+
+Regra geral: **nada do servidor e consultavel pelo front sem a prova certa**.
+
+- **Participacao efetiva:** historico, download e upload de arquivos exigem
+  ter entrado na sala, inclusive em sala publica. O `join-room` bem-sucedido
+  emite um *room ticket* (JWT curto, 12 h, escopo da sala) enviado no header
+  `X-Room-Ticket`. O dono da sala nao precisa de ticket; sala encerrada ou
+  expirada nega a todos.
+- **Convidado:** o servidor emite um `guestId` em cookie HttpOnly assinado. A
+  autoria (editar, apagar, `isMine`) compara por `guestId` ou pelo usuario
+  logado, nunca pelo nome exibido.
+- **Credenciais fora da URL:** senha e convite da sala vao em header
+  (`X-Room-Password`, `X-Room-Invite`), redigidos nos logs. 10 falhas em 15 min
+  por IP e sala -> 429.
+- **Respostas minimas:** DTOs publicos sem caminho de disco, ids internos ou
+  e-mails; mensagem apagada nao devolve texto antigo nem arquivos; arquivo
+  apagado -> 410; listagem `GET /api/rooms` so com nome e contagem de salas
+  publicas ativas.
+- **Cabecalhos e erros:** CSP sem `unsafe-inline` em scripts, `X-Frame-Options:
+  DENY`, `no-store` em respostas privadas, erros 5xx sem detalhes internos.
+- Modelo de confianca de proxy (`TRUST_PROXY`) e demais regras: `AGENTS.md`.
 
 ### MCP Validator (profile `mcp`)
 
@@ -204,8 +246,20 @@ Proxy do backend com dois tokens distintos:
 
 ### Vitest (unit/integration)
 
-- **Backend** (`npm run test -w scale-backend`): **91 testes** (11 arquivos) — chat socket (message/edit/delete/rate/mentions/history), REST messages paginadas, files multipart (magic bytes, quota, GC, sandbox), uploads lib, hardening de exposição pública (auth/CORS/Helmet/trust proxy), rooms/password/rotate-invite, signaling e métricas `scale_chat_*` (inclui auth de `/api/metrics`: 401 sem credencial, 401 com token invalido, 200 com cookie/Bearer).
-- **Frontend** (`npm run test -w scale-frontend`): **48 testes** (4 arquivos) — validação cliente + `useChat` (unread, edit/delete, mention audio, loadMore, upload) e `ChatMessageItem` (linkify, highlight, XSS, ações) cobertos em `ChatPanel.test.tsx`; `useSocket` (connect_error, onReconnect/isConnected); `useWebRTC` (regra determinística de quem inicia offer e glare/perfect negotiation); e `Icon` (decorativo vs rótulo acessível, grade 24×24, strokeWidth 1.75, preenchimento só nos estados "ligado"). A suíte de `ChatPanel` cobre ainda role=log, Enter/Shift+Enter, contador 500, autocomplete `@`, chips, loadMore e drawer mobile.
+`npm run test` na raiz compila o `@scale/shared` e roda todos os workspaces:
+**345 testes**.
+
+| Workspace | Testes | Cobre |
+|---|---|---|
+| `scale-backend` (`apps/server`) | 148 (13 arquivos) | chat socket, REST paginado, uploads (magic bytes, quota, GC, sandbox), hardening (auth/CORS/Helmet/trust proxy), salas e senha, signaling, metricas; `securityAudit.test.ts` (um caso por item da auditoria) e `participation.test.ts` (room ticket e `guestId`) |
+| `scale-frontend` (`apps/web`) | 87 | chat e upload, `useSocket`, `useWebRTC` (audio nos dois sentidos, glare), palco Go Live, temas, menu de perfil, aviso de desconexao, `Icon` |
+| `scale-desktop` (`apps/desktop`) | 99 | URL do servidor, config, navegacao permitida/bloqueada, permissoes, IPC, protocolo local |
+| `scale-mcp` (`apps/mcp`) | 6 | token obrigatorio, comparacao em tempo constante, validacao de `:id` |
+| `@scale/shared` | 5 | schemas compartilhados |
+
+Os testes do backend usam o SQLite local `apps/server/prisma/data.db`. Depois
+de mudar o schema, sincronize-o:
+`cd apps/server && DATABASE_URL=file:./data.db npx prisma db push`.
 
 ### GET /api/metrics — formato Prometheus
 
@@ -238,6 +292,12 @@ npm run dev          # Frontend + backend em dev mode
 npm run lint         # ESLint em todos os workspaces
 npm run build        # Build em todos os workspaces
 npm run test         # Vitest unit/integration
+npm run test:e2e     # Playwright
+
+# Desktop
+npm run dev:desktop  # Electron em dev (se ELECTRON_RUN_AS_NODE estiver definida:
+                     # env -u ELECTRON_RUN_AS_NODE npm run dev:desktop)
+npm run dist:desktop # Instalador Windows em release/desktop/
 
 # Docker
 docker compose up --build              # Sobe tudo
@@ -246,15 +306,16 @@ docker compose logs -f                 # Logs em tempo real
 docker compose --profile mcp up --build --abort-on-container-exit  # Com MCP
 
 # Banco de dados
-cd backend && npx prisma generate     # Gerar Prisma Client
-cd backend && npx prisma db push      # Sincronizar schema
-cd backend && npx prisma studio       # Interface visual do DB
+cd apps/server && npx prisma generate     # Gerar Prisma Client
+cd apps/server && npx prisma db push      # Sincronizar schema
+cd apps/server && npx prisma studio       # Interface visual do DB
 ```
 
 ## Documentacao
 
 - [Branding — Identidade Visual](docs/branding.md) - Conceito, paleta e tipografia do Scale
 - [Configuracao do tunel publico](docs/tunnel-setup.md) - Guia do tunel cloudflared (URL publica efemera)
+- [Cliente desktop](docs/desktop.md) - Electron: rodar, gerar instalador, trocar servidor, seguranca
 
 ## Convencoes
 
