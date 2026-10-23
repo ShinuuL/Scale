@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
 import './globals.css';
+import { PALETTE_BOOT_SCRIPT } from '@/lib/theme';
 
 export const metadata: Metadata = {
   title: 'Scale — P2P Video Calls',
@@ -21,7 +22,11 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en" className="dark" suppressHydrationWarning>
+      <head>
+        {/* Tema salvo aplicado antes da 1a pintura (texto estático, sem dado do usuário) */}
+        <script dangerouslySetInnerHTML={{ __html: PALETTE_BOOT_SCRIPT }} />
+      </head>
       <body className="min-h-screen bg-forest-950 text-slate-100 antialiased">
         {/* Skip to content link for accessibility */}
         <a href="#main-content" className="skip-link">

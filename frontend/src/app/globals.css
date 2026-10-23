@@ -3,6 +3,56 @@
 @tailwind utilities;
 
 @layer base {
+  /* ─── Temas de cor ───────────────────────────────────────────
+     Canais RGB (para o <alpha-value> do Tailwind). Jade é o padrão;
+     data-palette no <html> troca para Grafite ou Safira. Só a escala
+     brand/moss e o fundo forest mudam — vermelho (ao vivo, erro) e as
+     escamas douradas são fixos. Lista de temas: src/lib/theme.ts. */
+  :root {
+    --c-brand-50: 236 253 245;
+    --c-brand-100: 209 250 229;
+    --c-brand-200: 167 243 208;
+    --c-brand-300: 110 231 183;
+    --c-brand-400: 52 211 153;
+    --c-brand-500: 16 185 129;
+    --c-brand-600: 5 150 105;
+    --c-brand-700: 4 120 87;
+    --c-brand-800: 6 95 70;
+    --c-brand-900: 2 44 34;
+    --c-forest-900: 15 38 32;
+    --c-forest-950: 7 20 18;
+    /* Escamas: ouro imperial discreto, igual em todos os temas */
+    --scale-line: 214 168 78;
+  }
+  :root[data-palette='grafite'] {
+    --c-brand-50: 245 247 249;
+    --c-brand-100: 230 234 238;
+    --c-brand-200: 207 214 221;
+    --c-brand-300: 180 190 200;
+    --c-brand-400: 151 163 175;
+    --c-brand-500: 123 135 148;
+    --c-brand-600: 97 108 120;
+    --c-brand-700: 75 84 94;
+    --c-brand-800: 53 60 68;
+    --c-brand-900: 31 35 40;
+    --c-forest-900: 26 28 31;
+    --c-forest-950: 17 18 20;
+  }
+  :root[data-palette='safira'] {
+    --c-brand-50: 239 246 255;
+    --c-brand-100: 219 234 254;
+    --c-brand-200: 191 219 254;
+    --c-brand-300: 147 197 253;
+    --c-brand-400: 96 165 250;
+    --c-brand-500: 59 130 246;
+    --c-brand-600: 37 99 235;
+    --c-brand-700: 29 78 216;
+    --c-brand-800: 30 64 175;
+    --c-brand-900: 23 37 84;
+    --c-forest-900: 16 26 44;
+    --c-forest-950: 10 16 28;
+  }
+
   *,
   *::before,
   *::after {
@@ -35,7 +85,7 @@
 
   /* Focus ring — accessibility */
   :focus-visible {
-    @apply outline-none ring-2 ring-emerald-400 ring-offset-2 ring-offset-forest-950;
+    @apply outline-none ring-2 ring-brand-400 ring-offset-2 ring-offset-forest-950;
   }
 
   /* Skip to content link */
@@ -48,13 +98,24 @@
 }
 
 @layer components {
+  /* Textura de escamas de dragão: duas fileiras de arcos deslocadas meia
+     escama. Só background — não interfere em layout nem em contraste. */
+  .scales {
+    --scale-size: 22px;
+    background-image:
+      radial-gradient(circle at 50% 0, transparent 58%, rgb(var(--scale-line) / 0.14) 60%, transparent 66%),
+      radial-gradient(circle at 50% 0, transparent 58%, rgb(var(--scale-line) / 0.14) 60%, transparent 66%);
+    background-size: var(--scale-size) calc(var(--scale-size) / 2);
+    background-position: 0 0, calc(var(--scale-size) / 2) calc(var(--scale-size) / 4);
+  }
+
   /* Glass card utility */
   .glass {
-    @apply bg-white/5 backdrop-blur-xl border border-emerald-500/10 rounded-2xl;
+    @apply bg-white/5 backdrop-blur-xl border border-brand-500/10 rounded-2xl;
   }
 
   .glass-subtle {
-    @apply bg-white/[0.03] backdrop-blur-md border border-emerald-500/[0.06] rounded-xl;
+    @apply bg-white/[0.03] backdrop-blur-md border border-brand-500/[0.06] rounded-xl;
   }
 
   /* Button base */
@@ -72,7 +133,7 @@
            active:translate-y-0
            active:shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_2px_8px_rgba(2,44,34,0.8)]
            disabled:opacity-50 disabled:pointer-events-none
-           focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 focus-visible:ring-offset-forest-950;
+           focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-offset-2 focus-visible:ring-offset-forest-950;
   }
 
   .btn-secondary {
@@ -112,7 +173,7 @@
     @apply w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5
            text-sm text-slate-100 placeholder:text-slate-400
            transition-all duration-200
-           focus:border-emerald-500 focus:bg-white/[0.07] focus:ring-1 focus:ring-emerald-500
+           focus:border-brand-500 focus:bg-white/[0.07] focus:ring-1 focus:ring-brand-500
            focus:outline-none;
   }
 

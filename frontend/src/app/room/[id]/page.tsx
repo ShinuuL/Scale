@@ -3,9 +3,10 @@
 import { useState, useEffect, useCallback, useRef, use } from 'react';
 import { useSocket } from '@/hooks/useSocket';
 import { useWebRTC } from '@/hooks/useWebRTC';
+import { useSpeaking } from '@/hooks/useSpeaking';
 import { useChat } from '@/hooks/useChat';
 import { ChatPanel } from '@/components/ChatPanel';
-import { VideoGrid } from '@/components/room/VideoGrid';
+import { VideoGrid, LOCAL_ID } from '@/components/room/VideoGrid';
 import { RoomControls } from '@/components/room/RoomControls';
 import { ParticipantList } from '@/components/room/ParticipantList';
 import { Badge } from '@/components/ui/Badge';
@@ -14,6 +15,7 @@ import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { ToastProvider, useToast } from '@/components/ui/Toast';
 import { Icon } from '@/components/ui/Icon';
+import { ProfileMenu } from '@/components/ui/ProfileMenu';
 import { api } from '@/lib/api';
 import { copyText } from '@/lib/clipboard';
 
@@ -50,6 +52,10 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
   const [loading, setLoading] = useState(true);
   const [joined, setJoined] = useState(false);
   const [showParticipants, setShowParticipants] = useState(true);
+  // Em telas estreitas a lateral vira gaveta sobreposta e começa fechada.
+  useEffect(() => {
+    if (window.matchMedia('(max-width: 767px)').matches) setShowParticipants(false);
+  }, []);
   const [isInsecureContext, setIsInsecureContext] = useState(false);
   const [copiedFlag, setCopiedFlag] = useState(false);
   // Senha de sala protegida por password (fluxo password do critic). Fica SÓ em
@@ -73,6 +79,11 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
 
   const [chatOpen, setChatOpen] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  // Nome do cadastro quando logado; senão o Guest-xxxx do socket. O backend já
+  // identifica o usuário pelo cookie no handshake — este é o nome LOCAL (tile
+  // "Você", lista de participantes e autor do chat/upload).
+  const [accountName, setAccountName] = useState<string | null>(null);
+  const [accountEmail, setAccountEmail] = useState<string | null>(null);
 
   // Persist chatOpen em localStorage
   useEffect(() => {
@@ -90,11 +101,28 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
   useEffect(() => {
     api
       .getMe()
-      .then((res) => setCurrentUserId(res.user.id))
-      .catch(() => setCurrentUserId(null));
+      .then((res) => {
+        setCurrentUserId(res.user.id);
+        setAccountName(res.user.name);
+        setAccountEmail(res.user.email);
+      })
+      .catch(() => {
+        setCurrentUserId(null);
+        setAccountName(null);
+        setAccountEmail(null);
+      });
   }, []);
 
   const webrtc = useWebRTC(socket, roomId);
+  const displayName = accountName ?? socket.guestName;
+  // Transmissão escolhida para o palco (null = foco automático: a de outra
+  // pessoa vence a sua). Lateral e faixa de miniaturas escrevem aqui.
+  const [focusedShareId, setFocusedShareId] = useState<string | null>(null);
+  // Anel verde de "falando" na lateral e nos cartões. Local mudo não conta.
+  const speaking = useSpeaking([
+    { id: LOCAL_ID, stream: webrtc.isMuted ? null : webrtc.localStream },
+    ...Array.from(webrtc.peers.values()).map((p) => ({ id: p.peerId, stream: p.stream })),
+  ]);
 
   // Detect insecure context (HTTP on non-localhost) — blocks getUserMedia
   useEffect(() => {
@@ -171,48 +199,60 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
     // Espera a senha ser fornecida (gate abaixo) antes de tentar o join.
     if (requiresPassword && roomPassword.trim().length === 0) return;
 
-    socket.joinRoom(roomId, socket.guestName, inviteToken, roomPassword.trim() || undefined).then(({ peers: existingPeers, history }) => {
-      setJoined(true);
-      // Limpa um erro anterior: a tela de erro tem precedência no render, e
-      // sem isto um re-join bem-sucedido deixaria a pessoa presa nela.
-      setError(null);
-      if (rejoinRetryRef.current) {
-        clearTimeout(rejoinRetryRef.current);
-        rejoinRetryRef.current = null;
-      }
-      // Seed chat history (persistent rooms: last 200; temporary: FIFO buffer)
-      if (history.length > 0) {
-        chatRef.current.setMessages(history);
-      }
-      // Inicializa a mídia e, em seguida, conecta aos peers que JÁ estavam na
-      // sala (existingPeers do ack de join-room). O novato também inicia
-      // offers (mesh bidirecional): não depende apenas do room:peer-joined
-      // enviado pelos antigos — se esse evento se perder, o mesh ainda se
-      // forma. A dedupe interna (peersRef + regra de socket id menor) evita
-      // offers duplicadas/glare com os offers vindos do outro lado.
-      initMedia().then(() => {
-        if (existingPeers.length > 0) {
-          void connectToPeers(existingPeers);
-        }
-      });
-    }).catch((err: unknown) => {
-      const message =
-        err instanceof Error && err.message ? err.message : 'Falha ao entrar na sala';
-      if (mode === 'first') {
-        setError(message);
-        return;
-      }
-      // Re-join: não ejecta no primeiro erro. Tenta de novo em 2,5s (dá tempo
-      // de o servidor processar o disconnect do peer antigo); se persistir,
-      // aí sim mostra o erro — que um re-join seguinte consegue limpar.
-      if (rejoinRetryRef.current === null) {
-        rejoinRetryRef.current = setTimeout(() => {
-          rejoinRetryRef.current = null;
-          performJoinRef.current('reconnect');
-        }, 2500);
-        return;
-      }
-      setError(message);
+    // Mídia ANTES do join. Sem isso o `room:peer-joined` (emitido pelo backend
+    // antes do ack do join-room) chega ao novato enquanto o prompt de permissão
+    // do microfone ainda está aberto, e o PC dele nasce sem faixa de áudio.
+    // `initMedia` é idempotente (no re-join a stream já está live e o retorno é
+    // imediato) e já é estável (useCallback com []), então não desestabiliza a
+    // identidade do performJoin. Também cobre o caso sem permissão/contexto
+    // inseguro: initMedia resolve rápido e só marca mediaError.
+    void initMedia().then(() => {
+      if (!socket.isConnected()) return;
+      socket
+        .joinRoom(roomId, socket.guestName, inviteToken, roomPassword.trim() || undefined)
+        .then(({ peers: existingPeers, history }) => {
+          setJoined(true);
+          // Limpa um erro anterior: a tela de erro tem precedência no render, e
+          // sem isto um re-join bem-sucedido deixaria a pessoa presa nela.
+          setError(null);
+          if (rejoinRetryRef.current) {
+            clearTimeout(rejoinRetryRef.current);
+            rejoinRetryRef.current = null;
+          }
+          // Seed chat history (persistent rooms: last 200; temporary: FIFO buffer)
+          if (history.length > 0) {
+            chatRef.current.setMessages(history);
+          }
+          // Conecta aos peers que JÁ estavam na sala (existingPeers do ack de
+          // join-room). O novato também inicia offers (mesh bidirecional): não
+          // depende apenas do room:peer-joined enviado pelos antigos — se esse
+          // evento se perder, o mesh ainda se forma. A dedupe interna (peersRef
+          // + regra de socket id menor) evita offers duplicadas/glare com os
+          // offers vindos do outro lado.
+          // NÃO chamamos initMedia aqui de novo: ela já foi resolvida acima.
+          if (existingPeers.length > 0) {
+            void connectToPeers(existingPeers);
+          }
+        })
+        .catch((err: unknown) => {
+          const message =
+            err instanceof Error && err.message ? err.message : 'Falha ao entrar na sala';
+          if (mode === 'first') {
+            setError(message);
+            return;
+          }
+          // Re-join: não ejecta no primeiro erro. Tenta de novo em 2,5s (dá tempo
+          // de o servidor processar o disconnect do peer antigo); se persistir,
+          // aí sim mostra o erro — que um re-join seguinte consegue limpar.
+          if (rejoinRetryRef.current === null) {
+            rejoinRetryRef.current = setTimeout(() => {
+              rejoinRetryRef.current = null;
+              performJoinRef.current('reconnect');
+            }, 2500);
+            return;
+          }
+          setError(message);
+        });
     });
   }, [socket, roomId, initMedia, connectToPeers, inviteToken, requiresPassword, roomPassword]);
 
@@ -401,7 +441,7 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
   const isOwner = room?.room.ownerId != null && room?.room.ownerId === currentUserId;
   // Nomes para o autocomplete de menções: quem está na sala agora (guestNames)
   const currentPeers = [
-    socket.guestName,
+    displayName,
     ...Array.from(webrtc.peers.values()).map((p) => p.name),
   ];
 
@@ -413,8 +453,8 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
       </a>
 
       {/* Header */}
-      <header className="flex items-center justify-between px-4 py-2 border-b border-white/5 bg-forest-950/80 backdrop-blur-sm z-10">
-        <div className="flex items-center gap-3">
+      <header className="flex items-center justify-between gap-2 px-2 sm:px-4 py-2 border-b border-white/5 bg-forest-950/80 backdrop-blur-sm z-10">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           <Button
             variant="ghost"
             size="sm"
@@ -423,17 +463,17 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
           >
             <Icon name="arrowLeft" />
           </Button>
-          <div>
-            <h1 className="text-sm font-semibold text-white">{roomName}</h1>
+          <div className="min-w-0">
+            <h1 className="truncate text-sm font-semibold text-white">{roomName}</h1>
             <p className="text-xs text-slate-400">Sala · {roomId.slice(0, 8)}...</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-shrink-0 items-center gap-1.5 sm:gap-2">
           <Badge variant={socket.connected ? 'success' : 'error'}>
             {socket.connected ? 'Conectado' : 'Desconectado'}
           </Badge>
-          <Badge variant="info" aria-live="polite">
+          <Badge variant="info" aria-live="polite" className="max-sm:hidden">
             {Array.from(webrtc.peers.size ? webrtc.peers.keys() : []).length + 1} / {room?.room.maxParticipants ?? 8}
           </Badge>
           <Button
@@ -445,6 +485,11 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
           >
             <Icon name="users" />
           </Button>
+          <ProfileMenu
+            name={displayName}
+            email={accountEmail}
+            isAuthenticated={currentUserId !== null}
+          />
         </div>
       </header>
 
@@ -486,30 +531,40 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
       )}
 
       {/* Main content */}
-      <div className="flex-1 flex min-h-0 overflow-hidden">
-        {/* Video grid */}
+      <div className="relative flex-1 flex min-h-0 overflow-hidden">
+        {/* Lateral do canal de voz (à esquerda, como no Discord) */}
+        {showParticipants && (
+          <aside className="flex w-64 flex-shrink-0 flex-col p-3 pr-0 max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:z-30 max-md:pr-3">
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/10 bg-forest-900 shadow-lg shadow-black/30 max-md:shadow-2xl">
+              <ParticipantList
+                peers={webrtc.peers}
+                localName={displayName}
+                localMuted={webrtc.isMuted}
+                localScreenSharing={webrtc.isScreenSharing}
+                channelName={roomName}
+                maxParticipants={room?.room.maxParticipants ?? 8}
+                speaking={speaking}
+                onWatch={setFocusedShareId}
+              />
+            </div>
+          </aside>
+        )}
+
+        {/* Palco / grade */}
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
           <VideoGrid
             peers={webrtc.peers}
             localStream={webrtc.localStream}
             localScreenStream={webrtc.localScreenStream}
             isMuted={webrtc.isMuted}
-            localName={socket.guestName}
+            localName={displayName}
             inviteLink={inviteLink}
+            speaking={speaking}
+            focusedShareId={focusedShareId}
+            onFocusShare={setFocusedShareId}
+            onStopShare={() => void webrtc.toggleScreenShare()}
           />
         </div>
-
-        {/* Participant sidebar */}
-        {showParticipants && (
-          <aside className="w-64 border-l border-white/5 bg-slate-900/30 backdrop-blur-sm p-3 overflow-auto flex-shrink-0 transition-all">
-            <ParticipantList
-              peers={webrtc.peers}
-              localName={socket.guestName}
-              localMuted={webrtc.isMuted}
-              localScreenSharing={webrtc.isScreenSharing}
-            />
-          </aside>
-        )}
 
         {/* Chat panel */}
         {chatOpen && (
@@ -522,7 +577,7 @@ function RoomPageInner({ params }: { params: Promise<{ id: string }> }) {
             onClose={() => setChatOpen(false)}
             isOwner={isOwner}
             currentUserId={currentUserId}
-            guestName={socket.guestName}
+            guestName={displayName}
             inviteToken={inviteToken}
             password={roomPassword.trim() || undefined}
           />

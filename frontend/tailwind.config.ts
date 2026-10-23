@@ -6,33 +6,35 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        // Cores do TEMA: valores em src/app/globals.css (variáveis por data-palette).
+        // moss é sinônimo histórico de brand.
         moss: {
-          50: '#ecfdf5',
-          100: '#d1fae5',
-          200: '#a7f3d0',
-          300: '#6ee7b7',
-          400: '#34d399',
-          500: '#10b981',
-          600: '#059669',
-          700: '#047857',
-          800: '#065f46',
-          900: '#022c22',
+          50: 'rgb(var(--c-brand-50) / <alpha-value>)',
+          100: 'rgb(var(--c-brand-100) / <alpha-value>)',
+          200: 'rgb(var(--c-brand-200) / <alpha-value>)',
+          300: 'rgb(var(--c-brand-300) / <alpha-value>)',
+          400: 'rgb(var(--c-brand-400) / <alpha-value>)',
+          500: 'rgb(var(--c-brand-500) / <alpha-value>)',
+          600: 'rgb(var(--c-brand-600) / <alpha-value>)',
+          700: 'rgb(var(--c-brand-700) / <alpha-value>)',
+          800: 'rgb(var(--c-brand-800) / <alpha-value>)',
+          900: 'rgb(var(--c-brand-900) / <alpha-value>)',
         },
         brand: {
-          50: '#ecfdf5',
-          100: '#d1fae5',
-          200: '#a7f3d0',
-          300: '#6ee7b7',
-          400: '#34d399',
-          500: '#10b981',
-          600: '#059669',
-          700: '#047857',
-          800: '#065f46',
-          900: '#022c22',
+          50: 'rgb(var(--c-brand-50) / <alpha-value>)',
+          100: 'rgb(var(--c-brand-100) / <alpha-value>)',
+          200: 'rgb(var(--c-brand-200) / <alpha-value>)',
+          300: 'rgb(var(--c-brand-300) / <alpha-value>)',
+          400: 'rgb(var(--c-brand-400) / <alpha-value>)',
+          500: 'rgb(var(--c-brand-500) / <alpha-value>)',
+          600: 'rgb(var(--c-brand-600) / <alpha-value>)',
+          700: 'rgb(var(--c-brand-700) / <alpha-value>)',
+          800: 'rgb(var(--c-brand-800) / <alpha-value>)',
+          900: 'rgb(var(--c-brand-900) / <alpha-value>)',
         },
         forest: {
-          900: '#0f2620',
-          950: '#071412',
+          900: 'rgb(var(--c-forest-900) / <alpha-value>)',
+          950: 'rgb(var(--c-forest-950) / <alpha-value>)',
         },
       },
       fontFamily: {
@@ -50,8 +52,15 @@ const config: Config = {
         'fade-in': 'fadeIn 0.3s ease-in-out',
         'slide-up': 'slideUp 0.4s ease-out',
         'pulse-soft': 'pulseSoft 2s ease-in-out infinite',
+        // M3 emphasizedDecelerate, 180ms: entrada de menu (fade + scale).
+        'menu-in': 'menuIn 180ms cubic-bezier(0.05, 0.7, 0.1, 1)',
+        'fade-in-fast': 'fadeIn 120ms linear',
       },
       keyframes: {
+        menuIn: {
+          '0%': { opacity: '0', transform: 'scale(0.95) translateY(-4px)' },
+          '100%': { opacity: '1', transform: 'scale(1) translateY(0)' },
+        },
         fadeIn: {
           '0%': { opacity: '0' },
           '100%': { opacity: '1' },

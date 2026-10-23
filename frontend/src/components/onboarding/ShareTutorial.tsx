@@ -50,7 +50,7 @@ export function ShareTutorial() {
               activeStep === s.id
                 ? 'bg-brand-600/20 text-brand-300 border border-brand-500/30'
                 : activeStep > s.id
-                  ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                  ? 'bg-brand-500/10 text-brand-400 border border-brand-500/20'
                   : 'text-slate-400 border border-transparent hover:text-slate-300 hover:border-white/10'
             }`}
             aria-label={s.title}
@@ -278,17 +278,17 @@ export function ShareTutorial() {
                 <p className="text-sm font-medium text-slate-200 mb-3">Como funciona:</p>
                 <div className="bg-slate-900/80 p-4 rounded-lg text-xs font-mono space-y-1.5">
                   <p className="text-slate-400">
-                    <span className="text-emerald-400">Você</span> cria a sala e entra
+                    <span className="text-brand-400">Você</span> cria a sala e entra
                   </p>
                   <p className="text-slate-400">
-                    <span className="text-emerald-400">Você</span> envia o link para os participantes
+                    <span className="text-brand-400">Você</span> envia o link para os participantes
                   </p>
                   <p className="text-slate-400">
-                    <span className="text-emerald-400">Cada um</span> abre o link e permite o microfone
+                    <span className="text-brand-400">Cada um</span> abre o link e permite o microfone
                   </p>
                   <p className="text-slate-400">
-                    <span className="text-emerald-400">WebRTC</span> conecta todos direto (P2P){' '}
-                    <Icon name="arrowRight" /> <span className="text-emerald-400">Pronto!</span>
+                    <span className="text-brand-400">WebRTC</span> conecta todos direto (P2P){' '}
+                    <Icon name="arrowRight" /> <span className="text-brand-400">Pronto!</span>
                   </p>
                 </div>
               </div>
@@ -297,15 +297,15 @@ export function ShareTutorial() {
                 <p className="text-sm font-medium text-slate-200">Checklist antes da chamada:</p>
                 <ul className="space-y-2">
                   <li className="flex items-start gap-2 text-sm text-slate-300">
-                    <span className="text-emerald-400 mt-0.5"><Icon name="check" /></span>
+                    <span className="text-brand-400 mt-0.5"><Icon name="check" /></span>
                     <span>Todos abriram o link da sala</span>
                   </li>
                   <li className="flex items-start gap-2 text-sm text-slate-300">
-                    <span className="text-emerald-400 mt-0.5"><Icon name="check" /></span>
+                    <span className="text-brand-400 mt-0.5"><Icon name="check" /></span>
                     <span>Permissão de microfone concedida no navegador</span>
                   </li>
                   <li className="flex items-start gap-2 text-sm text-slate-300">
-                    <span className="text-emerald-400 mt-0.5"><Icon name="check" /></span>
+                    <span className="text-brand-400 mt-0.5"><Icon name="check" /></span>
                     <span>Página aberta em HTTPS (ou localhost)</span>
                   </li>
                 </ul>

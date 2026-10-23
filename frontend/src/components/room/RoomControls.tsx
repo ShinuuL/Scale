@@ -48,12 +48,13 @@ export function RoomControls({
 
   return (
     <div
-      className="flex items-center justify-center gap-2 px-4 py-3 border-t border-white/5 bg-forest-950/60 backdrop-blur-xl transition-colors"
+      className="flex items-center justify-center gap-1.5 sm:gap-2 px-2 sm:px-4 py-3 border-t border-white/5 bg-forest-950/60 backdrop-blur-xl transition-colors"
       role="toolbar"
       aria-label="Controles da sala"
     >
       {/* Mute */}
       <Button
+        className="max-sm:px-3.5"
         variant={isMuted ? 'danger' : 'secondary'}
         onClick={onToggleMute}
         disabled={controlsDisabled}
@@ -67,6 +68,7 @@ export function RoomControls({
 
       {/* Deafen */}
       <Button
+        className="max-sm:px-3.5"
         variant={isDeafened ? 'danger' : 'secondary'}
         onClick={onToggleDeafen}
         disabled={controlsDisabled}
@@ -80,6 +82,7 @@ export function RoomControls({
 
       {/* Screen share */}
       <Button
+        className="max-sm:px-3.5"
         variant={isScreenSharing ? 'primary' : 'secondary'}
         onClick={onToggleScreenShare}
         disabled={controlsDisabled}
@@ -96,6 +99,7 @@ export function RoomControls({
       {/* Copy invite link */}
       {inviteLink && (
         <Button
+          className="max-sm:px-3.5"
           variant="ghost"
           onClick={copyInvite}
           aria-label="Copiar link de convite"
@@ -109,6 +113,7 @@ export function RoomControls({
       {/* Chat toggle */}
       {onToggleChat && (
         <Button
+          className="max-sm:px-3.5"
           variant={showChat ? 'primary' : 'secondary'}
           onClick={onToggleChat}
           aria-label={showChat ? 'Fechar chat' : 'Abrir chat'}
@@ -125,10 +130,11 @@ export function RoomControls({
         </Button>
       )}
 
-      <div className="w-px h-8 bg-white/10 mx-2" aria-hidden="true" />
+      <div className="w-px h-8 bg-white/10 mx-0.5 sm:mx-2" aria-hidden="true" />
 
       {/* Leave */}
       <Button
+        className="max-sm:px-3.5"
         variant="danger"
         onClick={onLeave}
         aria-label="Sair da sala"

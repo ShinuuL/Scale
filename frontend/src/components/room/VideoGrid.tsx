@@ -7,92 +7,166 @@ import { Icon } from '@/components/ui/Icon';
 import { copyText } from '@/lib/clipboard';
 import type { PeerConnection } from '@/hooks/useWebRTC';
 
-interface VideoTileProps {
-  peer?: PeerConnection;
-  stream: MediaStream | null;
-  label: string;
-  isLocal?: boolean;
-  isScreenShare?: boolean;
-  /** Tile único (total === 1): permite crescer e centralizar, em vez de achatado no rodapé. */
-  solo?: boolean;
+/** Id da transmissão/participante local (os remotos usam o peerId). */
+export const LOCAL_ID = 'local';
+
+/** Uma tela compartilhada ativa (alguém "Ao vivo"). */
+export interface LiveShare {
+  id: string;
+  name: string;
+  stream: MediaStream;
+  isLocal: boolean;
 }
 
-function VideoTile({ stream, label, isLocal, isScreenShare, peer, solo }: VideoTileProps) {
+function hasLiveVideo(stream: MediaStream | null): stream is MediaStream {
+  return !!stream && stream.getVideoTracks().some((t) => t.readyState === 'live');
+}
+
+/** Transmissões ativas: a local primeiro, depois as remotas na ordem dos peers. */
+export function collectLiveShares(
+  peers: Map<string, PeerConnection>,
+  localScreenStream: MediaStream | null,
+  localName: string,
+): LiveShare[] {
+  const shares: LiveShare[] = [];
+  if (hasLiveVideo(localScreenStream)) {
+    shares.push({ id: LOCAL_ID, name: localName, stream: localScreenStream, isLocal: true });
+  }
+  peers.forEach((peer) => {
+    if (peer.isScreenSharing && hasLiveVideo(peer.screenStream)) {
+      shares.push({ id: peer.peerId, name: peer.name, stream: peer.screenStream, isLocal: false });
+    }
+  });
+  return shares;
+}
+
+/**
+ * Foco padrão do palco: a transmissão de OUTRA pessoa vence a sua (ninguém
+ * precisa ver o próprio espelho gigante); um foco escolhido continua valendo
+ * enquanto a transmissão existir.
+ */
+export function resolveFocus(shares: LiveShare[], requested: string | null): LiveShare | null {
+  if (shares.length === 0) return null;
+  return (
+    shares.find((s) => s.id === requested) ?? shares.find((s) => !s.isLocal) ?? shares[0]
+  );
+}
+
+// ─── Áudio ──────────────────────────────────────────────────────
+
+/**
+ * Um `<audio>` por peer remoto, FORA dos tiles: trocar o layout (palco ↔
+ * grade, foco) não desmonta o elemento e o som não corta.
+ */
+function PeerAudio({ stream }: { stream: MediaStream | null }) {
   const audioRef = useRef<HTMLAudioElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
-    if (audioRef.current) audioRef.current.srcObject = stream;
-    if (videoRef.current) videoRef.current.srcObject = stream;
+    const audioEl = audioRef.current;
+    if (!audioEl) return;
+    audioEl.srcObject = stream;
+    if (!stream) return;
+
+    // Abrir a URL direto no Chrome pode deixar o elemento PAUSADO pela política
+    // de autoplay — play() explícito + nova tentativa no primeiro gesto.
+    const tryPlay = () => {
+      const p = audioEl.play();
+      if (p && typeof p.catch === 'function') p.catch(() => {});
+    };
+    tryPlay();
+    const cleanup = () => {
+      window.removeEventListener('pointerdown', onFirstGesture, true);
+      window.removeEventListener('keydown', onFirstGesture, true);
+    };
+    const onFirstGesture = () => {
+      tryPlay();
+      cleanup();
+    };
+    window.addEventListener('pointerdown', onFirstGesture, true);
+    window.addEventListener('keydown', onFirstGesture, true);
+    return cleanup;
   }, [stream]);
 
-  const hasAudio = stream?.getAudioTracks().length ?? 0;
-  const hasVideo = stream?.getVideoTracks().length ?? 0;
+  return <audio ref={audioRef} autoPlay playsInline />;
+}
 
-  const displayName = isLocal ? 'Você' : label;
-  const audioStatus = isLocal
-    ? (peer?.audioMuted ?? false) || stream?.getAudioTracks().length === 0
-      ? 'microfone desligado'
-      : 'microfone ligado'
-    : hasAudio === 0
-      ? 'microfone desligado'
-      : 'microfone ligado';
-  const videoStatus = hasVideo > 0 ? 'câmera ligada' : 'câmera desligada';
-  const screenStatus = isScreenShare ? ', compartilhando tela' : '';
-  const ariaLabel = `${displayName}, ${audioStatus}, ${videoStatus}${screenStatus}`;
+// ─── Peças visuais ──────────────────────────────────────────────
 
+function StreamVideo({ stream, className }: { stream: MediaStream; className?: string }) {
+  const ref = useRef<HTMLVideoElement>(null);
+  useEffect(() => {
+    if (ref.current) ref.current.srcObject = stream;
+  }, [stream]);
+  return <video ref={ref} autoPlay playsInline muted className={className} />;
+}
+
+function Avatar({ name, speaking, size }: { name: string; speaking: boolean; size: 'lg' | 'md' | 'sm' }) {
   return (
     <div
       className={clsx(
-        'relative rounded-2xl overflow-hidden aspect-video transition-all duration-200',
-        'bg-slate-800/80 border border-white/5 hover:border-white/10',
-        solo && 'w-full max-w-2xl mx-auto min-h-[280px] sm:min-h-[360px]',
-        isScreenShare && 'col-span-2',
+        'rounded-full flex items-center justify-center font-semibold select-none',
+        'bg-brand-600/30 text-brand-200 border border-brand-500/30',
+        'ring-offset-2 ring-offset-slate-900 transition-shadow duration-150 motion-reduce:transition-none',
+        speaking ? 'ring-[3px] ring-brand-400' : 'ring-0',
+        size === 'lg' && 'w-24 h-24 text-3xl',
+        size === 'md' && 'w-16 h-16 text-xl',
+        size === 'sm' && 'w-10 h-10 text-sm',
       )}
-      role="group"
-      aria-label={ariaLabel}
+      aria-hidden="true"
     >
-      {/* Media elements */}
-      <audio ref={audioRef} autoPlay playsInline muted={isLocal} />
-      {hasVideo > 0 && isScreenShare && (
-        <video ref={videoRef} autoPlay playsInline muted={isLocal} className="absolute inset-0 w-full h-full object-contain bg-black" />
-      )}
-
-      {/* Placeholder when no video */}
-      {(!isScreenShare || hasVideo === 0) && (
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className={clsx(
-            'w-20 h-20 rounded-full flex items-center justify-center text-2xl font-bold',
-            'bg-brand-600/30 text-brand-300 border border-brand-500/30 shadow-lg shadow-moss-600/20',
-          )}>
-            {label.charAt(0).toUpperCase()}
-          </div>
-        </div>
-      )}
-
-      {/* Label */}
-      <div className="absolute bottom-2 left-2 flex items-center gap-1.5">
-        <span className="text-xs font-medium text-white bg-black/60 backdrop-blur-sm px-2 py-1 rounded-md">
-          {isLocal ? 'Você' : label}
-        </span>
-      </div>
-
-      {/* Indicators */}
-      <div className="absolute top-2 right-2 flex items-center gap-1">
-        {isScreenShare && (
-          <span className="text-xs font-medium text-emerald-300 bg-emerald-500/20 backdrop-blur-sm px-1.5 py-0.5 rounded-md">
-            Tela
-          </span>
-        )}
-        {hasAudio === 0 && !isLocal && (
-          <span className="text-xs font-medium text-red-200 bg-red-500/20 backdrop-blur-sm px-1.5 py-0.5 rounded-md">
-            Mudo
-          </span>
-        )}
-      </div>
+      {name.charAt(0).toUpperCase()}
     </div>
   );
 }
+
+function LiveBadge({ className }: { className?: string }) {
+  return (
+    <span
+      className={clsx(
+        'inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-bold uppercase tracking-wide',
+        'bg-red-600 text-white',
+        className,
+      )}
+    >
+      Ao vivo
+    </span>
+  );
+}
+
+interface Member {
+  id: string;
+  name: string;
+  isLocal: boolean;
+  muted: boolean;
+}
+
+/** Cartão de participante do canal de voz (sem vídeo: avatar + nome). */
+function MemberCard({ member, speaking, compact }: { member: Member; speaking: boolean; compact?: boolean }) {
+  const label = member.isLocal ? `${member.name} (você)` : member.name;
+  return (
+    <div
+      role="group"
+      aria-label={`${label}, ${member.muted ? 'microfone desligado' : 'microfone ligado'}${speaking ? ', falando' : ''}`}
+      className={clsx(
+        'scales relative flex items-center justify-center rounded-xl bg-slate-800/80 border transition-colors duration-150',
+        speaking ? 'border-brand-400/70' : 'border-white/5',
+        compact ? 'h-full w-full' : 'aspect-video w-full',
+      )}
+    >
+      <Avatar name={member.name} speaking={speaking} size={compact ? 'sm' : 'lg'} />
+      <span className="absolute bottom-2 left-2 max-w-[75%] truncate rounded-md bg-black/60 px-2 py-0.5 text-xs font-medium text-white">
+        {label}
+      </span>
+      {member.muted && (
+        <span className="absolute bottom-2 right-2 rounded-md bg-black/60 p-1 text-red-300">
+          <Icon name="micOff" size={14} title="Microfone desligado" />
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ─── Grade ──────────────────────────────────────────────────────
 
 interface VideoGridProps {
   peers: Map<string, PeerConnection>;
@@ -100,8 +174,15 @@ interface VideoGridProps {
   localScreenStream: MediaStream | null;
   isMuted: boolean;
   localName?: string;
-  /** Link de convite — usado no empty state "só local" (botão Copiar link). */
+  /** Link de convite — usado no estado "só você na sala". */
   inviteLink?: string;
+  /** Ids (LOCAL_ID ou peerId) de quem está falando agora. */
+  speaking?: Set<string>;
+  /** Transmissão em foco no palco (controlada pela página; a lateral também foca). */
+  focusedShareId?: string | null;
+  onFocusShare?: (id: string) => void;
+  /** Encerra a própria transmissão (botão do cartão "Você está transmitindo"). */
+  onStopShare?: () => void;
 }
 
 export function VideoGrid({
@@ -111,40 +192,83 @@ export function VideoGrid({
   isMuted,
   localName,
   inviteLink,
+  speaking = new Set<string>(),
+  focusedShareId = null,
+  onFocusShare,
+  onStopShare,
 }: VideoGridProps) {
+  const name = localName || 'Você';
   const peerArray = Array.from(peers.values());
-  const total = peerArray.length + 1; // +1 for local
-  // total 3-4 → 2 cols; 5-6 → 3 cols; 7-8 → 4 cols. (total 1-2 têm layouts próprios.)
-  const cols = total <= 4 ? 2 : total <= 6 ? 3 : 4;
-  const [copyState, setCopyState] = useState<'idle' | 'copied'>('idle');
+  const members: Member[] = [
+    { id: LOCAL_ID, name, isLocal: true, muted: isMuted || !localStream },
+    ...peerArray.map((p) => ({
+      id: p.peerId,
+      name: p.name,
+      isLocal: false,
+      muted: p.audioMuted || (p.stream?.getAudioTracks().length ?? 0) === 0,
+    })),
+  ];
+  const shares = collectLiveShares(peers, localScreenStream, name);
+  const focused = resolveFocus(shares, focusedShareId);
 
+  const [copyState, setCopyState] = useState<'idle' | 'copied'>('idle');
   const handleCopyInvite = useCallback(async () => {
     if (!inviteLink) return;
-    const ok = await copyText(inviteLink);
-    if (ok) {
+    if (await copyText(inviteLink)) {
       setCopyState('copied');
       window.setTimeout(() => setCopyState('idle'), 2000);
     }
   }, [inviteLink]);
 
-  // 1 participante (só local): tile centralizado vertical e horizontalmente —
-  // não fica mais achatado/deslocado para o rodapé.
-  if (total === 1) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full min-h-0 gap-4 p-4">
-        <VideoTile
-          stream={localScreenStream ?? localStream}
-          label={localName || 'Você'}
-          isLocal
-          isScreenShare={!!localScreenStream}
-          solo
-        />
+  const audioLayer = (
+    <div className="hidden" aria-hidden="true">
+      {peerArray.map((peer) => (
+        <PeerAudio key={peer.peerId} stream={peer.stream} />
+      ))}
+    </div>
+  );
 
-        {inviteLink && (
-          <div className="flex flex-col items-center gap-2 mt-1 text-center">
-            <p className="text-sm text-slate-400">
-              Você está sozinho — copie o link e convide alguém
-            </p>
+  if (focused) {
+    return (
+      <>
+        {audioLayer}
+        <Stage
+          focused={focused}
+          shares={shares}
+          members={members}
+          speaking={speaking}
+          viewers={peerArray.length}
+          onFocusShare={onFocusShare}
+          onStopShare={onStopShare}
+        />
+      </>
+    );
+  }
+
+  const total = members.length;
+  return (
+    <>
+      {audioLayer}
+      <div className="flex h-full min-h-0 flex-col items-center justify-center gap-4 overflow-auto p-4">
+        <div
+          role="region"
+          aria-label="Participantes do canal de voz"
+          className={clsx(
+            'grid w-full gap-3',
+            total === 1 && 'max-w-xl grid-cols-1',
+            total === 2 && 'max-w-4xl grid-cols-1 sm:grid-cols-2',
+            total >= 3 && total <= 4 && 'max-w-4xl grid-cols-2',
+            total >= 5 && 'max-w-6xl grid-cols-2 md:grid-cols-3 xl:grid-cols-4',
+          )}
+        >
+          {members.map((m) => (
+            <MemberCard key={m.id} member={m} speaking={speaking.has(m.id)} />
+          ))}
+        </div>
+
+        {total === 1 && inviteLink && (
+          <div className="flex flex-col items-center gap-2 text-center">
+            <p className="text-sm text-slate-400">Você está sozinho no canal. Copie o link e convide alguém.</p>
             <Button variant="secondary" size="sm" onClick={handleCopyInvite}>
               {copyState === 'copied' ? (
                 <>
@@ -157,47 +281,144 @@ export function VideoGrid({
           </div>
         )}
       </div>
-    );
-  }
+    </>
+  );
+}
 
-  // 2 participantes: tiles lado a lado, centralizados no container.
-  // `w-full` é obrigatório: num flex-column, `mx-auto` cancela o stretch do
-  // eixo cruzado e o grid passa a medir o max-content dos tiles — que é ~0,
-  // porque todo o conteúdo do tile é `absolute`. Sem `w-full` os tiles
-  // colapsam para 2px (só as bordas).
-  // >2: grade padrão 2/3/4 colunas (compartilhamento de tela ocupa col-span-2).
+// ─── Palco (Go Live) ────────────────────────────────────────────
+
+interface StageProps {
+  focused: LiveShare;
+  shares: LiveShare[];
+  members: Member[];
+  speaking: Set<string>;
+  viewers: number;
+  onFocusShare?: (id: string) => void;
+  onStopShare?: () => void;
+}
+
+function Stage({ focused, shares, members, speaking, viewers, onFocusShare, onStopShare }: StageProps) {
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  // A própria tela fica num cartão por padrão: espelhar a tela que você está
+  // transmitindo cria o "túnel infinito" e não informa nada. Prévia é opt-in.
+  const [showOwnPreview, setShowOwnPreview] = useState(false);
+
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(document.fullscreenElement === stageRef.current);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+
+  const toggleFullscreen = useCallback(() => {
+    if (document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => {});
+    } else {
+      void stageRef.current?.requestFullscreen().catch(() => {});
+    }
+  }, []);
+
+  const otherShares = shares.filter((s) => s.id !== focused.id);
+  const ownCard = focused.isLocal && !showOwnPreview;
+
   return (
-    <div
-      className={clsx(
-        'grid h-full',
-        total === 2
-          ? 'w-full grid-cols-2 gap-3 p-3 items-center content-center max-w-4xl mx-auto min-h-0'
-          : 'gap-2 p-2 auto-rows-fr sm:gap-3 sm:p-3',
-        total > 2 && cols === 2 && 'grid-cols-2',
-        total > 2 && cols === 3 && 'grid-cols-3',
-        total > 2 && cols === 4 && 'grid-cols-4',
-      )}
-      role="region"
-      aria-label="Grade de participantes"
-    >
-      {/* Local tile — mostra tela se compartilhando, senão áudio */}
-      <VideoTile
-        stream={localScreenStream ?? localStream}
-        label={localName || 'Você'}
-        isLocal
-        isScreenShare={!!localScreenStream}
-      />
+    <div className="flex h-full min-h-0 flex-col gap-2 p-2 sm:gap-3 sm:p-3">
+      <div
+        ref={stageRef}
+        role="region"
+        aria-label={`Transmissão de ${focused.isLocal ? 'você' : focused.name}`}
+        className="group relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-xl bg-black"
+      >
+        {ownCard ? (
+          <div className="flex max-w-sm flex-col items-center gap-3 px-6 text-center">
+            <span className="flex h-14 w-14 items-center justify-center rounded-full bg-red-600/15 text-red-400">
+              <Icon name="monitor" size={28} />
+            </span>
+            <p className="text-base font-semibold text-white">Você está transmitindo sua tela</p>
+            <p className="text-sm text-slate-400">
+              {viewers === 0
+                ? 'Ninguém mais está no canal ainda.'
+                : `${viewers} ${viewers === 1 ? 'pessoa pode' : 'pessoas podem'} assistir.`}
+            </p>
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button variant="secondary" size="sm" onClick={() => setShowOwnPreview(true)}>
+                <Icon name="eye" /> Mostrar prévia
+              </Button>
+              {onStopShare && (
+                <Button variant="danger" size="sm" onClick={onStopShare}>
+                  Parar transmissão
+                </Button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <StreamVideo stream={focused.stream} className="h-full w-full object-contain" />
+        )}
 
-      {/* Remote peers */}
-      {peerArray.map((peer) => (
-        <VideoTile
-          key={peer.peerId}
-          peer={peer}
-          stream={peer.isScreenSharing ? (peer.stream ?? peer.screenStream) : peer.stream}
-          label={peer.name}
-          isScreenShare={peer.isScreenSharing}
-        />
-      ))}
+        <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-2">
+          <LiveBadge />
+          <span className="rounded-md bg-black/60 px-2 py-0.5 text-xs font-medium text-white">
+            {focused.isLocal ? 'Sua tela' : focused.name}
+          </span>
+        </div>
+
+        <div className="absolute right-3 top-3 flex items-center gap-2">
+          {focused.isLocal && showOwnPreview && (
+            <button
+              type="button"
+              onClick={() => setShowOwnPreview(false)}
+              className="rounded-md bg-black/60 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-black/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-400"
+            >
+              Ocultar prévia
+            </button>
+          )}
+          {!ownCard && (
+            <button
+              type="button"
+              onClick={toggleFullscreen}
+              aria-label={isFullscreen ? 'Sair da tela cheia' : 'Tela cheia'}
+              title={isFullscreen ? 'Sair da tela cheia' : 'Tela cheia'}
+              className="flex h-11 w-11 items-center justify-center rounded-lg bg-black/60 text-white hover:bg-black/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-400"
+            >
+              <Icon name={isFullscreen ? 'minimize' : 'maximize'} size={18} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Faixa: outras transmissões (clicáveis) + participantes do canal */}
+      <ul
+        aria-label="Transmissões e participantes"
+        className="flex h-24 flex-shrink-0 gap-2 overflow-x-auto sm:h-28"
+      >
+        {otherShares.map((share) => (
+          <li key={`share-${share.id}`} className="aspect-video h-full flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => onFocusShare?.(share.id)}
+              aria-label={`Assistir transmissão de ${share.isLocal ? 'você' : share.name}`}
+              className="relative h-full w-full overflow-hidden rounded-lg border border-white/10 bg-black hover:border-brand-400/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-400"
+            >
+              {share.isLocal ? (
+                <span className="flex h-full items-center justify-center text-slate-400">
+                  <Icon name="monitor" size={22} />
+                </span>
+              ) : (
+                <StreamVideo stream={share.stream} className="h-full w-full object-cover" />
+              )}
+              <LiveBadge className="absolute left-1.5 top-1.5" />
+              <span className="absolute bottom-1.5 left-1.5 max-w-[85%] truncate rounded bg-black/60 px-1.5 py-0.5 text-[11px] text-white">
+                {share.isLocal ? 'Sua tela' : share.name}
+              </span>
+            </button>
+          </li>
+        ))}
+        {members.map((m) => (
+          <li key={`member-${m.id}`} className="aspect-video h-full flex-shrink-0">
+            <MemberCard member={m} speaking={speaking.has(m.id)} compact />
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

@@ -31,12 +31,15 @@ export type IconName =
   | 'clock'
   | 'close'
   | 'document'
+  | 'eye'
   | 'globe'
   | 'image'
   | 'info'
   | 'key'
   | 'lightbulb'
   | 'link'
+  | 'maximize'
+  | 'minimize'
   | 'lock'
   | 'mic'
   | 'micOff'
@@ -108,6 +111,22 @@ export const ICONS: Record<IconName, IconShape[]> = {
     },
     { d: 'M12 16.8v3.7' },
     { d: 'M8.4 20.5h7.2' },
+  ],
+  eye: [
+    { d: 'M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12Z' },
+    { d: 'M12 9.25a2.75 2.75 0 1 0 0 5.5 2.75 2.75 0 0 0 0-5.5Z' },
+  ],
+  maximize: [
+    { d: 'M8.5 3.5h-5v5' },
+    { d: 'M15.5 3.5h5v5' },
+    { d: 'M20.5 15.5v5h-5' },
+    { d: 'M3.5 15.5v5h5' },
+  ],
+  minimize: [
+    { d: 'M3.5 8.5h5v-5' },
+    { d: 'M20.5 8.5h-5v-5' },
+    { d: 'M15.5 20.5v-5h5' },
+    { d: 'M8.5 20.5v-5h-5' },
   ],
   link: [
     { d: 'M9.9 13.3a4.5 4.5 0 0 0 6.8.5l2.7-2.7a4.5 4.5 0 0 0-6.4-6.4l-1.5 1.5' },

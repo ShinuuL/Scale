@@ -12,6 +12,7 @@ import { ToastProvider, useToast } from '@/components/ui/Toast';
 import { Icon } from '@/components/ui/Icon';
 import { OnboardingWizard } from '@/components/onboarding/OnboardingWizard';
 import { InviteLinkCard } from '@/components/room/InviteLinkCard';
+import { ProfileMenu } from '@/components/ui/ProfileMenu';
 import { api, FETCH_RETRY_MAX_ATTEMPTS } from '@/lib/api';
 import type { RoomListItem } from '@/lib/validation';
 import { ROOM_NAME_MIN, ROOM_NAME_MAX } from '@/lib/validation';
@@ -153,16 +154,18 @@ function SkeletonCard() {
 
 function EmptyRooms({ onCreate }: { onCreate: () => void }) {
   return (
-    <div className="text-center py-8 space-y-4">
-      <div className="text-5xl"><Icon name="mic" size={48} /></div>
-      <div className="space-y-2">
-        <p className="text-sm font-medium text-slate-300">Nenhuma sala ativa</p>
-        <p className="text-xs text-slate-400 max-w-xs mx-auto">
-          Crie uma sala para começar uma videochamada P2P privada com até 8 participantes.
+    <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-white/10 px-6 py-8 text-center">
+      <span aria-hidden="true" className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-500/15 text-brand-300">
+        <Icon name="speaker" size={20} />
+      </span>
+      <div className="space-y-1">
+        <p className="text-sm font-medium text-slate-200">Nenhuma sala persistente ainda</p>
+        <p className="mx-auto max-w-xs text-xs leading-relaxed text-slate-400">
+          Salas persistentes ficam listadas aqui para você e sua equipe voltarem quando quiserem.
         </p>
       </div>
-      <Button size="sm" onClick={onCreate}>
-        Criar Sala
+      <Button size="sm" variant="secondary" onClick={onCreate}>
+        Criar sala
       </Button>
     </div>
   );
@@ -181,7 +184,7 @@ function RoomCard({ room, onEnter }: { room: RoomListItem; onEnter: () => void }
 
   return (
     <div
-      className="glass-subtle p-4 rounded-xl transition-all duration-200 hover:bg-white/[0.06] hover:border-white/[0.12] cursor-pointer group"
+      className="group cursor-pointer rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3 transition-colors duration-150 hover:border-white/[0.12] hover:bg-white/[0.05] focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-400 motion-reduce:transition-none"
       onClick={onEnter}
       role="button"
       tabIndex={0}
@@ -197,17 +200,17 @@ function RoomCard({ room, onEnter }: { room: RoomListItem; onEnter: () => void }
               <Badge variant="success" className="shrink-0">Persistente</Badge>
             )}
             {!room.isPersistent && (
-              <Badge variant="warning" className="shrink-0">Temp</Badge>
+              <Badge variant="warning" className="shrink-0">Temporária</Badge>
             )}
           </div>
           <p className="text-xs text-slate-400">
-            {room.maxParticipants} participantes max
+            Até {room.maxParticipants} participantes
           </p>
         </div>
         <div className="flex items-center gap-1 shrink-0">
           <button
             onClick={handleCopyLink}
-            className="text-xs text-slate-400 hover:text-brand-400 transition-colors px-2 py-1 rounded-lg hover:bg-white/5"
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-white/5 hover:text-brand-400"
             title="Copiar link"
             aria-label={copied ? 'Link copiado' : 'Copiar link'}
           >
@@ -254,6 +257,7 @@ function HomePageInner() {
   // ─── Auth + rooms ───────────────────────────────────────────
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
+  const [account, setAccount] = useState<{ name: string; email: string } | null>(null);
   const [rooms, setRooms] = useState<RoomListItem[]>([]);
   const [roomsLoading, setRoomsLoading] = useState(true);
   const [roomsError, setRoomsError] = useState<string | null>(null);
@@ -279,7 +283,8 @@ function HomePageInner() {
     const load = async () => {
       let authed = false;
       try {
-        await api.getMe();
+        const me = await api.getMe();
+        if (!cancelled) setAccount({ name: me.user.name, email: me.user.email });
         authed = true;
       } catch {
         authed = false;
@@ -419,54 +424,85 @@ function HomePageInner() {
     ? rooms.filter((r) => r.isPersistent)
     : rooms;
 
+  const authNotice = (text: string) => (
+    <div
+      className="flex items-center justify-between gap-3 rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 animate-fade-in"
+      role="alert"
+    >
+      <p className="text-xs text-amber-300">{text}</p>
+      <Link
+        href="/login"
+        className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-brand-400 transition-colors hover:text-brand-300"
+      >
+        Entrar <Icon name="arrowRight" size={12} />
+      </Link>
+    </div>
+  );
+
+  const optionClass =
+    'flex cursor-pointer select-none items-start gap-3 rounded-xl border border-white/[0.08] bg-white/[0.02] p-3 transition-colors hover:border-white/[0.16] has-[:checked]:border-brand-500/40 has-[:checked]:bg-brand-500/[0.06]';
+
   return (
     <main id="main-content" className="min-h-screen">
       {/* ── Header ───────────────────────────────────────────── */}
       <header className="sticky top-0 z-30 border-b border-white/5 bg-forest-950/80 backdrop-blur-xl">
-        <div className="max-w-3xl mx-auto px-4 h-14 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2 group">
+        <div className="mx-auto flex h-14 max-w-5xl items-center justify-between gap-3 px-4">
+          <Link href="/" className="group flex items-center gap-2">
             <Logo variant="mark" size={28} />
-            <span className="text-base font-bold tracking-tight text-white group-hover:text-brand-300 transition-colors">
+            <span className="text-base font-bold tracking-tight text-white transition-colors group-hover:text-brand-300">
               Scale
             </span>
           </Link>
-          <div className="flex items-center gap-3">
-            <Link href="/tutorial">
-              <Button variant="ghost" size="sm">
-                <Icon name="book" /> Como usar
-              </Button>
+          <div className="flex items-center gap-2">
+            <Link href="/tutorial" className="btn-ghost !px-3 !py-2" aria-label="Como usar">
+              <Icon name="book" /> <span className="hidden sm:inline">Como usar</span>
             </Link>
+            {authChecked && (
+              <ProfileMenu
+                name={account?.name ?? 'Convidado'}
+                email={account?.email}
+                isAuthenticated={isAuthenticated}
+              />
+            )}
           </div>
         </div>
       </header>
 
       {/* ── Hero ─────────────────────────────────────────────── */}
       <section className="relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-b from-brand-600/10 via-transparent to-transparent pointer-events-none" />
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-brand-600/5 blur-[120px] rounded-full pointer-events-none" />
-
-        <div className="relative max-w-2xl mx-auto px-4 pt-16 pb-10 text-center space-y-5">
-          <h1 className="text-4xl sm:text-5xl font-bold tracking-tight">
-            <span className="bg-gradient-to-r from-white via-white to-slate-400 bg-clip-text text-transparent">
-              Chamadas privadas
-            </span>
-            <br />
-            <span className="bg-gradient-to-r from-brand-400 to-brand-600 bg-clip-text text-transparent">
-              P2P
-            </span>
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-brand-600/10 via-transparent to-transparent" />
+        <div className="relative mx-auto max-w-5xl px-4 pb-8 pt-10 sm:pt-14">
+          <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
+            Chamadas privadas <span className="text-brand-400">P2P</span>
           </h1>
-
-          <p className="text-slate-400 text-base max-w-md mx-auto leading-relaxed">
-            Videochamadas criptografadas de ponta a ponta para 2-8 participantes,
-            sem servidores intermediários.
+          <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-400 sm:text-base">
+            Voz e tela compartilhada para 2 a 8 pessoas, conectadas direto entre si.
           </p>
         </div>
       </section>
 
-      {/* ── Create / Join ────────────────────────────────────── */}
-      <section className="max-w-md mx-auto px-4 pb-8 space-y-6">
-        <Card variant="glass" className="animate-slide-up">
-          <CardContent className="space-y-4">
+      <div className="mx-auto grid max-w-5xl gap-5 px-4 pb-12 lg:grid-cols-2 lg:items-start">
+        {/* ── Coluna principal: criar sala ───────────────────── */}
+        <section
+          aria-labelledby="create-title"
+          className="animate-slide-up rounded-2xl border border-white/10 bg-forest-900 shadow-lg shadow-black/20"
+        >
+          <div className="flex items-start gap-3 border-b border-white/[0.08] px-5 py-4 sm:px-6">
+            <span
+              aria-hidden="true"
+              className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-brand-500/15 text-brand-300"
+            >
+              <Icon name="phone" size={20} />
+            </span>
+            <div>
+              <h2 id="create-title" className="text-base font-semibold text-white">
+                Nova sala
+              </h2>
+              <p className="text-sm text-slate-400">Crie um canal e mande o link para quem vai participar.</p>
+            </div>
+          </div>
+
+          <div className="space-y-4 px-5 py-5 sm:px-6">
             <Input
               label="Nome da sala"
               placeholder="Ex: Reunião de equipe"
@@ -479,8 +515,8 @@ function HomePageInner() {
               aria-label="Nome da sala"
             />
 
-            <div className="space-y-3">
-              <label className="flex items-start gap-3 cursor-pointer select-none group">
+            <div className="grid gap-2 sm:grid-cols-2">
+              <label className={optionClass}>
                 <input
                   type="checkbox"
                   checked={isPersistent}
@@ -488,16 +524,12 @@ function HomePageInner() {
                   className="mt-0.5 h-4 w-4 rounded border-white/10 bg-white/5 accent-brand-500 focus:ring-brand-500"
                 />
                 <span className="min-w-0">
-                  <span className="block text-sm font-medium text-slate-200 group-hover:text-white transition-colors">
-                    Sala persistente
-                  </span>
-                  <span className="block text-xs text-slate-400">
-                    Continua ativa até ser encerrada pelo dono.
-                  </span>
+                  <span className="block text-sm font-medium text-slate-200">Sala persistente</span>
+                  <span className="block text-xs text-slate-400">Continua ativa até ser encerrada pelo dono.</span>
                 </span>
               </label>
 
-              <label className="flex items-start gap-3 cursor-pointer select-none group">
+              <label className={optionClass}>
                 <input
                   type="checkbox"
                   checked={isPrivate}
@@ -505,53 +537,30 @@ function HomePageInner() {
                   className="mt-0.5 h-4 w-4 rounded border-white/10 bg-white/5 accent-brand-500 focus:ring-brand-500"
                 />
                 <span className="min-w-0">
-                  <span className="block text-sm font-medium text-slate-200 group-hover:text-white transition-colors">
-                    Sala privada
-                  </span>
-                  <span className="block text-xs text-slate-400">
-                    Só entra quem tem o link de convite.
-                  </span>
+                  <span className="block text-sm font-medium text-slate-200">Sala privada</span>
+                  <span className="block text-xs text-slate-400">Só entra quem tem o link de convite.</span>
                 </span>
               </label>
-
-              {authWarning && !isAuthenticated && (
-                <div
-                  className="flex items-center justify-between gap-3 bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 animate-fade-in"
-                  role="alert"
-                >
-                  <p className="text-xs text-amber-300">Faça login para criar uma sala</p>
-                  <Link
-                    href="/login"
-                    className="inline-flex items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300 transition-colors shrink-0"
-                  >
-                    Entrar <Icon name="arrowRight" size={12} />
-                  </Link>
-                </div>
-              )}
-
-              {createRetry !== null && (
-                <p
-                  className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-xl p-3"
-                  role="status"
-                >
-                  Tentando novamente ({createRetry + 1}/{FETCH_RETRY_MAX_ATTEMPTS})...
-                </p>
-              )}
             </div>
 
-            <Button onClick={handleCreateRoom} disabled={creating} className="w-full text-base py-3">
-              {creating ? 'Criando...' : 'Criar Sala'}
+            {authWarning && !isAuthenticated && authNotice('Faça login para criar uma sala')}
+
+            {createRetry !== null && (
+              <p
+                className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-300"
+                role="status"
+              >
+                Tentando novamente ({createRetry + 1}/{FETCH_RETRY_MAX_ATTEMPTS})...
+              </p>
+            )}
+
+            <Button onClick={handleCreateRoom} disabled={creating} className="w-full py-3 text-base">
+              {creating ? 'Criando...' : 'Criar sala'}
             </Button>
+          </div>
 
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-white/10" />
-              </div>
-              <div className="relative flex justify-center text-xs">
-                <span className="px-3 bg-slate-900 text-slate-400">ou</span>
-              </div>
-            </div>
-
+          <div className="border-t border-white/[0.08] px-5 py-4 sm:px-6">
+            <p className="mb-2 text-sm font-medium text-slate-200">Já tem um código?</p>
             <div className="flex gap-2">
               <Input
                 placeholder="Cole o código da sala"
@@ -564,125 +573,123 @@ function HomePageInner() {
                 Entrar
               </Button>
             </div>
-          </CardContent>
-        </Card>
-      </section>
+          </div>
+        </section>
 
-      {/* ── Salas na rede ────────────────────────────────────── */}
-      <section className="max-w-md mx-auto px-4 pb-6">
-        <Card variant="subtle" className="animate-slide-up">
-          <CardContent className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-slate-200">
+        {/* ── Coluna lateral: salas e ajuda ──────────────────── */}
+        <div className="space-y-5">
+          <section
+            aria-labelledby="rooms-title"
+            className="animate-slide-up rounded-2xl border border-white/10 bg-forest-900/70"
+          >
+            <div className="flex items-center justify-between gap-3 border-b border-white/[0.08] px-5 py-4">
+              <h2 id="rooms-title" className="text-sm font-semibold text-white">
                 Salas na rede
               </h2>
-              <span className="text-xs text-slate-400">
-                {roomsLoading ? '' : `${visibleRooms.length} sala${visibleRooms.length !== 1 ? 's' : ''}`}
-              </span>
+              {!roomsLoading && !roomsRequireAuth && (
+                <span className="rounded-full border border-white/10 px-2 py-0.5 text-xs tabular-nums text-slate-300">
+                  {visibleRooms.length} sala{visibleRooms.length !== 1 ? 's' : ''}
+                </span>
+              )}
             </div>
 
-            {roomsLoading && (
-              <div className="space-y-2">
-                <SkeletonCard />
-                <SkeletonCard />
+            <div className="space-y-2 p-4">
+              {roomsLoading && (
+                <div className="space-y-4 p-1">
+                  <SkeletonCard />
+                  <SkeletonCard />
+                </div>
+              )}
+
+              {!roomsLoading && roomsRequireAuth && authNotice('Faça login para ver as salas da rede')}
+
+              {!roomsLoading && !roomsRequireAuth && roomsError && (
+                <p className="py-4 text-center text-xs text-slate-400">{roomsError}</p>
+              )}
+
+              {!roomsLoading && !roomsRequireAuth && !roomsError && visibleRooms.length === 0 && (
+                <EmptyRooms onCreate={handleCreateRoom} />
+              )}
+
+              {!roomsLoading && !roomsError && visibleRooms.length > 0 && (
+                <ul className="space-y-2">
+                  {visibleRooms.map((room) => (
+                    <li key={room.id}>
+                      <RoomCard room={room} onEnter={() => handleEnterRoom(room.id)} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </section>
+
+          {!roomsLoading && recentRooms.length > 0 && (
+            <section
+              aria-labelledby="recent-title"
+              className="animate-slide-up rounded-2xl border border-white/10 bg-forest-900/70"
+            >
+              <div className="border-b border-white/[0.08] px-5 py-4">
+                <h2 id="recent-title" className="text-sm font-semibold text-white">
+                  Salas recentes
+                </h2>
               </div>
-            )}
-
-            {!roomsLoading && roomsRequireAuth && (
-              <div
-                className="flex items-center justify-between gap-3 bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 animate-fade-in"
-                role="alert"
-              >
-                <p className="text-xs text-amber-300">Faça login para ver as salas da rede</p>
-                <Link
-                  href="/login"
-                  className="inline-flex items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300 transition-colors shrink-0"
-                >
-                  Entrar <Icon name="arrowRight" size={12} />
-                </Link>
-              </div>
-            )}
-
-            {!roomsLoading && !roomsRequireAuth && roomsError && (
-              <p className="text-xs text-slate-400 py-4 text-center">{roomsError}</p>
-            )}
-
-            {!roomsLoading && !roomsRequireAuth && !roomsError && visibleRooms.length === 0 && (
-              <EmptyRooms onCreate={handleCreateRoom} />
-            )}
-
-            {!roomsLoading && !roomsError && visibleRooms.length > 0 && (
-              <ul className="space-y-2">
-                {visibleRooms.map((room) => (
-                  <li key={room.id}>
-                    <RoomCard room={room} onEnter={() => handleEnterRoom(room.id)} />
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-      </section>
-
-      {/* ── Salas recentes ───────────────────────────────────── */}
-      {!roomsLoading && recentRooms.length > 0 && (
-        <section className="max-w-md mx-auto px-4 pb-6">
-          <Card variant="subtle" className="animate-slide-up">
-            <CardContent className="space-y-3">
-              <h2 className="text-sm font-semibold text-slate-200">
-                Salas recentes
-              </h2>
-              <ul className="space-y-2">
+              <ul className="space-y-2 p-4">
                 {recentRooms.map((room) => (
                   <li key={room.id}>
                     <RoomCard room={room} onEnter={() => handleEnterRoom(room.id)} />
                   </li>
                 ))}
               </ul>
-            </CardContent>
-          </Card>
-        </section>
-      )}
+            </section>
+          )}
 
-      {/* ── Quick links ──────────────────────────────────────── */}
-      <section className="max-w-md mx-auto px-4 pb-12 space-y-3">
-        <Link href="/tutorial" className="block">
-          <div className="glass-subtle p-4 rounded-xl flex items-center justify-between group transition-all duration-200 hover:bg-white/[0.06] hover:border-white/[0.12]">
-            <div className="flex items-center gap-3">
-              <span className="text-xl"><Icon name="book" size={20} /></span>
-              <div>
-                <p className="text-sm font-medium text-slate-200 group-hover:text-white transition-colors">
-                  Como usar o Scale
-                </p>
-                <p className="text-xs text-slate-400">
-                  Guia passo a passo, da conta até a chamada
-                </p>
-              </div>
-            </div>
-            <span className="text-slate-400 group-hover:text-brand-400 transition-colors">
-              <Icon name="arrowRight" />
-            </span>
-          </div>
-        </Link>
-
-        {!onboardingDone && (
-          <Card variant="subtle" className="animate-slide-up">
-            <CardContent className="py-2">
-              <Button variant="secondary" onClick={handleShowGuide} className="w-full">
-                Abrir guia de uso
-              </Button>
-            </CardContent>
-          </Card>
-        )}
-
-        {onboardingDone && (
-          <div className="text-center">
-            <Button variant="ghost" size="sm" onClick={handleShowGuide}>
-              <Icon name="book" /> Rever guia de uso
-            </Button>
-          </div>
-        )}
-      </section>
+          <section aria-label="Ajuda" className="rounded-2xl border border-white/10 bg-forest-900/70 p-2">
+            <Link
+              href="/tutorial"
+              className="group flex min-h-[56px] items-center justify-between gap-3 rounded-xl px-3 py-2 transition-colors hover:bg-white/[0.05]"
+            >
+              <span className="flex items-center gap-3">
+                <span
+                  aria-hidden="true"
+                  className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-white/[0.05] text-slate-300"
+                >
+                  <Icon name="book" size={18} />
+                </span>
+                <span>
+                  <span className="block text-sm font-medium text-slate-200 group-hover:text-white">Como usar o Scale</span>
+                  <span className="block text-xs text-slate-400">Guia passo a passo, da conta até a chamada</span>
+                </span>
+              </span>
+              <span className="text-slate-400 transition-colors group-hover:text-brand-400">
+                <Icon name="arrowRight" />
+              </span>
+            </Link>
+            <button
+              type="button"
+              onClick={handleShowGuide}
+              className="group flex min-h-[56px] w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left transition-colors hover:bg-white/[0.05]"
+            >
+              <span className="flex items-center gap-3">
+                <span
+                  aria-hidden="true"
+                  className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-white/[0.05] text-slate-300"
+                >
+                  <Icon name="lightbulb" size={18} />
+                </span>
+                <span>
+                  <span className="block text-sm font-medium text-slate-200 group-hover:text-white">
+                    {onboardingDone ? 'Rever guia de uso' : 'Abrir guia de uso'}
+                  </span>
+                  <span className="block text-xs text-slate-400">Configuração inicial em poucos passos</span>
+                </span>
+              </span>
+              <span className="text-slate-400 transition-colors group-hover:text-brand-400">
+                <Icon name="arrowRight" />
+              </span>
+            </button>
+          </section>
+        </div>
+      </div>
 
       {/* ── Invite modal ─────────────────────────────────────── */}
       {createdInvite && (
