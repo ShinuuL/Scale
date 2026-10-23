@@ -78,6 +78,7 @@ import Fastify from 'fastify';
 import { io as ioClient, Socket } from 'socket.io-client';
 import { createSocketServer, chatBuffers } from '../socket/handler.js';
 import { resetRateLimit, resetChatRateLimit } from '../lib/rateLimit.js';
+import { guestCookie } from './helpers/participation.js';
 
 d2('socket chat:message', () => {
   let app: Fastify.FastifyInstance;
@@ -117,11 +118,13 @@ d2('socket chat:message', () => {
     await prisma.$disconnect();
   });
 
-  function connectClient(guestName = 'TestUser'): Promise<Socket> {
+  function connectClient(guestName = 'TestUser', guestId?: string): Promise<Socket> {
     return new Promise((resolve, reject) => {
       const client = ioClient(`http://127.0.0.1:${port}`, {
         auth: { guestName },
         transports: ['websocket'],
+        // Cookie assinado do guestId (o browser manda sozinho no handshake).
+        extraHeaders: guestId ? { cookie: guestCookie(guestId) } : undefined,
       });
       client.on('connect', () => resolve(client));
       client.on('connect_error', (err) => reject(err));
@@ -301,11 +304,13 @@ d3('chat:edit/delete', () => {
     await prisma.$disconnect();
   });
 
-  function connectClient(guestName = 'TestUser'): Promise<Socket> {
+  function connectClient(guestName = 'TestUser', guestId?: string): Promise<Socket> {
     return new Promise((resolve, reject) => {
       const client = ioClient(`http://127.0.0.1:${port}`, {
         auth: { guestName },
         transports: ['websocket'],
+        // Cookie assinado do guestId (o browser manda sozinho no handshake).
+        extraHeaders: guestId ? { cookie: guestCookie(guestId) } : undefined,
       });
       client.on('connect', () => resolve(client));
       client.on('connect_error', (err) => reject(err));
@@ -337,7 +342,8 @@ d3('chat:edit/delete', () => {
   }
 
   it3('edit only author within 15min — prevContent + editedAt', async () => {
-    const alice = await connectClient('Alice');
+    const aliceGuestId = crypto.randomUUID();
+    const alice = await connectClient('Alice', aliceGuestId);
     const bob = await connectClient('Bob');
     await joinRoom(alice, persistRoomId);
     await joinRoom(bob, persistRoomId);
@@ -375,6 +381,7 @@ d3('chat:edit/delete', () => {
         content: 'expired msg',
         authorId: null,
         guestName: 'Alice',
+        guestId: aliceGuestId,
         createdAt: new Date(Date.now() - 16 * 60 * 1000),
       },
     });
@@ -607,6 +614,8 @@ d4('acesso sem barreira de rede (túnel HTTPS)', () => {
     process.env.JWT_SECRET = 'test-secret-for-unit-tests';
     process.env.ALLOWED_ORIGINS = 'http://localhost:3000';
     process.env.NODE_ENV = 'production'; // vitest seta 'test'; aqui queremos sem bypass
+    // Producao exige GUEST_COOKIE_SECRET (>= 32 caracteres) — lib/guestId.ts.
+    process.env.GUEST_COOKIE_SECRET = 'segredo-de-teste-do-cookie-de-convidado-0123456789';
     // getEnv() cacheia em nível de módulo — resetEnv força releitura limpa.
     resetEnv();
 
@@ -626,6 +635,7 @@ d4('acesso sem barreira de rede (túnel HTTPS)', () => {
   aa4(async () => {
     await app.close();
     process.env.NODE_ENV = 'test';
+    delete process.env.GUEST_COOKIE_SECRET;
     resetEnv();
   });
 

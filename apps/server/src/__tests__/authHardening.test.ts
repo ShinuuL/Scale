@@ -8,6 +8,7 @@ import { authRoutes } from '../routes/auth.js';
 import { roomRoutes } from '../routes/rooms.js';
 import { turnRoutes } from '../routes/turn.js';
 import { filesRoutes } from '../routes/files.js';
+import { guestParticipantHeaders } from './helpers/participation.js';
 
 /**
  * Hardening da Etapa 4 — o app deixou de ser "Tailnet only" e passou a ser
@@ -30,6 +31,14 @@ async function buildApp() {
   await app.register(turnRoutes);
   await app.register(filesRoutes);
   return app;
+}
+
+/** Acrescenta headers (ex.: prova de participacao) a um corpo multipart. */
+function withHeaders(
+  extra: Record<string, string>,
+  body: { payload: Buffer; headers: Record<string, string> },
+): { payload: Buffer; headers: Record<string, string> } {
+  return { payload: body.payload, headers: { ...body.headers, ...extra } };
 }
 
 /** Multipart body builder (zero-dep) — mesmo padrão de files.test.ts. */
@@ -234,13 +243,13 @@ describe('Etapa 4 — hardening de exposição pública', () => {
         method: 'POST',
         url: `/api/rooms/${persistRoomId}/files`,
         remoteAddress,
-        ...multipartBody([
+        ...withHeaders(guestParticipantHeaders(persistRoomId), multipartBody([
           {
             filename: 'evil.exe',
             contentType: 'application/x-msdownload',
             content: Buffer.from('MZ', 'utf8'),
           },
-        ]),
+        ])),
       });
 
     const results = [];
@@ -260,9 +269,9 @@ describe('Etapa 4 — hardening de exposição pública', () => {
       method: 'POST',
       url: `/api/rooms/${persistRoomId}/files`,
       remoteAddress: '198.51.100.41',
-      ...multipartBody([
+      ...withHeaders(guestParticipantHeaders(persistRoomId), multipartBody([
         { filename: 'ok.png', contentType: 'image/png', content: PNG },
-      ]),
+      ])),
     });
     expect(other.statusCode).toBe(201);
   });
