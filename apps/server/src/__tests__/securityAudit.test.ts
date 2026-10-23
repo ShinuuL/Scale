@@ -807,3 +807,71 @@ describe('item 13 — Cache-Control: no-store em rotas privadas', () => {
     expect(res.headers['cache-control']).toBeUndefined();
   });
 });
+
+describe('item 14 — GET /api/rooms/:id de sala privada sem credencial e minimo', () => {
+  let app: FastifyInstance;
+  let privId: string;
+  let privInvite: string;
+  let ownerToken: string;
+  let ownerId: string;
+
+  beforeAll(async () => {
+    process.env.JWT_SECRET = 'test-secret-for-unit-tests';
+    const { roomRoutes } = await import('../routes/rooms.js');
+    app = Fastify({ logger: false });
+    await app.register(cookie);
+    await app.register(authPlugin);
+    await app.register(roomRoutes);
+    await app.ready();
+    const owner = await prisma.user.create({
+      data: { email: `o14-${Date.now()}@exemplo.com`, passwordHash: 'x', name: 'Dono' },
+    });
+    ownerId = owner.id;
+    const room = await prisma.room.create({
+      data: {
+        name: 'Audit Item14',
+        isPersistent: true,
+        isPrivate: true,
+        ownerId,
+        passwordHash: bcrypt.hashSync('segredo123', 4),
+      },
+    });
+    privId = room.id;
+    privInvite = room.inviteToken;
+    ownerToken = signToken({ userId: ownerId, email: owner.email, name: 'Dono' });
+  });
+
+  afterAll(async () => {
+    await prisma.room.deleteMany({ where: { name: { in: ['Audit Item14', 'Audit Item14 pub'] } } }).catch(() => {});
+    await prisma.user.deleteMany({ where: { id: ownerId } }).catch(() => {});
+    await app.close();
+  });
+
+  it('sem credencial: so { id, isPrivate, hasPassword }', async () => {
+    const res = await app.inject({ method: 'GET', url: `/api/rooms/${privId}` });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.payload)).toEqual({ room: { id: privId, isPrivate: true, hasPassword: true } });
+  });
+
+  it('convite errado continua minimo; convite certo (header) e dono veem detalhes', async () => {
+    const wrong = await app.inject({
+      method: 'GET',
+      url: `/api/rooms/${privId}`,
+      headers: { 'x-room-invite': '550e8400-e29b-41d4-a716-446655440000' },
+    });
+    expect(JSON.parse(wrong.payload).room).not.toHaveProperty('name');
+
+    const invited = await app.inject({ method: 'GET', url: `/api/rooms/${privId}`, headers: { 'x-room-invite': privInvite } });
+    expect(JSON.parse(invited.payload).room.name).toBe('Audit Item14');
+    expect(JSON.parse(invited.payload).room).not.toHaveProperty('inviteToken');
+
+    const owner = await app.inject({ method: 'GET', url: `/api/rooms/${privId}`, cookies: { token: ownerToken } });
+    expect(JSON.parse(owner.payload).room.inviteToken).toBe(privInvite);
+  });
+
+  it('sala publica segue com detalhes', async () => {
+    const pub = await prisma.room.create({ data: { name: 'Audit Item14 pub', isPersistent: true } });
+    const res = await app.inject({ method: 'GET', url: `/api/rooms/${pub.id}` });
+    expect(JSON.parse(res.payload).room.name).toBe('Audit Item14 pub');
+  });
+});

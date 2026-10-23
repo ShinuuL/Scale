@@ -21,19 +21,25 @@ import { ProfileMenu } from '@/components/ui/ProfileMenu';
 import { api } from '@/lib/api';
 import { copyText } from '@/lib/clipboard';
 import { roomUrl } from '@/lib/roomLink';
+import { roomAccessHeaders } from '@/lib/roomAccess';
 
+/**
+ * Sala privada sem credencial (nem dono, nem convite valido no header) vem
+ * reduzida a `{ id, isPrivate: true, hasPassword }`: por isso os demais campos
+ * sao opcionais e a UI usa fallbacks (nome "Sala", teto 8).
+ */
 interface RoomData {
   room: {
     id: string;
-    name: string;
-    isPersistent: boolean;
+    name?: string;
+    isPersistent?: boolean;
     isPrivate: boolean;
-    maxParticipants: number;
-    ownerId: string | null;
+    maxParticipants?: number;
+    ownerId?: string | null;
     inviteToken?: string;
-    expiresAt: string | null;
-    createdAt: string;
-    status: string;
+    expiresAt?: string | null;
+    createdAt?: string;
+    status?: string;
     /** Sala persistente protegida por senha (passwordHash presente) — pedir senha no join. */
     hasPassword?: boolean;
   };
@@ -172,7 +178,12 @@ function RoomPageInner({ roomId }: { roomId: string }) {
   useEffect(() => {
     const fetchRoom = async () => {
       try {
-        const res = await fetch(`/api/rooms/${roomId}`, { credentials: 'include' });
+        // Convite da URL vai em header: sala privada so devolve os detalhes
+        // (nome, teto, expiracao) para dono ou convite valido.
+        const res = await fetch(`/api/rooms/${roomId}`, {
+          credentials: 'include',
+          headers: roomAccessHeaders(urlInviteTokenRef.current ?? undefined),
+        });
 
         if (res.status === 404) {
           setError('Sala não encontrada');

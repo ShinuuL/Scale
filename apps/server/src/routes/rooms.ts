@@ -9,6 +9,9 @@ import { createRoomSchema as sharedCreateRoomSchema } from '@scale/shared';
 
 // Campos comuns (nome, persistencia, teto, TTL) vem de @scale/shared; o server
 // acrescenta a senha da sala privada.
+/** Convite enviado no header X-Room-Invite (GET /api/rooms/:id). */
+const inviteHeaderSchema = z.string().uuid();
+
 const createRoomSchema = sharedCreateRoomSchema.extend({
   password: z.string().min(8).max(128).optional(),
 });
@@ -121,7 +124,22 @@ export async function roomRoutes(fastify: FastifyInstance): Promise<void> {
     }
 
     // Don't expose inviteToken unless requester is the owner
-    const isOwner = request.userId && room.ownerId === request.userId;
+    const isOwner = Boolean(request.userId && room.ownerId === request.userId);
+
+    // Sala PRIVADA sem credencial (nem dono, nem X-Room-Invite valido): so o
+    // minimo para a tela de entrada decidir o fluxo (pedir senha/convite).
+    // Nome, teto, expiracao e status ficam para quem tem acesso. A senha NAO e
+    // aceita aqui: verifica-la custaria bcrypt sem balde (o join-room e as
+    // rotas de chat tem o balde de falhas).
+    if (room.isPrivate && !isOwner) {
+      const invite = inviteHeaderSchema.safeParse(request.headers['x-room-invite']);
+      const hasInvite = invite.success && invite.data === room.inviteToken;
+      if (!hasInvite) {
+        return reply.send({
+          room: { id: room.id, isPrivate: true, hasPassword: room.passwordHash !== null },
+        });
+      }
+    }
 
     // passwordHash nunca é exposto; expomos apenas o flag hasPassword para a UI
     // decidir se deve pedir a senha antes do join (fluxo password do critic).
