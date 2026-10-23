@@ -352,3 +352,65 @@ describe('item 4 — guestName validado (zod) no handshake e no upload', () => {
     expect(msg?.guestName).toBe('Guest');
   });
 });
+
+describe('item 5 — sinalizacao exige que o remetente esteja na sala', () => {
+  let h: Harness;
+  let roomA: string;
+  let roomB: string;
+
+  beforeAll(async () => {
+    h = await buildHarness();
+    roomA = (await prisma.room.create({ data: { name: 'Audit Item5', isPersistent: true } })).id;
+    roomB = (await prisma.room.create({ data: { name: 'Audit Item5', isPersistent: true } })).id;
+  });
+
+  afterAll(async () => {
+    await prisma.room.deleteMany({ where: { name: 'Audit Item5' } }).catch(() => {});
+    await h.app.close();
+  });
+
+  it('socket fora da sala (ou em outra sala) nao sinaliza para peer da sala', async () => {
+    const victim = await connect(h.port, { guestName: 'Victim' });
+    const outsider = await connect(h.port, { guestName: 'Outsider' });
+    const other = await connect(h.port, { guestName: 'Other' });
+    try {
+      await emitAck(victim, 'join-room', { roomId: roomA });
+      await emitAck(other, 'join-room', { roomId: roomB });
+      let received = 0;
+      victim.on('signal:offer', () => (received += 1));
+      victim.on('signal:answer', () => (received += 1));
+      victim.on('signal:ice-candidate', () => (received += 1));
+      victim.on('signal:screen-share-state', () => (received += 1));
+
+      const target = victim.id as string;
+      const payloads: Array<[string, Record<string, unknown>]> = [
+        ['signal:offer', { roomId: roomA, targetPeerId: target, offer: { type: 'offer', sdp: 'x' } }],
+        ['signal:answer', { roomId: roomA, targetPeerId: target, answer: { type: 'answer', sdp: 'x' } }],
+        ['signal:ice-candidate', { roomId: roomA, targetPeerId: target, candidate: { candidate: 'c' } }],
+        ['signal:screen-share-state', { roomId: roomA, targetPeerId: target, isScreenSharing: true }],
+      ];
+      for (const sender of [outsider, other]) {
+        for (const [event, payload] of payloads) {
+          const ack = await emitAck(sender, event, payload);
+          expect(ack.error).toBe('Not in room');
+        }
+      }
+      await new Promise((r) => setTimeout(r, 50));
+      expect(received).toBe(0);
+
+      // remetente na sala continua funcionando
+      const member = await connect(h.port, { guestName: 'Member' });
+      try {
+        await emitAck(member, 'join-room', { roomId: roomA });
+        const ack = await emitAck(member, 'signal:offer', payloads[0][1]);
+        expect(ack.success).toBe(true);
+      } finally {
+        member.disconnect();
+      }
+    } finally {
+      victim.disconnect();
+      outsider.disconnect();
+      other.disconnect();
+    }
+  });
+});

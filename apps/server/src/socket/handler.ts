@@ -145,6 +145,14 @@ export function createSocketServer(httpServer: HttpServer): Server {
   io.on('connection', (socket) => {
     const user: SocketUser = socket.data.user;
 
+    /**
+     * O REMETENTE precisa estar na sala que cita no payload: sem isto um socket
+     * fora da sala (ou em outra sala) que conheca um peerId mandaria
+     * offer/answer/ICE para qualquer peer.
+     */
+    const senderInRoom = (roomId: string): boolean =>
+      roomPeers.get(roomId)?.has(socket.id) === true && socket.data.roomId === roomId;
+
     socket.on('join-room', async (data, callback) => {
       // Rate limit check
       if (isRateLimited(`socket:${socket.id}`)) {
@@ -328,6 +336,10 @@ export function createSocketServer(httpServer: HttpServer): Server {
       }
 
       const { roomId, targetPeerId, offer } = parsed.data;
+      if (!senderInRoom(roomId)) {
+        callback?.({ error: 'Not in room' });
+        return;
+      }
       const peers = roomPeers.get(roomId);
       if (!peers?.has(targetPeerId)) {
         callback?.({ error: 'Target peer not in room' });
@@ -356,6 +368,10 @@ export function createSocketServer(httpServer: HttpServer): Server {
       }
 
       const { roomId, targetPeerId, answer } = parsed.data;
+      if (!senderInRoom(roomId)) {
+        callback?.({ error: 'Not in room' });
+        return;
+      }
       const peers = roomPeers.get(roomId);
       if (!peers?.has(targetPeerId)) {
         callback?.({ error: 'Target peer not in room' });
@@ -384,6 +400,10 @@ export function createSocketServer(httpServer: HttpServer): Server {
       }
 
       const { roomId, targetPeerId, candidate } = parsed.data;
+      if (!senderInRoom(roomId)) {
+        callback?.({ error: 'Not in room' });
+        return;
+      }
       const peers = roomPeers.get(roomId);
       if (!peers?.has(targetPeerId)) {
         callback?.({ error: 'Target peer not in room' });
@@ -411,6 +431,10 @@ export function createSocketServer(httpServer: HttpServer): Server {
       }
 
       const { roomId, targetPeerId, isScreenSharing } = parsed.data;
+      if (!senderInRoom(roomId)) {
+        callback?.({ error: 'Not in room' });
+        return;
+      }
       const peers = roomPeers.get(roomId);
       if (!peers?.has(targetPeerId)) {
         callback?.({ error: 'Target peer not in room' });
