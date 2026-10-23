@@ -76,7 +76,8 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
 |----------|-----------|--------|
 | `JWT_SECRET` | Chave dos JWT de sessao (deriva tambem a chave do room ticket) | `change-me-in-production` |
 | `GUEST_COOKIE_SECRET` | Assina o cookie `guestId` do convidado. **Obrigatorio em producao, >= 32 caracteres.** Trocar o valor faz convidados perderem a autoria das mensagens antigas | derivado do `JWT_SECRET` so em dev/teste |
-| `METRICS_ADMIN_EMAILS` | E-mails (CSV) que podem ver `/api/metrics` e o painel `/metrics` | vazio = ninguem |
+| `ADMIN_EMAILS` | E-mails (CSV) dos administradores do sistema: veem `/api/metrics` e o painel `/metrics` e podem apagar qualquer sala | vazio = ninguem |
+| `METRICS_ADMIN_EMAILS` | Nome legado de `ADMIN_EMAILS`, ainda aceito (as duas listas sao unidas) | vazio |
 | `DATABASE_URL` | URL do SQLite | `file:./data.db` |
 | `ALLOWED_ORIGINS` | Origens CORS permitidas (CSV) | `http://localhost:3000,http://localhost:8080` |
 | `ENABLE_TURN` | Habilitar servidor TURN | `false` |
@@ -160,6 +161,13 @@ Regra geral: **nada do servidor e consultavel pelo front sem a prova certa**.
   e-mails; mensagem apagada nao devolve texto antigo nem arquivos; arquivo
   apagado -> 410; listagem `GET /api/rooms` so com nome e contagem de salas
   publicas ativas.
+- **Apagar sala:** `DELETE /api/rooms/:id` so para o dono da sala ou um admin
+  do sistema (`ADMIN_EMAILS`/`METRICS_ADMIN_EMAILS`); outro usuario logado ->
+  403, sem login -> 401. A exclusao e definitiva (sala, mensagens, arquivos e
+  o diretorio `uploads/<roomId>`), todos os conectados recebem `room:deleted` e
+  saem da chamada, e o log de auditoria registra sala, usuario e papel (dono ou
+  admin), sem e-mail. 20 exclusoes por 10 min por usuario. O front so recebe
+  `canDelete` (nunca o `ownerId` de terceiros).
 - **Cabecalhos e erros:** CSP sem `unsafe-inline` em scripts, `X-Frame-Options:
   DENY`, `no-store` em respostas privadas, erros 5xx sem detalhes internos.
 - Modelo de confianca de proxy (`TRUST_PROXY`) e demais regras: `AGENTS.md`.
@@ -190,7 +198,7 @@ Regra geral: **nada do servidor e consultavel pelo front sem a prova certa**.
 ### GET /api/metrics (backend)
 
 Restrito a administradores: usuario logado (cookie `token`) cujo email esta em
-`METRICS_ADMIN_EMAILS` (CSV; vazio = ninguem). Usuario comum recebe **403**;
+`ADMIN_EMAILS` ou no legado `METRICS_ADMIN_EMAILS` (CSV; vazio = ninguem). Usuario comum recebe **403**;
 sem credencial, **401**. Nao existe token de servico. Login/register/refresh nao devolvem mais o JWT
 no corpo (so no cookie HttpOnly).
 
