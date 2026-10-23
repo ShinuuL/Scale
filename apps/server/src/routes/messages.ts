@@ -22,9 +22,8 @@ export async function messagesRoutes(fastify: FastifyInstance): Promise<void> {
 
     // Participacao efetiva (inclusive sala publica): room ticket do join-room
     // no header X-Room-Ticket, ou dono por JWT. Sala ENDED/expirada: 403.
-    if (!(await guardRoomParticipation(request, reply, room))) {
-      return reply;
-    }
+    const participant = await guardRoomParticipation(request, reply, room);
+    if (!participant) return reply;
 
     let cursorCreatedAt: Date | undefined;
     if (cursor) {
@@ -42,9 +41,9 @@ export async function messagesRoutes(fastify: FastifyInstance): Promise<void> {
     });
     const asc = rows.reverse();
     const nextCursor = rows.length === limit && asc.length ? asc[0].id : null;
-    // isMine no REST: usuario logado pelo JWT, convidado pelo guestId do
-    // cookie assinado (nunca pelo nome).
-    const viewer = { userId: request.userId ?? null, guestId: request.guestId ?? null };
+    // isMine no REST: usuario logado pelo JWT, convidado pelo guestId do room
+    // ticket (o mesmo do socket que entrou) — nunca pelo nome.
+    const viewer = { userId: participant.userId, guestId: participant.guestId };
     return reply.send({ messages: asc.map((m) => toPublicMessage(m, viewer)), nextCursor });
   });
 }

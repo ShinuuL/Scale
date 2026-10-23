@@ -117,8 +117,11 @@ docker compose --profile mcp up --build --abort-on-container-exit
   `scale:room-ticket`, escopo `{ roomId, sub }` (`u:<userId>` ou
   `g:<guestId>`), validade 12 h. Emitido no ack do `join-room` e no evento
   `room:ticket`; o cliente envia no header `X-Room-Ticket` (nunca em query
-  string). O REST confere que o `sub` é a identidade de quem chama (cookie de
-  sessão ou de convidado): ticket vazado sem o cookie não serve.
+  string; redigido nos logs). Ticket `u:` só vale com a sessão do mesmo
+  usuário. Ticket `g:` é a identidade do convidado no REST (autoria do upload,
+  `isMine` do histórico) — é a mesma do socket que entrou; não é amarrado ao
+  cookie porque handshakes simultâneos do primeiro acesso podem gerar cookies
+  diferentes. Para convidado, portanto, o ticket é bearer (12 h, só header).
 - Senha e convite valem **só** para o `join-room` (balde `roomAuthFail` lá).
 - Escolha: ticket stateless em vez de `RoomMember` — não grava no SQLite a cada
   entrada, cobre convidado e logado igual, e não exige limpeza.
@@ -132,9 +135,13 @@ docker compose --profile mcp up --build --abort-on-container-exit
   SameSite=Strict, Secure em produção, 180 dias, assinado (HMAC,
   `GUEST_COOKIE_SECRET`, mínimo 32 caracteres, **obrigatório em produção**: sem
   ele o backend não sobe).
-- Emissão automática: no handshake do Socket.io (`initial_headers` do engine) e
-  em qualquer `/api/*` de quem não está logado. O socket lê e **verifica** a
+- Emissão automática e única: no handshake do Socket.io (`initial_headers` do
+  engine), na mesma resposta que abre o socket — o cookie existe antes de
+  qualquer mensagem e o cliente não chama nada. O socket lê e **verifica** a
   assinatura; cookie inválido é ignorado (vira convidado novo, sem autoria).
+- Dev (`next dev`, StrictMode monta o socket duas vezes): no PRIMEIRO acesso
+  dois handshakes simultâneos podem emitir dois guestIds; vale o do socket que
+  ficou. Em produção há um socket por página.
 - Autoria de convidado (`chat:edit`, `chat:delete`, `isMine`, upload) é por
   `guestId`; de logado, por `authorId`. O `guestName` (zod 1..40) é só exibição
   e **nunca** concede permissão. Mensagem de convidado sem `guestId` (anterior a

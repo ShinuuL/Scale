@@ -46,9 +46,8 @@ export async function filesRoutes(fastify: FastifyInstance): Promise<void> {
     // Participacao efetiva ANTES de ler o multipart (DoS hardening): room
     // ticket do join-room no header X-Room-Ticket, ou dono por JWT. Negado ->
     // 403 sem consumir o stream.
-    if (!(await guardRoomParticipation(request, reply, room))) {
-      return reply;
-    }
+    const participant = await guardRoomParticipation(request, reply, room);
+    if (!participant) return reply;
 
     const files = await request.parts(); // fastify-multipart
     const parts: Array<{ filename: string; mime: string; buffer: Buffer; fieldname: string }> = [];
@@ -95,8 +94,9 @@ export async function filesRoutes(fastify: FastifyInstance): Promise<void> {
     // Autor do upload: sem guestName a mensagem cai no fallback 'Anon' de
     // ChatMessageItem.tsx:84 e o autor do arquivo se perde na UI.
     const guestName = request.userName ?? parseGuestName(fields.guestName);
-    // Autoria de convidado = guestId do cookie assinado (o nome nao concede nada).
-    const guestId = userId ? null : (request.guestId ?? null);
+    // Autoria de convidado = guestId do room ticket (o mesmo do socket que
+    // entrou na sala). O nome nao concede nada.
+    const guestId = userId ? null : participant.guestId;
     const message = await prisma.chatMessage.create({
       data: { roomId, content, authorId: userId, guestName, guestId },
     });

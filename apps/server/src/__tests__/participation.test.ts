@@ -151,7 +151,7 @@ describe('participacao efetiva: historico, download e upload exigem room ticket 
     expect((await h.app.inject({ method: 'POST', url: `/api/rooms/${roomId}/files`, ...txtUpload(headers) })).statusCode).toBe(403);
   });
 
-  it('ticket expirado, adulterado, assinado com o segredo da sessao ou de outra identidade → 403', async () => {
+  it('ticket expirado, adulterado ou assinado com o segredo da sessao → 403', async () => {
     const guestId = randomUUID();
     const cookieHeader = guestCookie(guestId);
     const valid = signRoomTicket(roomId, `g:${guestId}`);
@@ -167,7 +167,6 @@ describe('participacao efetiva: historico, download e upload exigem room ticket 
       adulterado: `${head}.${forgedBody}.${sig}`,
       assinaturaTrocada: `${head}.${body}.${sig.slice(0, -4)}AAAA`,
       segredoDaSessao: sessionSecret,
-      outraIdentidade: signRoomTicket(roomId, `g:${randomUUID()}`),
     };
     for (const [label, ticket] of Object.entries(tickets)) {
       const res = await h.app.inject({
@@ -177,13 +176,34 @@ describe('participacao efetiva: historico, download e upload exigem room ticket 
       });
       expect(res.statusCode, label).toBe(403);
     }
-    // Ticket valido SEM o cookie da identidade (ticket vazado) tambem nao serve.
-    const leaked = await h.app.inject({
+    expect(
+      (await h.app.inject({ method: 'GET', url: `/api/rooms/${roomId}/messages`, headers: { 'x-room-ticket': valid } }))
+        .statusCode,
+    ).toBe(200);
+  });
+
+  it('ticket de usuario logado so vale com a sessao do mesmo usuario', async () => {
+    const ticket = signRoomTicket(roomId, 'u:usuario-a');
+    const semSessao = await h.app.inject({ method: 'GET', url: `/api/rooms/${roomId}/messages`, headers: { 'x-room-ticket': ticket } });
+    expect(semSessao.statusCode).toBe(403);
+    const outraSessao = await h.app.inject({
       method: 'GET',
       url: `/api/rooms/${roomId}/messages`,
-      headers: { 'x-room-ticket': valid },
+      headers: {
+        'x-room-ticket': ticket,
+        cookie: `token=${signToken({ userId: 'usuario-b', email: 'b@exemplo.com', name: 'B' })}`,
+      },
     });
-    expect(leaked.statusCode).toBe(403);
+    expect(outraSessao.statusCode).toBe(403);
+    const mesmaSessao = await h.app.inject({
+      method: 'GET',
+      url: `/api/rooms/${roomId}/messages`,
+      headers: {
+        'x-room-ticket': ticket,
+        cookie: `token=${signToken({ userId: 'usuario-a', email: 'a@exemplo.com', name: 'A' })}`,
+      },
+    });
+    expect(mesmaSessao.statusCode).toBe(200);
   });
 
   it('com ticket da sala → 200 (historico e upload)', async () => {
@@ -231,7 +251,7 @@ describe('participacao efetiva: historico, download e upload exigem room ticket 
       const evt = await ticketEvent;
       expect(evt.roomId).toBe(roomId);
       expect(evt.ticket).toBe(ack.ticket);
-      expect(verifyRoomTicket(evt.ticket, roomId, { userId: null, guestId })).toBe(true);
+      expect(verifyRoomTicket(evt.ticket, roomId, null)).toEqual({ userId: null, guestId });
       const res = await h.app.inject({
         method: 'GET',
         url: `/api/rooms/${roomId}/messages`,
@@ -295,27 +315,9 @@ describe('guestId emitido pelo servidor: autoria de convidado', () => {
     expect(verifyGuestCookie(undefined)).toBeNull();
   });
 
-  it('HTTP: convidado sem cookie recebe scale_guest HttpOnly/SameSite=Strict; com cookie valido nao; logado nao', async () => {
-    const first = await h.app.inject({ method: 'GET', url: `/api/rooms/${roomId}/messages` });
-    const setCookie = String(first.headers['set-cookie'] ?? '');
-    expect(setCookie).toContain(`${GUEST_COOKIE_NAME}=`);
-    expect(setCookie).toMatch(/HttpOnly/i);
-    expect(setCookie).toMatch(/SameSite=Strict/i);
-    expect(setCookie).toMatch(/Max-Age=15552000/);
-
-    const again = await h.app.inject({
-      method: 'GET',
-      url: `/api/rooms/${roomId}/messages`,
-      headers: { cookie: guestCookie(randomUUID()) },
-    });
-    expect(again.headers['set-cookie']).toBeUndefined();
-
-    const logged = await h.app.inject({
-      method: 'GET',
-      url: `/api/rooms/${roomId}/messages`,
-      headers: { cookie: `token=${signToken({ userId: 'u-guest-test', email: 'g@exemplo.com', name: 'L' })}` },
-    });
-    expect(logged.headers['set-cookie']).toBeUndefined();
+  it('REST nao emite cookie de convidado (emissor unico: handshake do Socket.io)', async () => {
+    const res = await h.app.inject({ method: 'GET', url: `/api/rooms/${roomId}/messages` });
+    expect(String(res.headers['set-cookie'] ?? '')).not.toContain(GUEST_COOKIE_NAME);
   });
 
   it('handshake do Socket.io emite o cookie quando ausente (antes de qualquer mensagem)', async () => {

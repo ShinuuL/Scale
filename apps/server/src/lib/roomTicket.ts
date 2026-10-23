@@ -11,11 +11,16 @@ import { getEnv } from './env.js';
  * e arquivo e pelo upload (header `X-Room-Ticket`, nunca query string). O dono
  * da sala dispensa o ticket.
  *
- * - JWT HS256 com segredo DERIVADO do JWT_SECRET (HMAC com rotulo proprio):
- *   um ticket nao vale como sessao e uma sessao nao vale como ticket.
- * - Escopo: `roomId` + `sub` (identidade de quem entrou: `u:<userId>` ou
- *   `g:<guestId>`). O REST confere que o `sub` e o mesmo de quem chama (cookie
- *   de sessao ou de convidado): ticket vazado sem o cookie nao serve.
+ * - JWT HS256 com segredo DERIVADO do JWT_SECRET (HMAC com rotulo proprio) e
+ *   `aud` proprio: um ticket nao vale como sessao e uma sessao nao vale como
+ *   ticket.
+ * - Escopo: `roomId` + `sub` = identidade de quem entrou (`u:<userId>` ou
+ *   `g:<guestId>`), a MESMA do socket que fez o join.
+ *   - `u:` so vale com a sessao (JWT) do mesmo usuario.
+ *   - `g:` carrega a identidade do convidado: o REST usa ESTE guestId (autoria
+ *     do upload, isMine do historico). Nao e amarrado ao cookie porque, no
+ *     primeiro acesso, handshakes simultaneos podem emitir cookies diferentes;
+ *     a identidade que vale e a do socket que entrou na sala.
  * - Validade 12 h. Sair/ser desconectado NAO revoga (stateless); sala ENDED ou
  *   expirada e negada na hora pela rota, independente do ticket.
  */
@@ -25,7 +30,7 @@ const AUDIENCE = 'scale:room-ticket';
 
 const payloadSchema = z.object({
   roomId: z.string().min(1),
-  sub: z.string().min(3),
+  sub: z.string().regex(/^[ug]:.+$/),
 });
 
 function ticketSecret(): string {
@@ -53,16 +58,27 @@ export function signRoomTicket(roomId: string, subject: string, ttlSeconds = ROO
   });
 }
 
-/** Ticket valido para ESTA sala e ESTA identidade. */
-export function verifyRoomTicket(ticket: string | undefined, roomId: string, identity: TicketIdentity): boolean {
-  if (!ticket) return false;
-  const subject = ticketSubject(identity);
-  if (!subject) return false;
+/**
+ * Valida o ticket para ESTA sala e devolve a identidade de quem entrou, ou
+ * null. `requestUserId` e o usuario da sessao do request: ticket `u:` so vale
+ * para ele.
+ */
+export function verifyRoomTicket(
+  ticket: string | undefined,
+  roomId: string,
+  requestUserId: string | null,
+): TicketIdentity | null {
+  if (!ticket) return null;
   try {
     const decoded = jwt.verify(ticket, ticketSecret(), { algorithms: ['HS256'], audience: AUDIENCE });
     const parsed = payloadSchema.safeParse(decoded);
-    return parsed.success && parsed.data.roomId === roomId && parsed.data.sub === subject;
+    if (!parsed.success || parsed.data.roomId !== roomId) return null;
+    const id = parsed.data.sub.slice(2);
+    if (parsed.data.sub.startsWith('u:')) {
+      return requestUserId === id ? { userId: id, guestId: null } : null;
+    }
+    return { userId: null, guestId: id };
   } catch {
-    return false;
+    return null;
   }
 }

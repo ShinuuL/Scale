@@ -18,6 +18,13 @@ export interface RoomAccessTarget {
   expiresAt: Date | null;
 }
 
+/** Quem esta acessando: usuario da sessao e/ou convidado do ticket. */
+export interface RoomParticipant {
+  userId: string | null;
+  /** guestId do ticket (convidado que entrou na sala); null para logado/dono. */
+  guestId: string | null;
+}
+
 const ticketHeaderSchema = z.string().min(16).max(2048);
 
 /** Ticket do header (nunca da query string). */
@@ -32,25 +39,26 @@ export function isRoomOpen(room: RoomAccessTarget, now = Date.now()): boolean {
   return !(room.expiresAt && room.expiresAt.getTime() < now);
 }
 
-export function hasRoomParticipation(request: FastifyRequest, room: RoomAccessTarget): boolean {
-  if (!isRoomOpen(room)) return false;
-  if (request.userId && room.ownerId && request.userId === room.ownerId) return true;
-  return verifyRoomTicket(extractRoomTicket(request), room.id, {
-    userId: request.userId ?? null,
-    guestId: request.guestId ?? null,
-  });
+export function roomParticipant(request: FastifyRequest, room: RoomAccessTarget): RoomParticipant | null {
+  if (!isRoomOpen(room)) return null;
+  const userId = request.userId ?? null;
+  const fromTicket = verifyRoomTicket(extractRoomTicket(request), room.id, userId);
+  if (fromTicket) return { userId, guestId: userId ? null : fromTicket.guestId };
+  if (userId && room.ownerId && userId === room.ownerId) return { userId, guestId: null };
+  return null;
 }
 
 /**
- * Responde 403 (e devolve false) quando quem chama nao participa da sala.
- * O chamador so retorna.
+ * Devolve o participante, ou responde 403 e devolve null (o chamador so
+ * retorna).
  */
 export async function guardRoomParticipation(
   request: FastifyRequest,
   reply: FastifyReply,
   room: RoomAccessTarget,
-): Promise<boolean> {
-  if (hasRoomParticipation(request, room)) return true;
+): Promise<RoomParticipant | null> {
+  const participant = roomParticipant(request, room);
+  if (participant) return participant;
   await reply.code(403).send({ error: 'Not a room member' });
-  return false;
+  return null;
 }

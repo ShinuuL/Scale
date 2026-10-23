@@ -12,10 +12,11 @@ import { getEnv } from './env.js';
  * producao), assinado com HMAC (GUEST_COOKIE_SECRET). Cookie sem assinatura
  * valida e ignorado (vira um convidado novo, sem autoria sobre nada antigo).
  *
- * Emissao: no handshake do Socket.io (`initial_headers` do engine, ver
- * socket/handler.ts) e em qualquer request /api de quem nao esta logado
- * (plugins/guest.ts). Assim o cookie existe antes de qualquer mensagem, sem o
- * cliente precisar chamar nada.
+ * Emissao: SO no handshake do Socket.io (`initial_headers` do engine, ver
+ * socket/handler.ts) — o socket nasce com o guestId e o Set-Cookie vai na mesma
+ * resposta, sem o cliente chamar nada. Emissor unico de proposito: emitir
+ * tambem no REST faria requests simultaneos do primeiro acesso gerarem
+ * guestIds diferentes. O REST usa o guestId do room ticket (lib/roomTicket.ts).
  */
 export const GUEST_COOKIE_NAME = 'scale_guest';
 /** 180 dias. */
