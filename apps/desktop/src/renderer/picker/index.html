@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Scale - Compartilhar tela</title>
+    <link rel="stylesheet" href="../common.css" />
+    <link rel="stylesheet" href="picker.css" />
+  </head>
+  <body>
+    <header class="top">
+      <h1 id="title">Escolha o que compartilhar</h1>
+      <p class="sub">Clique para selecionar. Setas navegam, Enter compartilha, Esc cancela.</p>
+    </header>
+
+    <main class="lists" aria-labelledby="title">
+      <section aria-labelledby="h-screens">
+        <h2 id="h-screens">Telas inteiras</h2>
+        <div id="screens" class="grid" role="listbox" aria-labelledby="h-screens"></div>
+      </section>
+      <section aria-labelledby="h-windows">
+        <h2 id="h-windows">Janelas</h2>
+        <div id="windows" class="grid" role="listbox" aria-labelledby="h-windows"></div>
+      </section>
+      <p id="empty" class="empty" hidden>Nenhuma tela ou janela disponível para compartilhar.</p>
+    </main>
+
+    <footer class="bar">
+      <label id="audio-wrap" class="check" hidden>
+        <input id="audio" type="checkbox" />
+        <span>Compartilhar áudio do sistema</span>
+        <span id="audio-note" class="note"></span>
+      </label>
+      <div class="actions">
+        <button type="button" id="cancel" class="btn ghost">Cancelar</button>
+        <button type="button" id="share" class="btn primary" disabled>Compartilhar</button>
+      </div>
+    </footer>
+    <script src="picker.js"></script>
+  </body>
+</html>

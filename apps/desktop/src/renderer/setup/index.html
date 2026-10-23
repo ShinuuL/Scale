@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Scale - Configurar servidor</title>
+    <link rel="stylesheet" href="../common.css" />
+    <link rel="stylesheet" href="setup.css" />
+  </head>
+  <body>
+    <main class="card">
+      <header class="head">
+        <span class="badge" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="4" width="18" height="7" rx="2" />
+            <rect x="3" y="13" width="18" height="7" rx="2" />
+            <path d="M7 7.5h.01M7 16.5h.01" />
+          </svg>
+        </span>
+        <div>
+          <h1>Conectar ao servidor Scale</h1>
+          <p class="sub">Informe o endereço do servidor da sua equipe.</p>
+        </div>
+      </header>
+
+      <form id="form" novalidate>
+        <label for="url">Endereço do servidor</label>
+        <input
+          id="url"
+          name="url"
+          type="url"
+          inputmode="url"
+          autocomplete="url"
+          spellcheck="false"
+          placeholder="https://scale.exemplo.com.br"
+          aria-describedby="hint error"
+          required
+        />
+        <p id="hint" class="hint">Use https://. Apenas o endereço base, sem caminho.</p>
+        <p id="error" class="error" role="alert" hidden></p>
+        <p id="status" class="status" role="status" aria-live="polite"></p>
+
+        <div class="actions">
+          <button type="button" id="cancel" class="btn ghost" hidden>Cancelar</button>
+          <button type="submit" id="submit" class="btn primary">Testar e salvar</button>
+        </div>
+      </form>
+    </main>
+    <script src="setup.js"></script>
+  </body>
+</html>

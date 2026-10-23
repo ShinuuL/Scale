@@ -1,0 +1,33 @@
+appId: br.com.mastersys.scale
+productName: Scale
+copyright: Copyright (c) Mastersys
+electronVersion: 44.7.0
+
+directories:
+  output: release
+  buildResources: build
+
+# Tudo e bundlado pelo esbuild em dist/; nenhum node_modules vai no pacote.
+files:
+  - dist/**/*
+  - package.json
+  - '!**/*.map'
+asar: true
+# Fuses aplicados apos empacotar (scripts/after-pack.cjs).
+afterPack: scripts/after-pack.cjs
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.png
+  artifactName: Scale-Setup-${version}-x64.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Scale
+  uninstallDisplayName: Scale

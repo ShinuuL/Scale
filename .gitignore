@@ -30,3 +30,7 @@ playwright/.cache/
 # Frontend estatico (next export) e CSP gerada no build
 apps/web/out/
 apps/web/.caddy/
+
+# Desktop (Electron): bundle do esbuild e instaladores do electron-builder
+apps/desktop/dist/
+apps/desktop/release/
