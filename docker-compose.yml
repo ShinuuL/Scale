@@ -13,7 +13,7 @@ services:
       # O browser NAO usa esta porta: o frontend estatico fala sempre com o
       # mesmo origin (proxy Caddy, que encaminha /api e /socket.io). Ela fica
       # publicada so para diagnostico local (curl http://localhost:4100/health)
-      # e para o MCP/ferramentas no host.
+      # e para ferramentas no host.
       #
       # SEGURANCA (loopback-only por padrao): publicada em 127.0.0.1, NAO em
       # 0.0.0.0. Em 0.0.0.0 qualquer host da rede alcanca o backend e forja
@@ -128,34 +128,6 @@ services:
         # depois que o request cruza o tunel) e e o `trusted_proxies` do Caddy.
         ipv4_address: 172.28.0.5
 
-  mcp:
-    build:
-      context: .
-      dockerfile: apps/mcp/Dockerfile
-    profiles:
-      - mcp
-    ports:
-      # So loopback: o MCP e para ferramentas no host, nunca para a LAN/tunel.
-      - "127.0.0.1:4001:4001"
-    environment:
-      - PORT=4001
-      - MCP_TOKEN=${MCP_TOKEN}
-      - BACKEND_URL=http://backend:4000
-      # Token de servico para o MCP ler /api/metrics: o MESMO valor de
-      # METRICS_SERVICE_TOKEN do backend (lido do .env). Sem ele /mcp/metrics
-      # responde 503 com a instrucao.
-      - METRICS_SERVICE_TOKEN=${METRICS_SERVICE_TOKEN:-}
-    depends_on:
-      backend:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4001/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
-    networks:
-      - scale
 
 volumes:
   db_data:

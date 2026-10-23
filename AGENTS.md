@@ -34,7 +34,6 @@ Sistema de videochamadas P2P (mesh) com escamas de dragão — sala de voz e tel
 ├── apps/
 │   ├── web/           # Next.js 15 App Router, export estatico (servido pelo Caddy)
 │   ├── server/        # Fastify 5 + Socket.io + Prisma
-│   ├── mcp/           # MCP server (Docker profile mcp)
 │   └── desktop/       # Cliente Electron (Windows): abre a URL do servidor numa janela endurecida
 ├── packages/
 │   └── shared/        # @scale/shared: schemas zod, tipos de eventos e limites
@@ -91,11 +90,11 @@ npm run lint
 # 2. Build
 npm run build
 
-# 3. Docker Compose config válido (profile mcp)
-docker compose --profile mcp config
+# 3. Docker Compose config válido
+docker compose config
 
 # 4. Build e up dos containers (quando aplicável)
-docker compose --profile mcp up --build --abort-on-container-exit
+docker compose up --build -d
 ```
 
 **Regra:** Se um gate falhar, corrigir e rodar novamente. Sem exceções.
@@ -174,7 +173,6 @@ docker compose --profile mcp up --build --abort-on-container-exit
 - Tela compartilhada via WebRTC
 - Wizard de onboarding
 - Guia de configuração do túnel cloudflared
-- MCP server para integração
 
 ### Não incluído (por agora)
 - Gravação de chamadas
@@ -194,7 +192,7 @@ docker compose --profile mcp up --build --abort-on-container-exit
 ## Requisitos de Infra
 
 ### Docker Compose
-- Serviços: backend, proxy, mcp, cloudflared (não existe mais container de
+- Serviços: backend, proxy, cloudflared (não existe mais container de
   frontend: o web é `output: 'export'`, sem servidor Next)
 - `proxy`: imagem própria (`apps/web/Dockerfile`: build estático + Caddy) que
   serve o `out/` do Next e encaminha `/api/*` e `/socket.io/*` → `backend:4000`.
@@ -210,7 +208,6 @@ docker compose --profile mcp up --build --abort-on-container-exit
   sem token/conta; gera URL efêmera `*.trycloudflare.com` a cada start.
 - Volumes para SQLite persistente
 - Health checks para todos os serviços
-- Profile `mcp` para habilitar MCP server
 - Profile `tunnel` para habilitar o túnel cloudflared
 
 ### Acesso remoto (tunel)
@@ -246,11 +243,6 @@ docker compose --profile mcp up --build --abort-on-container-exit
   - Teste (`docs/tunnel-setup.md`): 15 logins com `X-Forwarded-For` rotativo →
     o 11º deve dar 429; e o log do backend, para request pelo tunel, deve
     mostrar o SEU IP publico (nunca `172.28.x.x`).
-
-### MCP Server
-- Endpoints para consulta de estado das salas
-- Autenticação via token
-- Integração com ferramentas externas
 
 ## Comandos Úteis
 

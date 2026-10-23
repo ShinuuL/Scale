@@ -55,14 +55,11 @@ docker compose up --build
 # Guia completo: docs/tunnel-setup.md
 docker compose --profile tunnel up -d --build
 
-# Sobe com MCP validator (profile mcp)
-docker compose --profile mcp up --build --abort-on-container-exit
-
 # Sobe com servidor TURN (profile turn)
 docker compose --profile turn up --build
 
 # Todos os profiles
-docker compose --profile mcp --profile turn --profile tunnel up --build
+docker compose --profile turn --profile tunnel up --build
 ```
 
 ### Variaveis de Ambiente
@@ -80,8 +77,6 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
 | `JWT_SECRET` | Chave dos JWT de sessao (deriva tambem a chave do room ticket) | `change-me-in-production` |
 | `GUEST_COOKIE_SECRET` | Assina o cookie `guestId` do convidado. **Obrigatorio em producao, >= 32 caracteres.** Trocar o valor faz convidados perderem a autoria das mensagens antigas | derivado do `JWT_SECRET` so em dev/teste |
 | `METRICS_ADMIN_EMAILS` | E-mails (CSV) que podem ver `/api/metrics` e o painel `/metrics` | vazio = ninguem |
-| `METRICS_SERVICE_TOKEN` | Token de servico (>= 32) que o MCP usa em `/api/metrics` | vazio |
-| `MCP_TOKEN` | Token de quem chama o MCP. **Obrigatorio para o profile `mcp`, >= 32 caracteres** | — |
 | `DATABASE_URL` | URL do SQLite | `file:./data.db` |
 | `ALLOWED_ORIGINS` | Origens CORS permitidas (CSV) | `http://localhost:3000,http://localhost:8080` |
 | `ENABLE_TURN` | Habilitar servidor TURN | `false` |
@@ -104,9 +99,8 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
 │   │   ├── src/       # lib/, plugins/, routes/, socket/
 │   │   ├── prisma/    # Prisma schema
 │   │   └── Dockerfile
-│   ├── desktop/       # Electron: src/core (logica pura testada), main, preload,
+│   └── desktop/       # Electron: src/core (logica pura testada), main, preload,
 │   │                  # renderer (setup e seletor de tela), electron-builder.yml
-│   └── mcp/           # MCP server (Docker profile mcp)
 ├── packages/
 │   └── shared/        # @scale/shared: schemas zod, tipos de eventos, limites
 ├── release/           # instaladores gerados (ignorado pelo git), ex. release/desktop/
@@ -170,12 +164,6 @@ Regra geral: **nada do servidor e consultavel pelo front sem a prova certa**.
   DENY`, `no-store` em respostas privadas, erros 5xx sem detalhes internos.
 - Modelo de confianca de proxy (`TRUST_PROXY`) e demais regras: `AGENTS.md`.
 
-### MCP Validator (profile `mcp`)
-
-- Verifica health do backend e frontend
-- Testa conectividade Socket.io + join-room
-- Reporta JSON com pass/fail
-
 ### Proxy interno (Caddy, default)
 
 - Serve o export estatico do frontend (`try_files` com fallback) e roteia
@@ -201,18 +189,14 @@ Regra geral: **nada do servidor e consultavel pelo front sem a prova certa**.
 
 ### GET /api/metrics (backend)
 
-Restrito a administradores. Aceita:
-
-- usuario logado (cookie `token`) cujo email esta em `METRICS_ADMIN_EMAILS`
-  (CSV; vazio = ninguem). Usuario comum recebe **403**;
-- token de servico `Authorization: Bearer $METRICS_SERVICE_TOKEN` (>= 32
-  caracteres, comparado em tempo constante) — e o que o MCP usa.
-
-Sem credencial responde **401**. Login/register/refresh nao devolvem mais o JWT
+Restrito a administradores: usuario logado (cookie `token`) cujo email esta em
+`METRICS_ADMIN_EMAILS` (CSV; vazio = ninguem). Usuario comum recebe **403**;
+sem credencial, **401**. Nao existe token de servico. Login/register/refresh nao devolvem mais o JWT
 no corpo (so no cookie HttpOnly).
 
 ```bash
-curl -s -H "Authorization: Bearer $METRICS_SERVICE_TOKEN" http://localhost:4100/api/metrics | jq .
+# Logado como admin no navegador, abra /metrics; via curl, reaproveite o cookie
+curl -s -b "token=<cookie de sessao de um admin>" http://localhost:4100/api/metrics | jq .
 ```
 
 Resposta (JSON):
@@ -235,26 +219,18 @@ Resposta (JSON):
 
 Dashboard em `/metrics` com cards (uptime, salas, peers) e auto-refresh a cada 10s. Consome `/api/metrics` no mesmo origin (Caddy). Como o endpoint exige JWT, **sem sessao a pagina mostra "Requer login"** (com link para `/login`) em vez de quebrar.
 
-### GET /mcp/metrics (MCP server, profile `mcp`)
-
-Proxy do backend com dois tokens distintos:
-
-- `MCP_TOKEN`: quem chama o MCP (`curl -H "Authorization: Bearer $MCP_TOKEN" http://127.0.0.1:4001/mcp/metrics`). Obrigatorio, minimo 32 caracteres (o MCP aborta o start sem ele), comparado em tempo constante. O MCP so e publicado em `127.0.0.1:4001`, nao tem CORS e valida `:id` como UUID.
-- `METRICS_SERVICE_TOKEN`: token de servico (>= 32 caracteres) que o MCP usa para chamar `/api/metrics`; o backend le o mesmo valor do `.env` e compara em tempo constante. Sem ele, `/mcp/metrics` responde **503** com instrucao. Usuarios logados so leem `/api/metrics` se o email estiver em `METRICS_ADMIN_EMAILS` (vazio = ninguem; demais recebem 403).
-
 ## Testes
 
 ### Vitest (unit/integration)
 
 `npm run test` na raiz compila o `@scale/shared` e roda todos os workspaces:
-**345 testes**.
+**339 testes**.
 
 | Workspace | Testes | Cobre |
 |---|---|---|
 | `scale-backend` (`apps/server`) | 148 (13 arquivos) | chat socket, REST paginado, uploads (magic bytes, quota, GC, sandbox), hardening (auth/CORS/Helmet/trust proxy), salas e senha, signaling, metricas; `securityAudit.test.ts` (um caso por item da auditoria) e `participation.test.ts` (room ticket e `guestId`) |
 | `scale-frontend` (`apps/web`) | 87 | chat e upload, `useSocket`, `useWebRTC` (audio nos dois sentidos, glare), palco Go Live, temas, menu de perfil, aviso de desconexao, `Icon` |
 | `scale-desktop` (`apps/desktop`) | 99 | URL do servidor, config, navegacao permitida/bloqueada, permissoes, IPC, protocolo local |
-| `scale-mcp` (`apps/mcp`) | 6 | token obrigatorio, comparacao em tempo constante, validacao de `:id` |
 | `@scale/shared` | 5 | schemas compartilhados |
 
 Os testes do backend usam o SQLite local `apps/server/prisma/data.db`. Depois
@@ -303,7 +279,6 @@ npm run dist:desktop # Instalador Windows em release/desktop/
 docker compose up --build              # Sobe tudo
 docker compose down                    # Para tudo
 docker compose logs -f                 # Logs em tempo real
-docker compose --profile mcp up --build --abort-on-container-exit  # Com MCP
 
 # Banco de dados
 cd apps/server && npx prisma generate     # Gerar Prisma Client

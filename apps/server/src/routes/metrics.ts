@@ -1,33 +1,15 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { prisma } from '../lib/prisma.js';
 import { getChatMetricsSnapshot, getChatMetricsText, getUptimeSeconds } from '../lib/metrics.js';
 import { getMetricsAuthConfig } from '../lib/env.js';
 import { getRoomPeersSnapshot } from '../socket/handler.js';
 
-/** Compara em tempo constante (hash SHA-256 iguala os tamanhos). */
-function safeEqual(a: string, b: string): boolean {
-  const ha = createHash('sha256').update(a).digest();
-  const hb = createHash('sha256').update(b).digest();
-  return timingSafeEqual(ha, hb);
-}
-
-/** `Authorization: Bearer <METRICS_SERVICE_TOKEN>` valido? */
-export function hasMetricsServiceToken(request: FastifyRequest): boolean {
-  const { serviceToken } = getMetricsAuthConfig();
-  if (!serviceToken) return false;
-  const header = request.headers.authorization;
-  if (!header?.startsWith('Bearer ')) return false;
-  return safeEqual(header.slice(7).trim(), serviceToken);
-}
-
 export async function metricsRoutes(fastify: FastifyInstance): Promise<void> {
   /**
-   * Acesso a /api/metrics: token de servico (MCP) OU usuario logado cujo email
-   * esta em METRICS_ADMIN_EMAILS. Usuario comum -> 403; sem credencial -> 401.
+   * Acesso a /api/metrics: so usuario logado cujo email esta em
+   * METRICS_ADMIN_EMAILS. Usuario comum -> 403; sem credencial -> 401.
    */
   async function requireMetricsAdmin(request: FastifyRequest, reply: FastifyReply): Promise<void> {
-    if (hasMetricsServiceToken(request)) return;
     await fastify.authenticate(request, reply);
     if (reply.sent) return;
     const email = request.userEmail?.trim().toLowerCase();

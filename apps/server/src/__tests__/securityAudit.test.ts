@@ -545,14 +545,12 @@ describe('item 7 — DTOs publicos sem path/uploadedBy/authorId; isMine por dest
   });
 });
 
-describe('item 8 — /api/metrics exige admin (allowlist) ou token de servico', () => {
+describe('item 8 — /api/metrics exige admin (allowlist)', () => {
   let app: FastifyInstance;
-  const SERVICE = 's'.repeat(40);
 
   beforeAll(async () => {
     process.env.JWT_SECRET = 'test-secret-for-unit-tests';
     process.env.METRICS_ADMIN_EMAILS = 'Admin@Exemplo.com';
-    process.env.METRICS_SERVICE_TOKEN = SERVICE;
     const { metricsRoutes } = await import('../routes/metrics.js');
     app = Fastify({ logger: false });
     await app.register(cookie);
@@ -562,7 +560,6 @@ describe('item 8 — /api/metrics exige admin (allowlist) ou token de servico', 
   });
 
   afterAll(async () => {
-    delete process.env.METRICS_SERVICE_TOKEN;
     delete process.env.METRICS_ADMIN_EMAILS;
     await app.close();
   });
@@ -582,22 +579,19 @@ describe('item 8 — /api/metrics exige admin (allowlist) ou token de servico', 
     expect(body).toHaveProperty('peers');
   });
 
-  it('token de servico → 200; token errado → 401; token curto e ignorado', async () => {
-    const svc = await app.inject({ method: 'GET', url: '/api/metrics', headers: { authorization: `Bearer ${SERVICE}` } });
-    expect(svc.statusCode).toBe(200);
-    const wrong = await app.inject({
-      method: 'GET',
-      url: '/api/metrics',
-      headers: { authorization: `Bearer ${'x'.repeat(40)}` },
-    });
-    expect(wrong.statusCode).toBe(401);
-
-    process.env.METRICS_SERVICE_TOKEN = 'curto';
+  it('nao existe token de servico: Bearer arbitrario nao abre /api/metrics', async () => {
+    // O token de servico existia so para o MCP (removido). Mesmo com a env
+    // antiga definida, nenhum Bearer que nao seja um JWT valido de admin passa.
+    process.env.METRICS_SERVICE_TOKEN = 's'.repeat(40);
     try {
-      const short = await app.inject({ method: 'GET', url: '/api/metrics', headers: { authorization: 'Bearer curto' } });
-      expect(short.statusCode).toBe(401);
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/metrics',
+        headers: { authorization: `Bearer ${'s'.repeat(40)}` },
+      });
+      expect(res.statusCode).toBe(401);
     } finally {
-      process.env.METRICS_SERVICE_TOKEN = SERVICE;
+      delete process.env.METRICS_SERVICE_TOKEN;
     }
   });
 

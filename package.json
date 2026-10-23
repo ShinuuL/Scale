@@ -13,11 +13,11 @@
     "dev:desktop": "npm run dev -w scale-desktop",
     "dist:desktop": "npm run dist -w scale-desktop",
     "build:shared": "npm run build -w @scale/shared",
-    "build": "npm run build:shared && npm run build -w scale-backend -w scale-frontend -w scale-mcp",
+    "build": "npm run build:shared && npm run build -w scale-backend -w scale-frontend",
     "lint": "npm run build:shared && npm run lint --workspaces --if-present",
     "test": "npm run build:shared && npm run test --workspaces --if-present",
     "test:e2e": "playwright test",
-    "docker:config": "docker compose --profile mcp config"
+    "docker:config": "docker compose config"
   },
   "engines": {
     "node": ">=20"
