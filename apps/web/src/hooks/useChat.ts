@@ -19,7 +19,8 @@ export interface ChatMessage {
   content: string;
   authorId: string | null;
   guestName?: string;
-  prevContent?: string | null;
+  /** true quando a mensagem foi editada (o conteudo anterior nunca trafega). */
+  edited?: boolean;
   editedAt?: string | null;
   deletedAt?: string | null;
   createdAt: string;
@@ -126,11 +127,11 @@ export function useChat(
       if (!isOpenRef.current) setUnread((u) => u + 1);
     };
 
-    const onEdit = (payload: { messageId: string; content: string; prevContent: string | null; editedAt: string }) => {
+    const onEdit = (payload: { messageId: string; content: string; editedAt: string; edited?: boolean }) => {
       setMessages((prev) =>
         prev.map((m) =>
           m.id === payload.messageId
-            ? { ...m, content: payload.content, prevContent: payload.prevContent, editedAt: payload.editedAt }
+            ? { ...m, content: payload.content, editedAt: payload.editedAt, edited: true }
             : m,
         ),
       );

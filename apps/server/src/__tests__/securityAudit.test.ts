@@ -1,0 +1,142 @@
+/**
+ * Regressoes da auditoria de seguranca (branch feat/arquitetura-desktop).
+ * Cada `describe` cobre um item da auditoria; o numero do item esta no titulo.
+ */
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import type { Server as HttpServer } from 'http';
+import Fastify, { type FastifyInstance } from 'fastify';
+import cookie from '@fastify/cookie';
+import multipart from '@fastify/multipart';
+import { io as ioClient, type Socket } from 'socket.io-client';
+import { prisma } from '../lib/prisma.js';
+import { authPlugin } from '../plugins/auth.js';
+import { messagesRoutes } from '../routes/messages.js';
+import { filesRoutes } from '../routes/files.js';
+import { createSocketServer } from '../socket/handler.js';
+import { resetRateLimit, resetChatRateLimit } from '../lib/rateLimit.js';
+
+type Ack = Record<string, unknown>;
+
+interface Harness {
+  app: FastifyInstance;
+  port: number;
+}
+
+async function buildHarness(): Promise<Harness> {
+  process.env.JWT_SECRET = 'test-secret-for-unit-tests';
+  process.env.NODE_ENV = 'test';
+  process.env.ALLOWED_ORIGINS = 'http://localhost:3000';
+  const app = Fastify({ logger: false });
+  await app.register(cookie);
+  await app.register(authPlugin);
+  await app.register(multipart, { limits: { fileSize: 15_000_000, files: 5 } });
+  await app.register(messagesRoutes);
+  await app.register(filesRoutes);
+  await app.listen({ port: 0, host: '127.0.0.1' });
+  const httpServer: HttpServer = app.server;
+  const io = createSocketServer(httpServer);
+  (app as unknown as { io: unknown }).io = io;
+  const addr = httpServer.address();
+  const port = addr && typeof addr === 'object' ? addr.port : 0;
+  return { app, port };
+}
+
+function connect(port: number, auth: Record<string, unknown> = { guestName: 'Alice' }): Promise<Socket> {
+  return new Promise((resolve, reject) => {
+    const client = ioClient(`http://127.0.0.1:${port}`, { auth, transports: ['websocket'] });
+    client.on('connect', () => resolve(client));
+    client.on('connect_error', (err) => reject(err));
+  });
+}
+
+function emitAck(client: Socket, event: string, payload: unknown): Promise<Ack> {
+  resetRateLimit(`socket:${client.id}`);
+  resetChatRateLimit(`chat:${client.id}`);
+  return new Promise((resolve) => {
+    client.emit(event, payload, (resp: Ack) => resolve(resp));
+  });
+}
+
+function nextEvent<T>(client: Socket, event: string): Promise<T> {
+  return new Promise((resolve) => client.once(event, (data: T) => resolve(data)));
+}
+
+describe('item 1 — chat:delete limpa prevContent e leituras nao vazam conteudo apagado', () => {
+  let h: Harness;
+  let roomId: string;
+
+  beforeAll(async () => {
+    h = await buildHarness();
+    const room = await prisma.room.create({ data: { name: 'Audit Item1', isPersistent: true } });
+    roomId = room.id;
+  });
+
+  afterAll(async () => {
+    await prisma.room.deleteMany({ where: { name: 'Audit Item1' } }).catch(() => {});
+    await h.app.close();
+  });
+
+  it('edit nao transmite prevContent; delete zera prevContent; historico e REST ocultam apagada', async () => {
+    const alice = await connect(h.port, { guestName: 'Alice' });
+    const bob = await connect(h.port, { guestName: 'Bob' });
+    try {
+      expect((await emitAck(alice, 'join-room', { roomId })).success).toBe(true);
+      expect((await emitAck(bob, 'join-room', { roomId })).success).toBe(true);
+
+      const sent = await emitAck(alice, 'chat:message', { roomId, content: 'segredo original' });
+      const messageId = sent.messageId as string;
+
+      const editEvt = nextEvent<Ack>(bob, 'chat:edit');
+      expect((await emitAck(alice, 'chat:edit', { roomId, messageId, content: 'versao nova' })).success).toBe(true);
+      const edit = await editEvt;
+      expect(edit).not.toHaveProperty('prevContent');
+      expect(edit.edited).toBe(true);
+
+      await prisma.chatFile.create({
+        data: { roomId, messageId, filename: 'x.txt', mime: 'text/plain', size: 3, path: `uploads/${roomId}/x.txt` },
+      });
+
+      expect((await emitAck(alice, 'chat:delete', { roomId, messageId })).success).toBe(true);
+      const row = await prisma.chatMessage.findUnique({ where: { id: messageId } });
+      expect(row?.prevContent).toBeNull();
+
+      const carol = await connect(h.port, { guestName: 'Carol' });
+      try {
+        const join = await emitAck(carol, 'join-room', { roomId });
+        const history = join.history as Array<Record<string, unknown>>;
+        const deleted = history.find((m) => m.id === messageId);
+        expect(deleted).toBeDefined();
+        expect(deleted).not.toHaveProperty('prevContent');
+        expect(deleted?.content).toBe('[mensagem apagada]');
+        expect(deleted?.files).toEqual([]);
+        expect(JSON.stringify(history)).not.toContain('segredo original');
+        expect(JSON.stringify(history)).not.toContain('versao nova');
+      } finally {
+        carol.disconnect();
+      }
+
+      const rest = await h.app.inject({ method: 'GET', url: `/api/rooms/${roomId}/messages` });
+      expect(rest.statusCode).toBe(200);
+      const msg = (JSON.parse(rest.payload).messages as Array<Record<string, unknown>>).find(
+        (m) => m.id === messageId,
+      );
+      expect(msg).not.toHaveProperty('prevContent');
+      expect(msg?.content).toBe('[mensagem apagada]');
+      expect(msg?.files).toEqual([]);
+    } finally {
+      alice.disconnect();
+      bob.disconnect();
+    }
+  });
+
+  it('mensagem editada (nao apagada) nao expoe prevContent na leitura REST', async () => {
+    const msg = await prisma.chatMessage.create({
+      data: { roomId, content: 'atual', prevContent: 'anterior', editedAt: new Date(), guestName: 'Alice' },
+    });
+    const rest = await h.app.inject({ method: 'GET', url: `/api/rooms/${roomId}/messages` });
+    const found = (JSON.parse(rest.payload).messages as Array<Record<string, unknown>>).find((m) => m.id === msg.id);
+    expect(found).not.toHaveProperty('prevContent');
+    expect(found?.edited).toBe(true);
+    expect(rest.payload).not.toContain('anterior');
+  });
+});

@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
+import { toPublicMessage } from '../lib/publicDto.js';
 import { extractAccessFromQuery, hasRoomAccess } from '../lib/roomAccess.js';
 
 const querySchema = z.object({
@@ -42,6 +43,6 @@ export async function messagesRoutes(fastify: FastifyInstance): Promise<void> {
     });
     const asc = rows.reverse();
     const nextCursor = rows.length === limit && asc.length ? asc[0].id : null;
-    return reply.send({ messages: asc, nextCursor });
+    return reply.send({ messages: asc.map(toPublicMessage), nextCursor });
   });
 }

@@ -95,8 +95,8 @@ export function ChatMessageItem({
     <div className="group px-3 py-2 rounded-lg hover:bg-white/[0.04]" data-testid="chat-message">
       <div className="flex items-baseline gap-2 text-xs text-slate-400">
         <span className="font-medium text-moss-200">{authorName}</span>
-        {message.editedAt && !isDeleted && (
-          <span className="italic" title={message.prevContent ?? undefined}>
+        {(message.edited || message.editedAt) && !isDeleted && (
+          <span className="italic">
             (editado)
           </span>
         )}

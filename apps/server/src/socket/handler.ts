@@ -6,6 +6,7 @@ import { verifyToken } from '../lib/auth.js';
 import { getAllowedOrigins } from '../lib/env.js';
 import { isRateLimited, isChatRateLimited } from '../lib/rateLimit.js';
 import { incChatMessages, incChatEdits, incChatDeletes } from '../lib/metrics.js';
+import { toPublicMessage, DELETED_MESSAGE_CONTENT, type PublicChatMessage } from '../lib/publicDto.js';
 import {
   joinRoomSchema,
   leaveRoomSchema,
@@ -239,13 +240,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
           }));
 
         // Histórico de chat: 200 recentes se persistente (ASC), buffer FIFO se temporária
-        let history: Array<{
-          id: string;
-          content: string;
-          createdAt: Date;
-          deletedAt?: Date | null;
-          editedAt?: Date | null;
-        }> = [];
+        let history: PublicChatMessage[] = [];
         if (room.isPersistent) {
           const recent = await prisma.chatMessage.findMany({
             where: { roomId },
@@ -253,9 +248,9 @@ export function createSocketServer(httpServer: HttpServer): Server {
             take: 200,
             include: { files: true },
           });
-          history = recent.reverse(); // entrega ASC conforme spec
+          history = recent.reverse().map(toPublicMessage); // entrega ASC conforme spec
         } else {
-          history = (chatBuffers.get(roomId) ?? []).slice(-100);
+          history = (chatBuffers.get(roomId) ?? []).slice(-100).map(toPublicMessage);
         }
 
         callback?.({
@@ -483,7 +478,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
       }
       incChatMessages(room.isPersistent ? 'persistent' : 'temporary');
 
-      io.to(roomId).emit('chat:message', savedMsg);
+      io.to(roomId).emit('chat:message', toPublicMessage(savedMsg));
       // fan-out mention
       for (const name of intersected) {
         for (const [sid, peer] of peers.entries()) {
@@ -559,8 +554,9 @@ export function createSocketServer(httpServer: HttpServer): Server {
       io.to(roomId).emit('chat:edit', {
         messageId,
         content: updated.content,
-        prevContent: updated.prevContent,
         editedAt: updated.editedAt,
+        // `prevContent` nunca trafega: a UI so precisa saber que foi editada.
+        edited: true,
       });
       callback?.({ success: true });
     });
@@ -615,7 +611,9 @@ export function createSocketServer(httpServer: HttpServer): Server {
       const now = new Date();
       await prisma.chatMessage.update({
         where: { id: messageId },
-        data: { deletedAt: now, content: '[mensagem apagada]' },
+        // prevContent tambem e limpo: apagar nao pode deixar a versao anterior
+        // da mensagem recuperavel.
+        data: { deletedAt: now, content: DELETED_MESSAGE_CONTENT, prevContent: null },
       });
       // cascade soft em arquivos da mensagem
       await prisma.chatFile.updateMany({

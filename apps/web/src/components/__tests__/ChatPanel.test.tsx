@@ -152,9 +152,10 @@ describe('useChat (Task 9/10)', () => {
     act(() => result.current.editMessage('m1', 'editado'));
     expect(socket.emit).toHaveBeenCalledWith('chat:edit', { roomId: ROOM_ID, messageId: 'm1', content: 'editado' });
 
-    emitSocket('chat:edit', { messageId: 'm1', content: 'editado', prevContent: 'original', editedAt: '2026-09-11T12:00:00.000Z' });
+    emitSocket('chat:edit', { messageId: 'm1', content: 'editado', editedAt: '2026-09-11T12:00:00.000Z', edited: true });
     expect(result.current.messages[0].content).toBe('editado');
-    expect(result.current.messages[0].prevContent).toBe('original');
+    expect(result.current.messages[0].edited).toBe(true);
+    expect(result.current.messages[0]).not.toHaveProperty('prevContent');
 
     act(() => result.current.deleteMessage('m1'));
     expect(socket.emit).toHaveBeenCalledWith('chat:delete', { roomId: ROOM_ID, messageId: 'm1' });
