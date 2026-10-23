@@ -82,7 +82,7 @@ export function ChatMessageItem({
   const canEdit = isOwn && !isDeleted && withinWindow;
   const canDelete = (isOwn || isOwner) && !isDeleted;
 
-  const authorName = message.guestName ?? message.authorId ?? 'Anon';
+  const authorName = message.guestName ?? 'Anon';
 
   if (message.system) {
     return (

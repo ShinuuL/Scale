@@ -92,7 +92,8 @@ export type FileMetaPayload = z.infer<typeof fileMetaSchema>;
 /** Peer na sala, como trafega em `join-room` (ack) e `room:peer-joined`. */
 export interface PeerInfo {
   peerId: string;
-  userId: string | null;
+  /** true quando o peer esta logado. O id do usuario nunca trafega. */
+  isRegistered: boolean;
   name: string;
   guestName?: string;
 }

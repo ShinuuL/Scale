@@ -58,7 +58,6 @@ export interface ChatPanelProps {
   open: boolean;
   onClose: () => void;
   isOwner: boolean;
-  currentUserId: string | null;
   guestName: string;
   /** inviteToken de sala protegida (guests) — usado nos links de download. */
   inviteToken?: string;
@@ -72,7 +71,6 @@ export function ChatPanel({
   open,
   onClose,
   isOwner,
-  currentUserId,
   guestName,
   inviteToken,
   password,
@@ -257,8 +255,10 @@ export function ChatPanel({
             message={message}
             currentPeers={currentPeers}
             isOwn={
-              message.authorId === currentUserId ||
-              (message.authorId === null && message.guestName === guestName)
+              // isMine vem do servidor (por destinatario). No historico REST o
+              // convidado nao e identificavel: cai no nome local.
+              message.isMine === true ||
+              (message.isGuest === true && message.guestName === guestName)
             }
             isOwner={isOwner}
             onEdit={chat.editMessage}

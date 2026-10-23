@@ -44,6 +44,9 @@ export async function messagesRoutes(fastify: FastifyInstance): Promise<void> {
     });
     const asc = rows.reverse();
     const nextCursor = rows.length === limit && asc.length ? asc[0].id : null;
-    return reply.send({ messages: asc.map(toPublicMessage), nextCursor });
+    // isMine no REST: so o usuario logado e identificavel (convidado = false;
+    // a UI cai no isGuest + nome local).
+    const viewer = { userId: request.userId ?? null };
+    return reply.send({ messages: asc.map((m) => toPublicMessage(m, viewer)), nextCursor });
   });
 }

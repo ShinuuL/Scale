@@ -30,7 +30,6 @@ function baseMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
     id: 'msg-1',
     roomId: ROOM_ID,
     content: 'ola',
-    authorId: null,
     guestName: 'Alice',
     createdAt: new Date().toISOString(),
     ...overrides,
@@ -446,6 +445,32 @@ describe('ChatMessageItem (Task 10)', () => {
 });
 
 describe('ChatPanel (Task 10)', () => {
+  it('isMine do servidor habilita Editar; mensagem alheia nao', () => {
+    const chat = createChatMock({
+      messages: [
+        baseMessage({ id: 'm-mine', content: 'minha', guestName: 'Registrada', isMine: true, isGuest: false }),
+        baseMessage({ id: 'm-other', content: 'alheia', guestName: 'Outro', isMine: false, isGuest: false }),
+        baseMessage({ id: 'm-guest', content: 'convidado', guestName: 'Me', isGuest: true }),
+      ],
+    });
+    render(
+      <ChatPanel
+        roomId={ROOM_ID}
+        socket={null}
+        chat={chat}
+        currentPeers={[]}
+        open
+        onClose={vi.fn()}
+        isOwner={false}
+        guestName="Me"
+      />
+    );
+    const items = screen.getAllByTestId('chat-message');
+    expect(items[0].textContent).toContain('Editar');
+    expect(items[1].textContent).not.toContain('Editar');
+    expect(items[2].textContent).toContain('Editar');
+  });
+
   function renderChatPanel(overrides: { chat?: Partial<ChatApi>; open?: boolean; currentPeers?: string[] } = {}) {
     const chat = createChatMock(overrides.chat);
     const onClose = vi.fn();
@@ -458,7 +483,6 @@ describe('ChatPanel (Task 10)', () => {
         open={overrides.open ?? true}
         onClose={onClose}
         isOwner={false}
-        currentUserId={null}
         guestName="Me"
       />
     );

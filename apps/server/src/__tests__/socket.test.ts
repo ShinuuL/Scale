@@ -156,7 +156,8 @@ describe('Socket.io Handler', () => {
     const match = peers.filter((p) => p.peerId === client1.id);
     expect(match).toHaveLength(1);
     expect(match[0].name).toBe('TestUser');
-    expect(match[0].userId).toBeNull();
+    expect(match[0].isRegistered).toBe(false);
+    expect(match[0]).not.toHaveProperty('userId');
     expect(peers.every((p) => !('socketId' in p))).toBe(true);
 
     client1.disconnect();
@@ -258,7 +259,9 @@ describe('Socket.io Handler', () => {
 
     const peerJoined = await joinedPromise;
     expect(peerJoined.name).toBe('Socket Tester');
-    expect(peerJoined.userId).toBe('user-socket-test');
+    // o id do usuario nunca trafega: so o flag isRegistered
+    expect(peerJoined.isRegistered).toBe(true);
+    expect(peerJoined).not.toHaveProperty('userId');
 
     observer.disconnect();
     logged.disconnect();

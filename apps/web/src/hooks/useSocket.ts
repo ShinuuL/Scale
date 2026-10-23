@@ -50,9 +50,9 @@ export interface UseSocketReturn {
   emitIceCandidate: (roomId: string, targetPeerId: string, candidate: RTCIceCandidate) => Promise<void>;
   onPeerJoined: (cb: (peer: PeerInfo) => void) => () => void;
   onPeerLeft: (cb: (data: PeerLeftEvent) => void) => () => void;
-  onSignalOffer: (cb: (data: { fromPeerId: string; userId: string | null; name: string; offer: RTCSessionDescriptionInit }) => void) => () => void;
-  onSignalAnswer: (cb: (data: { fromPeerId: string; userId: string | null; name: string; answer: RTCSessionDescriptionInit }) => void) => () => void;
-  onSignalIceCandidate: (cb: (data: { fromPeerId: string; userId: string | null; candidate: RTCIceCandidateInit }) => void) => () => void;
+  onSignalOffer: (cb: (data: { fromPeerId: string; isRegistered: boolean; name: string; offer: RTCSessionDescriptionInit }) => void) => () => void;
+  onSignalAnswer: (cb: (data: { fromPeerId: string; isRegistered: boolean; name: string; answer: RTCSessionDescriptionInit }) => void) => () => void;
+  onSignalIceCandidate: (cb: (data: { fromPeerId: string; isRegistered: boolean; candidate: RTCIceCandidateInit }) => void) => () => void;
   emitScreenShareState: (roomId: string, targetPeerId: string, isScreenSharing: boolean) => Promise<void>;
   onScreenShareState: (cb: (data: ScreenShareStateEvent) => void) => () => void;
   onReconnect: (cb: () => void) => () => void;
@@ -73,9 +73,9 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
   const callbacksRef = useRef({
     peerJoined: [] as Array<(peer: PeerInfo) => void>,
     peerLeft: [] as Array<(data: PeerLeftEvent) => void>,
-    signalOffer: [] as Array<(data: { fromPeerId: string; userId: string | null; name: string; offer: RTCSessionDescriptionInit }) => void>,
-    signalAnswer: [] as Array<(data: { fromPeerId: string; userId: string | null; name: string; answer: RTCSessionDescriptionInit }) => void>,
-    signalIceCandidate: [] as Array<(data: { fromPeerId: string; userId: string | null; candidate: RTCIceCandidateInit }) => void>,
+    signalOffer: [] as Array<(data: { fromPeerId: string; isRegistered: boolean; name: string; offer: RTCSessionDescriptionInit }) => void>,
+    signalAnswer: [] as Array<(data: { fromPeerId: string; isRegistered: boolean; name: string; answer: RTCSessionDescriptionInit }) => void>,
+    signalIceCandidate: [] as Array<(data: { fromPeerId: string; isRegistered: boolean; candidate: RTCIceCandidateInit }) => void>,
     screenShareState: [] as Array<(data: ScreenShareStateEvent) => void>,
     reconnect: [] as Array<() => void>,
   });
@@ -134,15 +134,15 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
       callbacksRef.current.peerLeft.forEach((cb) => cb(data));
     });
 
-    sock.on('signal:offer', (data: { fromPeerId: string; userId: string | null; name: string; offer: RTCSessionDescriptionInit }) => {
+    sock.on('signal:offer', (data: { fromPeerId: string; isRegistered: boolean; name: string; offer: RTCSessionDescriptionInit }) => {
       callbacksRef.current.signalOffer.forEach((cb) => cb(data));
     });
 
-    sock.on('signal:answer', (data: { fromPeerId: string; userId: string | null; name: string; answer: RTCSessionDescriptionInit }) => {
+    sock.on('signal:answer', (data: { fromPeerId: string; isRegistered: boolean; name: string; answer: RTCSessionDescriptionInit }) => {
       callbacksRef.current.signalAnswer.forEach((cb) => cb(data));
     });
 
-    sock.on('signal:ice-candidate', (data: { fromPeerId: string; userId: string | null; candidate: RTCIceCandidateInit }) => {
+    sock.on('signal:ice-candidate', (data: { fromPeerId: string; isRegistered: boolean; candidate: RTCIceCandidateInit }) => {
       callbacksRef.current.signalIceCandidate.forEach((cb) => cb(data));
     });
 
@@ -335,7 +335,7 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
     };
   }, []);
 
-  const onSignalOffer = useCallback((cb: (data: { fromPeerId: string; userId: string | null; name: string; offer: RTCSessionDescriptionInit }) => void): (() => void) => {
+  const onSignalOffer = useCallback((cb: (data: { fromPeerId: string; isRegistered: boolean; name: string; offer: RTCSessionDescriptionInit }) => void): (() => void) => {
     callbacksRef.current.signalOffer.push(cb);
     return () => {
       const idx = callbacksRef.current.signalOffer.indexOf(cb);
@@ -343,7 +343,7 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
     };
   }, []);
 
-  const onSignalAnswer = useCallback((cb: (data: { fromPeerId: string; userId: string | null; name: string; answer: RTCSessionDescriptionInit }) => void): (() => void) => {
+  const onSignalAnswer = useCallback((cb: (data: { fromPeerId: string; isRegistered: boolean; name: string; answer: RTCSessionDescriptionInit }) => void): (() => void) => {
     callbacksRef.current.signalAnswer.push(cb);
     return () => {
       const idx = callbacksRef.current.signalAnswer.indexOf(cb);
@@ -351,7 +351,7 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
     };
   }, []);
 
-  const onSignalIceCandidate = useCallback((cb: (data: { fromPeerId: string; userId: string | null; candidate: RTCIceCandidateInit }) => void): (() => void) => {
+  const onSignalIceCandidate = useCallback((cb: (data: { fromPeerId: string; isRegistered: boolean; candidate: RTCIceCandidateInit }) => void): (() => void) => {
     callbacksRef.current.signalIceCandidate.push(cb);
     return () => {
       const idx = callbacksRef.current.signalIceCandidate.indexOf(cb);

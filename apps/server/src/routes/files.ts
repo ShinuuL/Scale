@@ -6,6 +6,8 @@ import { sanitizeFilename, detectMagicBytes, saveFile, getQuotaUsage, UPLOADS_RO
 import { ALLOWED_MIME_RE, CHAT_MESSAGE_MAX, MAX_FILE_SIZE_BYTES, parseGuestName } from '@scale/shared';
 import { extractAccessFromHeaders, guardRoomAccess } from '../lib/roomAccess.js';
 import { addChatFilesBytes, incQuotaExceeded } from '../lib/metrics.js';
+import { toPublicFile } from '../lib/publicDto.js';
+import { emitChatMessage } from '../socket/handler.js';
 import { isFileUploadRateLimited } from '../lib/rateLimit.js';
 import { getClientIp } from '../lib/clientIp.js';
 
@@ -112,10 +114,11 @@ export async function filesRoutes(fastify: FastifyInstance): Promise<void> {
     addChatFilesBytes(totalNew);
 
     // broadcast como chat:message
+    // DTO publico por destinatario: sem path/uploadedBy/authorId.
     const io = (fastify as unknown as { io?: import('socket.io').Server }).io;
-    io?.to(roomId).emit('chat:message', { ...message, files: createdFiles });
+    if (io) emitChatMessage(io, roomId, { ...message, files: createdFiles });
 
-    return reply.code(201).send({ files: createdFiles, messageId: message.id });
+    return reply.code(201).send({ files: createdFiles.map(toPublicFile), messageId: message.id });
   });
 
   fastify.get<{ Params: { fileId: string } }>('/api/files/:fileId', async (request, reply) => {

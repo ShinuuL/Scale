@@ -5,7 +5,7 @@ import type { UseSocketReturn, PeerInfo } from './useSocket';
 
 export interface PeerConnection {
   peerId: string;
-  userId: string | null;
+  isRegistered: boolean;
   name: string;
   connection: RTCPeerConnection;
   stream: MediaStream | null;
@@ -139,7 +139,7 @@ async function fetchIceServers(): Promise<RTCConfiguration> {
 
 interface PeerMeta {
   peerId: string;
-  userId: string | null;
+  isRegistered: boolean;
   name: string;
 }
 
@@ -450,7 +450,7 @@ export function useWebRTC(
 
       peersRef.current.set(peerId, {
         peerId,
-        userId: meta.userId,
+        isRegistered: meta.isRegistered,
         name: meta.name,
         connection: pc,
         stream: null,
@@ -502,7 +502,7 @@ export function useWebRTC(
         }
         const meta: PeerMeta = {
           peerId: peer.peerId,
-          userId: peer.userId,
+          isRegistered: peer.isRegistered,
           name: peer.name,
         };
         peersMetaRef.current.set(peer.peerId, meta);
@@ -813,7 +813,7 @@ export function useWebRTC(
 
   // ─── Socket event handlers ────────────────────────────────────
   useEffect(() => {
-    const handlePeerJoined = async (peer: { peerId: string; userId: string | null; name: string }) => {
+    const handlePeerJoined = async (peer: { peerId: string; isRegistered: boolean; name: string }) => {
       console.debug('[WebRTC] room:peer-joined', peer.peerId, peer.name);
       if (peersRef.current.has(peer.peerId)) {
         console.debug('[WebRTC] room:peer-joined: peer already known — skipping duplicate offer', peer.peerId);
@@ -832,7 +832,7 @@ export function useWebRTC(
 
       const meta: PeerMeta = {
         peerId: peer.peerId,
-        userId: peer.userId,
+        isRegistered: peer.isRegistered,
         name: peer.name,
       };
       peersMetaRef.current.set(peer.peerId, meta);
@@ -857,14 +857,14 @@ export function useWebRTC(
 
     const handleSignalOffer = async (data: {
       fromPeerId: string;
-      userId: string | null;
+      isRegistered: boolean;
       name: string;
       offer: RTCSessionDescriptionInit;
     }) => {
       console.debug('[WebRTC] signal:offer from', data.fromPeerId, data.name);
       const meta: PeerMeta = {
         peerId: data.fromPeerId,
-        userId: data.userId,
+        isRegistered: data.isRegistered,
         name: data.name,
       };
       peersMetaRef.current.set(data.fromPeerId, meta);
@@ -879,7 +879,7 @@ export function useWebRTC(
       if (isNew) {
         existing = {
           peerId: data.fromPeerId,
-          userId: data.userId,
+          isRegistered: data.isRegistered,
           name: data.name,
           connection: createPeerConnection(data.fromPeerId, meta, 'answerer'),
           stream: null,

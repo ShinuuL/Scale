@@ -12,7 +12,14 @@ import {
   recordRoomAuthFailure,
 } from '../lib/rateLimit.js';
 import { incChatMessages, incChatEdits, incChatDeletes } from '../lib/metrics.js';
-import { toPublicMessage, DELETED_MESSAGE_CONTENT, type PublicChatMessage } from '../lib/publicDto.js';
+import {
+  toPublicMessage,
+  isMessageAuthor,
+  DELETED_MESSAGE_CONTENT,
+  type ChatMessageSource,
+  type MessageViewer,
+  type PublicChatMessage,
+} from '../lib/publicDto.js';
 import {
   joinRoomSchema,
   leaveRoomSchema,
@@ -261,7 +268,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
         // Notify others
         const joined: PeerInfo = {
           peerId: socket.id,
-          userId: user.userId,
+          isRegistered: user.userId !== null,
           name: user.name,
           guestName: user.guestName,
         };
@@ -279,7 +286,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
           .filter((p) => p.socketId !== socket.id)
           .map((p): PeerInfo => ({
             peerId: p.socketId,
-            userId: p.userId,
+            isRegistered: p.userId !== null,
             name: p.name,
             guestName: p.guestName,
           }));
@@ -293,9 +300,11 @@ export function createSocketServer(httpServer: HttpServer): Server {
             take: 200,
             include: { files: true },
           });
-          history = recent.reverse().map(toPublicMessage); // entrega ASC conforme spec
+          history = recent.reverse().map((m) => toPublicMessage(m, viewerOf(user))); // ASC conforme spec
         } else {
-          history = (chatBuffers.get(roomId) ?? []).slice(-100).map(toPublicMessage);
+          history = (chatBuffers.get(roomId) ?? [])
+            .slice(-100)
+            .map((m) => toPublicMessage(m, viewerOf(user)));
         }
 
         callback?.({
@@ -357,7 +366,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
 
       io.to(targetPeerId).emit('signal:offer', {
         fromPeerId: socket.id,
-        userId: user.userId,
+        isRegistered: user.userId !== null,
         name: user.name,
         offer,
       });
@@ -389,7 +398,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
 
       io.to(targetPeerId).emit('signal:answer', {
         fromPeerId: socket.id,
-        userId: user.userId,
+        isRegistered: user.userId !== null,
         name: user.name,
         answer,
       });
@@ -421,7 +430,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
 
       io.to(targetPeerId).emit('signal:ice-candidate', {
         fromPeerId: socket.id,
-        userId: user.userId,
+        isRegistered: user.userId !== null,
         candidate,
       });
       callback?.({ success: true });
@@ -529,7 +538,9 @@ export function createSocketServer(httpServer: HttpServer): Server {
           roomId,
           content,
           authorId: user.userId,
-          guestName: user.guestName,
+          // Nome exibido: o authorId nunca sai do servidor, entao usuario
+          // logado tambem precisa do nome aqui (igual a sala persistente).
+          guestName: user.guestName ?? user.name,
           createdAt: new Date(),
         };
         const buf = chatBuffers.get(roomId) ?? [];
@@ -539,7 +550,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
       }
       incChatMessages(room.isPersistent ? 'persistent' : 'temporary');
 
-      io.to(roomId).emit('chat:message', toPublicMessage(savedMsg));
+      emitChatMessage(io, roomId, savedMsg);
       // fan-out mention
       for (const name of intersected) {
         for (const [sid, peer] of peers.entries()) {
@@ -592,9 +603,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
       }
 
       const user: SocketUser = socket.data.user;
-      const isAuthor =
-        (msg.authorId && msg.authorId === user.userId) ||
-        (!msg.authorId && msg.guestName === (user.guestName ?? user.name));
+      const isAuthor = isMessageAuthor(msg, viewerOf(user));
       if (!isAuthor) {
         callback?.({ error: 'Not message author' });
         return;
@@ -660,9 +669,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
       }
 
       const user: SocketUser = socket.data.user;
-      const isAuthor =
-        (msg.authorId && msg.authorId === user.userId) ||
-        (!msg.authorId && msg.guestName === (user.guestName ?? user.name));
+      const isAuthor = isMessageAuthor(msg, viewerOf(user));
       const isOwner = room?.ownerId && room.ownerId === user.userId;
       if (!isAuthor && !isOwner) {
         callback?.({ error: 'Not authorized to delete' });
@@ -742,4 +749,25 @@ function handleLeaveRoom(
   }
 
   socket.leave(roomId);
+}
+
+/** Leitor (para isMine) a partir do usuario do socket. */
+function viewerOf(user: { userId: string | null; guestName?: string; name: string }): MessageViewer {
+  return { userId: user.userId, guestName: user.guestName ?? user.name };
+}
+
+/**
+ * Broadcast de `chat:message` com DTO publico POR DESTINATARIO: cada peer
+ * recebe `isMine` calculado para si (o authorId nunca sai do servidor).
+ * Usado pelo chat:message do socket e pelo upload (routes/files.ts).
+ */
+export function emitChatMessage(io: Server, roomId: string, msg: ChatMessageSource): void {
+  const peers = roomPeers.get(roomId);
+  if (!peers) return;
+  for (const [sid, peer] of peers) {
+    io.to(sid).emit(
+      'chat:message',
+      toPublicMessage(msg, { userId: peer.userId, guestName: peer.guestName ?? peer.name }),
+    );
+  }
 }

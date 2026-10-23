@@ -16,6 +16,7 @@ import { createSocketServer } from '../socket/handler.js';
 import { resetRateLimit, resetChatRateLimit, resetRoomAuthFailures } from '../lib/rateLimit.js';
 import bcrypt from 'bcryptjs';
 import { redactUrl } from '../lib/logger.js';
+import { signToken } from '../lib/auth.js';
 
 type Ack = Record<string, unknown>;
 
@@ -455,6 +456,95 @@ describe('item 6 — join-room em outra sala sai da sala anterior', () => {
     } finally {
       stay.disconnect();
       mover.disconnect();
+    }
+  });
+});
+
+describe('item 7 — DTOs publicos sem path/uploadedBy/authorId; isMine por destinatario', () => {
+  let h: Harness;
+  let roomId: string;
+  const FORBIDDEN = ['"path"', '"uploadedBy"', '"authorId"', '"passwordHash"', '"email"', '"prevContent"', '"userId"'];
+
+  function expectClean(value: unknown): void {
+    const json = JSON.stringify(value);
+    for (const key of FORBIDDEN) expect(json).not.toContain(key);
+  }
+
+  beforeAll(async () => {
+    h = await buildHarness();
+    roomId = (await prisma.room.create({ data: { name: 'Audit Item7', isPersistent: true } })).id;
+  });
+
+  afterAll(async () => {
+    await prisma.room.deleteMany({ where: { name: 'Audit Item7' } }).catch(() => {});
+    await h.app.close();
+  });
+
+  it('broadcast, historico, REST e upload nao vazam campos internos; isMine so para o autor', async () => {
+    const token = signToken({ userId: 'audit-user-7', email: 'u7@exemplo.com', name: 'Registrada' });
+    const author = await connect(h.port, { token });
+    const reader = await connect(h.port, { guestName: 'Leitor' });
+    try {
+      const joinA = await emitAck(author, 'join-room', { roomId });
+      expectClean(joinA);
+      const peerJoined = nextEvent<Record<string, unknown>>(author, 'room:peer-joined');
+      await emitAck(reader, 'join-room', { roomId });
+      const peer = await peerJoined;
+      expectClean(peer);
+      expect(peer.isRegistered).toBe(false);
+
+      const authorGets = nextEvent<Record<string, unknown>>(author, 'chat:message');
+      const readerGets = nextEvent<Record<string, unknown>>(reader, 'chat:message');
+      await emitAck(author, 'chat:message', { roomId, content: 'minha' });
+      const [a, r] = await Promise.all([authorGets, readerGets]);
+      expectClean(a);
+      expectClean(r);
+      expect(a.isMine).toBe(true);
+      expect(r.isMine).toBe(false);
+      expect(r.guestName).toBe('Registrada');
+
+      // upload (REST) com broadcast por destinatario
+      const boundary = '----audit7';
+      const payload = Buffer.concat([
+        Buffer.from(
+          `--${boundary}\r\nContent-Disposition: form-data; name="files"; filename="a.txt"\r\nContent-Type: text/plain\r\n\r\n`,
+        ),
+        Buffer.from('ola\n'),
+        Buffer.from(`\r\n--${boundary}--\r\n`),
+      ]);
+      const readerUpload = nextEvent<Record<string, unknown>>(reader, 'chat:message');
+      const up = await h.app.inject({
+        method: 'POST',
+        url: `/api/rooms/${roomId}/files`,
+        payload,
+        headers: { 'content-type': `multipart/form-data; boundary=${boundary}`, cookie: `token=${token}` },
+      });
+      expect(up.statusCode).toBe(201);
+      expectClean(JSON.parse(up.payload));
+      const upEvt = await readerUpload;
+      expectClean(upEvt);
+      expect((upEvt.files as unknown[]).length).toBe(1);
+
+      const rest = await h.app.inject({
+        method: 'GET',
+        url: `/api/rooms/${roomId}/messages`,
+        headers: { cookie: `token=${token}` },
+      });
+      expectClean(JSON.parse(rest.payload));
+      const mine = (JSON.parse(rest.payload).messages as Array<Record<string, unknown>>).filter((m) => m.isMine);
+      expect(mine.length).toBe(2);
+
+      const anon = await h.app.inject({ method: 'GET', url: `/api/rooms/${roomId}/messages` });
+      expect((JSON.parse(anon.payload).messages as Array<Record<string, unknown>>).some((m) => m.isMine)).toBe(false);
+
+      // edit/delete do autor continuam funcionando
+      const msgId = (JSON.parse(rest.payload).messages as Array<Record<string, unknown>>)[0].id;
+      expect((await emitAck(author, 'chat:edit', { roomId, messageId: msgId, content: 'editada' })).success).toBe(true);
+      expect((await emitAck(reader, 'chat:delete', { roomId, messageId: msgId })).error).toMatch(/Not authorized/);
+      expect((await emitAck(author, 'chat:delete', { roomId, messageId: msgId })).success).toBe(true);
+    } finally {
+      author.disconnect();
+      reader.disconnect();
     }
   });
 });

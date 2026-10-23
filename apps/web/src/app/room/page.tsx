@@ -613,7 +613,6 @@ function RoomPageInner({ roomId }: { roomId: string }) {
             open={chatOpen}
             onClose={() => setChatOpen(false)}
             isOwner={isOwner}
-            currentUserId={currentUserId}
             guestName={displayName}
             inviteToken={inviteToken}
             password={roomPassword.trim() || undefined}

@@ -18,8 +18,12 @@ export interface ChatMessage {
   id: string;
   roomId: string;
   content: string;
-  authorId: string | null;
-  guestName?: string;
+  /** Nome exibido do autor. O id do autor nunca sai do servidor. */
+  guestName?: string | null;
+  /** Calculado pelo servidor para quem le: a mensagem e minha. */
+  isMine?: boolean;
+  /** Autor era convidado (sem conta). */
+  isGuest?: boolean;
   /** true quando a mensagem foi editada (o conteudo anterior nunca trafega). */
   edited?: boolean;
   editedAt?: string | null;
@@ -155,7 +159,6 @@ export function useChat(
         id: `sys-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         roomId,
         content: payload.text,
-        authorId: null,
         createdAt: new Date().toISOString(),
         system: true,
       };

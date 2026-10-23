@@ -274,7 +274,7 @@ describe('shouldInitiate (regra determinística de quem inicia offer)', () => {
     const { hook, emit } = createHookMock('me-100');
     renderHook(() => useWebRTC(hook, ROOM_ID));
 
-    await emit('peerJoined', { peerId: 'me-200', userId: null, name: 'Bia' });
+    await emit('peerJoined', { peerId: 'me-200', isRegistered: false, name: 'Bia' });
 
     expect(hook.emitOffer).toHaveBeenCalledTimes(1);
     expect(hook.emitOffer).toHaveBeenCalledWith(
@@ -288,7 +288,7 @@ describe('shouldInitiate (regra determinística de quem inicia offer)', () => {
     const { hook, emit } = createHookMock('me-100');
     renderHook(() => useWebRTC(hook, ROOM_ID));
 
-    await emit('peerJoined', { peerId: 'me-050', userId: null, name: 'Ana' });
+    await emit('peerJoined', { peerId: 'me-050', isRegistered: false, name: 'Ana' });
 
     // Regra: o socket id menor oferece → devemos esperar a offer do outro lado.
     expect(hook.emitOffer).not.toHaveBeenCalled();
@@ -302,7 +302,7 @@ describe('glare / perfect negotiation no signal:offer (Bloqueio critic #4)', () 
     renderHook(() => useWebRTC(hook, ROOM_ID));
 
     // 1) Nossa offer inicial ao peer (estado have-local-offer pendente)
-    await emit('peerJoined', { peerId: 'me-200', userId: null, name: 'Bia' });
+    await emit('peerJoined', { peerId: 'me-200', isRegistered: false, name: 'Bia' });
     expect(hook.emitOffer).toHaveBeenCalledTimes(1);
     expect(pcInstances).toHaveLength(1);
     expect(pcInstances[0].signalingState).toBe('have-local-offer');
@@ -311,7 +311,7 @@ describe('glare / perfect negotiation no signal:offer (Bloqueio critic #4)', () 
     //    pendente — como polite, fazemos rollback implícito e aceitamos.
     await emit('signalOffer', {
       fromPeerId: 'me-200',
-      userId: null,
+      isRegistered: false,
       name: 'Bia',
       offer: { type: 'offer', sdp: 'remote-offer-sdp' },
     });
@@ -334,7 +334,7 @@ describe('glare / perfect negotiation no signal:offer (Bloqueio critic #4)', () 
     // 1) Recebemos a offer inicial do peer (cria o PC e responde normalmente)
     await emit('signalOffer', {
       fromPeerId: 'me-050',
-      userId: null,
+      isRegistered: false,
       name: 'Ana',
       offer: { type: 'offer', sdp: 'first-offer-sdp' },
     });
@@ -353,7 +353,7 @@ describe('glare / perfect negotiation no signal:offer (Bloqueio critic #4)', () 
     // 3) Offer colidente do peer → impolite ignora e mantém a nossa
     await emit('signalOffer', {
       fromPeerId: 'me-050',
-      userId: null,
+      isRegistered: false,
       name: 'Ana',
       offer: { type: 'offer', sdp: 'colliding-offer-sdp' },
     });
@@ -368,7 +368,7 @@ describe('glare / perfect negotiation no signal:offer (Bloqueio critic #4)', () 
     const { hook, emit } = createHookMock('me-100');
     renderHook(() => useWebRTC(hook, ROOM_ID));
 
-    await emit('peerJoined', { peerId: 'me-200', userId: null, name: 'Bia' });
+    await emit('peerJoined', { peerId: 'me-200', isRegistered: false, name: 'Bia' });
     const pc = pcInstances[0];
     expect(pc.signalingState).toBe('have-local-offer');
 
@@ -395,7 +395,7 @@ describe('glare / perfect negotiation no signal:offer (Bloqueio critic #4)', () 
 
     await emit('signalOffer', {
       fromPeerId: 'me-200',
-      userId: null,
+      isRegistered: false,
       name: 'Bia',
       offer: { type: 'offer', sdp: 'remote-offer-sdp' },
     });
@@ -443,7 +443,7 @@ describe('transceiver de áudio e corrida initMedia x signaling', () => {
     const { hook, emit } = createHookMock('me-100');
     renderHook(() => useWebRTC(hook, ROOM_ID));
 
-    await emit('peerJoined', { peerId: 'me-200', userId: null, name: 'Bia' });
+    await emit('peerJoined', { peerId: 'me-200', isRegistered: false, name: 'Bia' });
 
     const pc = pcInstances[0];
     expect(pc.addTransceiver).toHaveBeenCalledWith(
@@ -465,7 +465,7 @@ describe('transceiver de áudio e corrida initMedia x signaling', () => {
     //    (só acontece quando somos o lado impolite: socket id MAIOR).
     await emit('signalOffer', {
       fromPeerId: 'me-050',
-      userId: null,
+      isRegistered: false,
       name: 'Ana',
       offer: { type: 'offer', sdp: 'first-offer-sdp' },
     });
@@ -507,7 +507,7 @@ describe('transceiver de áudio e corrida initMedia x signaling', () => {
     const audioTrack = localStream?.getAudioTracks()[0];
 
     // Nós somos o lado que oferece (socket id menor).
-    await emit('peerJoined', { peerId: 'me-200', userId: null, name: 'Bia' });
+    await emit('peerJoined', { peerId: 'me-200', isRegistered: false, name: 'Bia' });
 
     const pc = pcInstances[0];
     // `streams` no init do addTransceiver é o que garante event.streams[0]
@@ -533,7 +533,7 @@ describe('transceiver de áudio e corrida initMedia x signaling', () => {
 
     await emit('signalOffer', {
       fromPeerId: 'me-050',
-      userId: null,
+      isRegistered: false,
       name: 'Ana',
       offer: { type: 'offer', sdp: 'first-offer-sdp' },
     });
@@ -564,7 +564,7 @@ describe('lado que responde: áudio no transceiver associado à offer (JSEP 5.10
 
     await emit('signalOffer', {
       fromPeerId: 'me-050',
-      userId: null,
+      isRegistered: false,
       name: 'Ana',
       offer: { type: 'offer', sdp: 'first-offer-sdp' },
     });
@@ -588,7 +588,7 @@ describe('lado que responde: áudio no transceiver associado à offer (JSEP 5.10
 
     await emit('signalOffer', {
       fromPeerId: 'me-050',
-      userId: null,
+      isRegistered: false,
       name: 'Ana',
       offer: { type: 'offer', sdp: 'first-offer-sdp' },
     });
@@ -650,7 +650,7 @@ describe('ontrack: áudio e tela em streams separadas', () => {
 
     await emit('signalOffer', {
       fromPeerId: 'me-050',
-      userId: null,
+      isRegistered: false,
       name: 'Ana',
       offer: { type: 'offer', sdp: 'first-offer-sdp' },
     });
@@ -672,7 +672,7 @@ describe('ontrack: áudio e tela em streams separadas', () => {
 
     await emit('signalOffer', {
       fromPeerId: 'me-050',
-      userId: null,
+      isRegistered: false,
       name: 'Ana',
       offer: { type: 'offer', sdp: 'first-offer-sdp' },
     });
@@ -705,7 +705,7 @@ describe('ontrack: áudio e tela em streams separadas', () => {
 
     await emit('signalOffer', {
       fromPeerId: 'me-050',
-      userId: null,
+      isRegistered: false,
       name: 'Ana',
       offer: { type: 'offer', sdp: 'first-offer-sdp' },
     });
@@ -731,7 +731,7 @@ describe('deafen persistente', () => {
 
     await emit('signalOffer', {
       fromPeerId: peerId,
-      userId: null,
+      isRegistered: false,
       name: 'Ana',
       offer: { type: 'offer', sdp: 'first-offer-sdp' },
     });
@@ -767,7 +767,7 @@ describe('deafen persistente', () => {
 
     await emit('signalOffer', {
       fromPeerId: 'me-050',
-      userId: null,
+      isRegistered: false,
       name: 'Ana',
       offer: { type: 'offer', sdp: 'first-offer-sdp' },
     });

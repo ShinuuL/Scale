@@ -15,7 +15,7 @@ function stream(kinds: Array<'audio' | 'video'>): MediaStream {
 function peer(id: string, name: string, sharing: boolean): PeerConnection {
   return {
     peerId: id,
-    userId: null,
+    isRegistered: false,
     name,
     connection: {} as RTCPeerConnection,
     stream: stream(['audio']),
