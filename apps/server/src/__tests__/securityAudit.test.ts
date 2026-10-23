@@ -279,3 +279,76 @@ describe('item 3 — balde de falhas de credencial de sala + credencial por head
     expect(redactUrl('/api/health')).toBe('/api/health');
   });
 });
+
+describe('item 4 — guestName validado (zod) no handshake e no upload', () => {
+  let h: Harness;
+  let roomId: string;
+
+  beforeAll(async () => {
+    h = await buildHarness();
+    const room = await prisma.room.create({ data: { name: 'Audit Item4', isPersistent: true } });
+    roomId = room.id;
+  });
+
+  afterAll(async () => {
+    await prisma.room.deleteMany({ where: { name: 'Audit Item4' } }).catch(() => {});
+    await h.app.close();
+  });
+
+  it.each([
+    ['controle', 'Eve\u0000\u0007'],
+    ['bidi override', '‮admin'],
+    ['longo demais', 'x'.repeat(41)],
+    ['so espacos', '    '],
+    ['nao-string', { evil: true }],
+  ])('handshake com guestName invalido (%s) entra como Guest', async (_label, guestName) => {
+    const watcher = await connect(h.port, { guestName: 'Watcher' });
+    const evil = await connect(h.port, { guestName });
+    try {
+      await emitAck(watcher, 'join-room', { roomId });
+      const joined = nextEvent<Record<string, unknown>>(watcher, 'room:peer-joined');
+      await emitAck(evil, 'join-room', { roomId });
+      const peer = await joined;
+      expect(peer.name).toBe('Guest');
+    } finally {
+      evil.disconnect();
+      watcher.disconnect();
+    }
+  });
+
+  it('handshake com guestName valido e aparado (trim)', async () => {
+    const watcher = await connect(h.port, { guestName: 'Watcher' });
+    const ok = await connect(h.port, { guestName: '  Ana  ' });
+    try {
+      await emitAck(watcher, 'join-room', { roomId });
+      const joined = nextEvent<Record<string, unknown>>(watcher, 'room:peer-joined');
+      await emitAck(ok, 'join-room', { roomId });
+      expect((await joined).name).toBe('Ana');
+    } finally {
+      ok.disconnect();
+      watcher.disconnect();
+    }
+  });
+
+  it('upload com guestName contendo controle grava Guest', async () => {
+    const boundary = '----audit4';
+    const payload = Buffer.concat([
+      Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; name="guestName"\r\n\r\n‮admin\r\n` +
+          `--${boundary}\r\nContent-Disposition: form-data; name="files"; filename="a.txt"\r\nContent-Type: text/plain\r\n\r\n`,
+        'utf8',
+      ),
+      Buffer.from('ola\n'),
+      Buffer.from(`\r\n--${boundary}--\r\n`),
+    ]);
+    const res = await h.app.inject({
+      method: 'POST',
+      url: `/api/rooms/${roomId}/files`,
+      payload,
+      headers: { 'content-type': `multipart/form-data; boundary=${boundary}` },
+    });
+    expect(res.statusCode).toBe(201);
+    const msg = await prisma.chatMessage.findUnique({ where: { id: JSON.parse(res.payload).messageId } });
+    expect(msg?.guestName).toBe('Guest');
+  });
+});

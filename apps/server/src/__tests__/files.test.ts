@@ -399,7 +399,7 @@ describe('REST files', () => {
     expect(msg?.content).toBe('segue o pacote');
   });
 
-  it('guestName em branco vira null em vez de string vazia', async () => {
+  it('guestName em branco vira o fallback Guest', async () => {
     const res = await app.inject({
       method: 'POST',
       url: `/api/rooms/${persistRoomId}/files`,
@@ -411,7 +411,7 @@ describe('REST files', () => {
     expect(res.statusCode).toBe(201);
     const messageId = (JSON.parse(res.payload) as { messageId: string }).messageId;
     const msg = await prisma.chatMessage.findUnique({ where: { id: messageId } });
-    expect(msg?.guestName).toBeNull();
+    expect(msg?.guestName).toBe('Guest');
   });
 
   it('guestName fora do limite e rejeitado (nao grava lixo)', async () => {
@@ -426,8 +426,8 @@ describe('REST files', () => {
     expect(res.statusCode).toBe(201);
     const messageId = (JSON.parse(res.payload) as { messageId: string }).messageId;
     const msg = await prisma.chatMessage.findUnique({ where: { id: messageId } });
-    // .max(40) falha a validacao -> fallback null
-    expect(msg?.guestName).toBeNull();
+    // .max(40) falha a validacao -> fallback 'Guest'
+    expect(msg?.guestName).toBe('Guest');
   });
 
   it('GET 410 após GC (> 7d deletedAt)', async () => {

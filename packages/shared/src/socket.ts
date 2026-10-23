@@ -113,3 +113,28 @@ export interface SocketAck {
   success?: boolean;
   error?: string;
 }
+
+// --- Nome de convidado ---
+
+/** Nome exibido quando o convidado nao informa um nome valido. */
+export const GUEST_NAME_FALLBACK = 'Guest';
+
+/** Caracteres de controle/formatacao (inclui bidi override e zero-width). */
+const CONTROL_CHARS_RE = /[\p{Cc}\p{Cf}]/u;
+
+/**
+ * Nome de convidado: trim, 1..40, sem caracteres de controle. Usado no
+ * handshake do Socket.io (`auth.guestName`) e no campo `guestName` do upload.
+ */
+export const guestNameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(40)
+  .refine((v) => !CONTROL_CHARS_RE.test(v), 'guestName contem caracteres de controle');
+
+/** Valida o nome; qualquer valor invalido (ou ausente) vira GUEST_NAME_FALLBACK. */
+export function parseGuestName(raw: unknown): string {
+  const parsed = guestNameSchema.safeParse(raw);
+  return parsed.success ? parsed.data : GUEST_NAME_FALLBACK;
+}

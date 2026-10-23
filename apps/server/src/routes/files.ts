@@ -1,10 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import fs from 'node:fs';
 import path from 'node:path';
-import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { sanitizeFilename, detectMagicBytes, saveFile, getQuotaUsage, UPLOADS_ROOT } from '../lib/uploads.js';
-import { ALLOWED_MIME_RE, CHAT_MESSAGE_MAX, MAX_FILE_SIZE_BYTES } from '@scale/shared';
+import { ALLOWED_MIME_RE, CHAT_MESSAGE_MAX, MAX_FILE_SIZE_BYTES, parseGuestName } from '@scale/shared';
 import { extractAccessFromHeaders, guardRoomAccess } from '../lib/roomAccess.js';
 import { addChatFilesBytes, incQuotaExceeded } from '../lib/metrics.js';
 import { isFileUploadRateLimited } from '../lib/rateLimit.js';
@@ -13,13 +12,11 @@ import { getClientIp } from '../lib/clientIp.js';
 /**
  * Nome de exibicao do autor do upload.
  *
- * O upload de arquivo e HTTP, nao Socket.io, entao o servidor nao tem como
- * derivar quem subiu (convidados nao tem identidade). O nome vem do cliente,
- * exatamente como ja acontece no handshake do socket (`handshake.auth.guestName`
- * — ver handler.ts:116), mantendo o mesmo modelo de confianca. Aqui ele apenas
- * e validado/truncado para nao virar lixo no banco.
+ * O upload de arquivo e HTTP, nao Socket.io: para convidado o nome vem do campo
+ * multipart `guestName`, validado com o MESMO schema do handshake do socket
+ * (parseGuestName: trim, 1..40, sem caracteres de controle; invalido -> 'Guest').
+ * Usuario logado usa o nome do JWT.
  */
-const guestNameFieldSchema = z.string().trim().min(1).max(40);
 
 export async function filesRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.post<{ Params: { id: string } }>('/api/rooms/:id/files', async (request, reply) => {
@@ -98,8 +95,7 @@ export async function filesRoutes(fastify: FastifyInstance): Promise<void> {
     const userId = (request as unknown as { userId?: string }).userId ?? null;
     // Autor do upload: sem guestName a mensagem cai no fallback 'Anon' de
     // ChatMessageItem.tsx:84 e o autor do arquivo se perde na UI.
-    const guestNameParsed = guestNameFieldSchema.safeParse(fields.guestName ?? '');
-    const guestName = guestNameParsed.success ? guestNameParsed.data : null;
+    const guestName = request.userName ?? parseGuestName(fields.guestName);
     const message = await prisma.chatMessage.create({
       data: { roomId, content, authorId: userId, guestName },
     });

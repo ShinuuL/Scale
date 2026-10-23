@@ -24,6 +24,7 @@ import {
   chatEditSchema,
   chatDeleteSchema,
   MAX_PARTICIPANTS,
+  parseGuestName,
   type PeerInfo,
 } from '@scale/shared';
 
@@ -109,6 +110,10 @@ export function createSocketServer(httpServer: HttpServer): Server {
       socket.handshake.headers?.authorization?.replace('Bearer ', '') ??
       readCookie(socket.handshake.headers?.cookie, 'token');
 
+    // guestName vem do cliente: validado com zod (trim, 1..40, sem controle);
+    // invalido ou ausente vira 'Guest' (mesma regra do upload).
+    const guestName = parseGuestName(socket.handshake.auth?.guestName);
+
     if (token) {
       try {
         const payload = verifyToken(token);
@@ -122,16 +127,16 @@ export function createSocketServer(httpServer: HttpServer): Server {
         socket.data.user = {
           userId: null,
           email: null,
-          name: socket.handshake.auth?.guestName ?? 'Guest',
-          guestName: socket.handshake.auth?.guestName ?? 'Guest',
+          name: guestName,
+          guestName,
         } satisfies SocketUser;
       }
     } else {
       socket.data.user = {
         userId: null,
         email: null,
-        name: socket.handshake.auth?.guestName ?? 'Guest',
-        guestName: socket.handshake.auth?.guestName ?? 'Guest',
+        name: guestName,
+        guestName,
       } satisfies SocketUser;
     }
     next();
