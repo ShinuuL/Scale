@@ -36,25 +36,59 @@ describe('ProfileMenu', () => {
     expect(screen.queryByRole('menu')).toBeNull();
   });
 
-  it('troca o tema e fecha o menu', () => {
+  it('Configurações abre o diálogo com o tema e Esc devolve o foco ao gatilho', () => {
     render(<ProfileMenu name="Ana" isAuthenticated={false} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Perfil de Ana' }));
-    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Safira' }));
+    const trigger = screen.getByRole('button', { name: 'Perfil de Ana' });
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Configurações' }));
+    expect(screen.queryByRole('menu')).toBeNull();
+    const dialog = screen.getByRole('dialog', { name: 'Configurações' });
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Tema Safira' }));
     expect(document.documentElement.getAttribute('data-palette')).toBe('safira');
     expect(window.localStorage.getItem(PALETTE_STORAGE_KEY)).toBe('safira');
-    expect(screen.queryByRole('menu')).toBeNull();
+    // Convidado: sem edição de perfil.
+    expect(screen.queryByLabelText('Nome de usuário')).toBeNull();
 
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('clique fora do diálogo de Configurações fecha', () => {
+    render(<ProfileMenu name="Ana" isAuthenticated={false} />);
     fireEvent.click(screen.getByRole('button', { name: 'Perfil de Ana' }));
-    expect(screen.getByRole('menuitemradio', { name: 'Safira' }).getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Configurações' }));
+    const dialog = screen.getByRole('dialog', { name: 'Configurações' });
+    // Portal no body: o fundo nao fica preso dentro do header.
+    expect(dialog.parentElement?.parentElement).toBe(document.body);
+    fireEvent.mouseDown(dialog);
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    fireEvent.mouseDown(dialog.parentElement!);
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('logado edita o nome nas Configurações', () => {
+    const user = { id: 'u1', email: 'ana@exemplo.com', name: 'Ana', createdAt: '2026-01-01', avatarUpdatedAt: null };
+    render(<ProfileMenu name="Ana" email={user.email} isAuthenticated user={user} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Perfil de Ana' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Configurações' }));
+    const input = screen.getByLabelText('Nome de usuário') as HTMLInputElement;
+    expect(input.value).toBe('Ana');
+    const save = screen.getByRole('button', { name: 'Salvar nome' }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+    fireEvent.change(input, { target: { value: 'Shinuu' } });
+    expect(save.disabled).toBe(false);
+    expect(screen.getByRole('button', { name: 'Enviar foto' })).toBeTruthy();
   });
 
   it('setas navegam entre os itens', () => {
     render(<ProfileMenu name="Ana" isAuthenticated={false} />);
     fireEvent.click(screen.getByRole('button', { name: 'Perfil de Ana' }));
     const menu = screen.getByRole('menu');
-    expect(document.activeElement).toBe(screen.getByRole('menuitemradio', { name: 'Jade' }));
+    expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Configurações' }));
     fireEvent.keyDown(menu, { key: 'ArrowDown' });
-    expect(document.activeElement).toBe(screen.getByRole('menuitemradio', { name: 'Grafite' }));
+    expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Entrar' }));
     fireEvent.keyDown(menu, { key: 'End' });
     expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Criar conta' }));
   });

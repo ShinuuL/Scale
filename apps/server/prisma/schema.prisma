@@ -18,6 +18,10 @@ model User {
   passwordHash String
   name         String
   createdAt    DateTime @default(now())
+  // Foto de perfil: caminho relativo em uploads/avatars (null = sem foto).
+  avatarPath      String?
+  avatarMime      String?
+  avatarUpdatedAt DateTime?
 
   ownedRooms  Room[]
   roomMembers RoomMember[]

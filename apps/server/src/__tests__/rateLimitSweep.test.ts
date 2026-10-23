@@ -33,6 +33,7 @@ describe('expurgo dos baldes de rate limit', () => {
       'chat',
       'loginEmail',
       'loginIp',
+      'profile',
       'refresh',
       'register',
       'roomAuthFail',

@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import Link from 'next/link';
 import { clsx } from 'clsx';
-import { PALETTES, usePalette } from '@/lib/theme';
 import { Icon } from '@/components/ui/Icon';
+import { SettingsDialog } from '@/components/ui/SettingsDialog';
+import { avatarUrl, type MeUser } from '@/lib/api';
 
 interface ProfileMenuProps {
   /** Nome exibido (conta ou convidado). */
@@ -13,28 +14,49 @@ interface ProfileMenuProps {
   email?: string | null;
   /** true quando há sessão válida. */
   isAuthenticated: boolean;
+  /** Conta completa (foto e edição do perfil nas Configurações). */
+  user?: MeUser | null;
+  /** Perfil alterado nas Configurações. */
+  onUserChange?: (user: MeUser) => void;
   className?: string;
 }
 
-const ITEM_SELECTOR = '[role="menuitemradio"], [role="menuitem"]';
+const ITEM_SELECTOR = '[role="menuitem"]';
 
 function initialOf(name: string): string {
   return (name.trim().charAt(0) || '?').toUpperCase();
 }
 
+/** Foto de perfil ou, sem ela, a inicial do nome. Sempre decorativa aqui. */
+function Avatar({ name, photo, size }: { name: string; photo: string | null; size: 'sm' | 'md' }) {
+  const box = size === 'sm' ? 'h-8 w-8 text-xs' : 'h-10 w-10 text-sm';
+  if (photo) {
+    // eslint-disable-next-line @next/next/no-img-element -- export estatico, sem otimizador de imagem
+    return <img src={photo} alt="" aria-hidden="true" className={clsx(box, 'flex-shrink-0 rounded-full object-cover')} />;
+  }
+  return (
+    <span
+      aria-hidden="true"
+      className={clsx(box, 'flex flex-shrink-0 items-center justify-center rounded-full bg-brand-600/30 font-semibold text-brand-200')}
+    >
+      {initialOf(name)}
+    </span>
+  );
+}
+
 /**
- * Menu de perfil: avatar + nome no gatilho; no painel, identidade, tema de cor
- * e ações de conta. Fecha com Esc, clique fora ou ao escolher; o foco volta ao
+ * Menu de perfil: avatar + nome no gatilho; no painel, identidade, atalho para
+ * as Configurações (perfil e tema) e ações de conta. Fecha com Esc, clique fora ou ao escolher; o foco volta ao
  * gatilho. Setas, Home e End percorrem os itens.
  */
-export function ProfileMenu({ name, email, isAuthenticated, className }: ProfileMenuProps) {
+export function ProfileMenu({ name, email, isAuthenticated, user, onUserChange, className }: ProfileMenuProps) {
   const [open, setOpen] = useState(false);
-  const [palette, setPalette] = usePalette();
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const photo = avatarUrl(user?.avatarUpdatedAt);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const menuId = useId();
-  const themeLabelId = useId();
 
   const close = useCallback((restoreFocus: boolean) => {
     setOpen(false);
@@ -51,13 +73,10 @@ export function ProfileMenu({ name, email, isAuthenticated, className }: Profile
     return () => document.removeEventListener('pointerdown', onPointerDown);
   }, [open, close]);
 
-  // Ao abrir, foco no tema selecionado (primeiro item útil).
+  // Ao abrir, foco no primeiro item.
   useEffect(() => {
     if (!open) return;
-    const menu = menuRef.current;
-    if (!menu) return;
-    const checked = menu.querySelector<HTMLElement>('[aria-checked="true"]');
-    (checked ?? menu.querySelector<HTMLElement>(ITEM_SELECTOR))?.focus();
+    menuRef.current?.querySelector<HTMLElement>(ITEM_SELECTOR)?.focus();
   }, [open]);
 
   const onMenuKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -113,12 +132,7 @@ export function ProfileMenu({ name, email, isAuthenticated, className }: Profile
           open && 'border-white/20 bg-white/[0.06]',
         )}
       >
-        <span
-          aria-hidden="true"
-          className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-600/30 text-xs font-semibold text-brand-200"
-        >
-          {initialOf(name)}
-        </span>
+        <Avatar name={name} photo={photo} size="sm" />
         <span className="hidden max-w-[10rem] truncate font-medium sm:inline">{name}</span>
       </button>
 
@@ -136,12 +150,7 @@ export function ProfileMenu({ name, email, isAuthenticated, className }: Profile
           )}
         >
           <div className="flex items-center gap-3 px-2.5 py-2.5">
-            <span
-              aria-hidden="true"
-              className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-brand-600/30 text-sm font-semibold text-brand-200"
-            >
-              {initialOf(name)}
-            </span>
+            <Avatar name={name} photo={photo} size="md" />
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-white">{name}</p>
               <p className="truncate text-xs text-slate-400">
@@ -152,38 +161,20 @@ export function ProfileMenu({ name, email, isAuthenticated, className }: Profile
 
           <div className="my-1 border-t border-white/[0.08]" role="separator" />
 
-          <div role="group" aria-labelledby={themeLabelId} className="py-1">
-            <p id={themeLabelId} className="px-2.5 pb-1 pt-1 text-xs font-medium text-slate-400">
-              Tema
-            </p>
-            {PALETTES.map((p) => {
-              const checked = palette === p.id;
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  role="menuitemradio"
-                  aria-checked={checked}
-                  tabIndex={-1}
-                  onClick={() => {
-                    setPalette(p.id);
-                    close(true);
-                  }}
-                  className={itemClass}
-                >
-                  <span
-                    aria-hidden="true"
-                    className={clsx(
-                      'block h-4 w-4 flex-shrink-0 rounded-full border',
-                      checked ? 'border-white ring-2 ring-white/30' : 'border-white/20',
-                    )}
-                    style={{ backgroundColor: p.swatch }}
-                  />
-                  <span className="flex-1">{p.label}</span>
-                  {checked && <Icon name="check" size={16} className="text-brand-400" />}
-                </button>
-              );
-            })}
+          <div className="py-1">
+            <button
+              type="button"
+              role="menuitem"
+              tabIndex={-1}
+              onClick={() => {
+                close(false);
+                setSettingsOpen(true);
+              }}
+              className={itemClass}
+            >
+              <Icon name="settings" size={16} className="text-slate-400" />
+              Configurações
+            </button>
           </div>
 
           {!isAuthenticated && (
@@ -202,6 +193,17 @@ export function ProfileMenu({ name, email, isAuthenticated, className }: Profile
             </>
           )}
         </div>
+      )}
+
+      {settingsOpen && (
+        <SettingsDialog
+          user={isAuthenticated ? user ?? null : null}
+          onUserChange={onUserChange}
+          onClose={() => {
+            setSettingsOpen(false);
+            triggerRef.current?.focus();
+          }}
+        />
       )}
     </div>
   );

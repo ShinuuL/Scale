@@ -21,7 +21,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { ToastProvider, useToast } from '@/components/ui/Toast';
 import { Icon } from '@/components/ui/Icon';
 import { ProfileMenu } from '@/components/ui/ProfileMenu';
-import { api } from '@/lib/api';
+import { api, type MeUser } from '@/lib/api';
 import { copyText } from '@/lib/clipboard';
 import { roomUrl } from '@/lib/roomLink';
 import { roomInviteHeaders } from '@/lib/roomAccess';
@@ -134,6 +134,7 @@ function RoomPageInner({ roomId }: { roomId: string }) {
   // "Você", lista de participantes e autor do chat/upload).
   const [accountName, setAccountName] = useState<string | null>(null);
   const [accountEmail, setAccountEmail] = useState<string | null>(null);
+  const [account, setAccount] = useState<MeUser | null>(null);
 
   // Persist chatOpen em localStorage
   useEffect(() => {
@@ -155,6 +156,7 @@ function RoomPageInner({ roomId }: { roomId: string }) {
         setCurrentUserId(res.user.id);
         setAccountName(res.user.name);
         setAccountEmail(res.user.email);
+        setAccount(res.user);
       })
       .catch(() => {
         setCurrentUserId(null);
@@ -558,6 +560,11 @@ function RoomPageInner({ roomId }: { roomId: string }) {
             name={displayName}
             email={accountEmail}
             isAuthenticated={currentUserId !== null}
+            user={account}
+            onUserChange={(u) => {
+              setAccount(u);
+              setAccountName(u.name);
+            }}
           />
         </div>
       </header>

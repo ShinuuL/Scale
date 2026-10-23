@@ -15,7 +15,7 @@ import { DeleteRoomDialog } from '@/components/room/DeleteRoomDialog';
 import { RoomCard } from '@/components/room/RoomCard';
 import { takeFlash } from '@/lib/flash';
 import { ProfileMenu } from '@/components/ui/ProfileMenu';
-import { api, FETCH_RETRY_MAX_ATTEMPTS } from '@/lib/api';
+import { api, FETCH_RETRY_MAX_ATTEMPTS, type MeUser } from '@/lib/api';
 import type { RoomListItem } from '@/lib/validation';
 import { ROOM_NAME_MIN, ROOM_NAME_MAX } from '@/lib/validation';
 import { roomPath } from '@/lib/roomLink';
@@ -203,7 +203,7 @@ function HomePageInner() {
   // ─── Auth + rooms ───────────────────────────────────────────
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
-  const [account, setAccount] = useState<{ name: string; email: string } | null>(null);
+  const [account, setAccount] = useState<MeUser | null>(null);
   const [rooms, setRooms] = useState<RoomListItem[]>([]);
   const [roomsLoading, setRoomsLoading] = useState(true);
   const [roomsError, setRoomsError] = useState<string | null>(null);
@@ -244,7 +244,7 @@ function HomePageInner() {
       let authed = false;
       try {
         const me = await api.getMe();
-        if (!cancelled) setAccount({ name: me.user.name, email: me.user.email });
+        if (!cancelled) setAccount(me.user);
         authed = true;
       } catch {
         authed = false;
@@ -422,6 +422,8 @@ function HomePageInner() {
                 name={account?.name ?? 'Convidado'}
                 email={account?.email}
                 isAuthenticated={isAuthenticated}
+                user={account}
+                onUserChange={setAccount}
               />
             )}
           </div>

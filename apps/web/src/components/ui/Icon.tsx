@@ -48,6 +48,7 @@ export type IconName =
   | 'paperclip'
   | 'phone'
   | 'search'
+  | 'settings'
   | 'speaker'
   | 'speakerOff'
   | 'trash'
@@ -232,6 +233,13 @@ export const ICONS: Record<IconName, IconShape[]> = {
     },
     { d: 'M5.2 8.8v9.1A2.6 2.6 0 0 0 7.8 20.5h8.4a2.6 2.6 0 0 0 2.6-2.6V8.8' },
     { d: 'M9.9 12.6h4.2' },
+  ],
+  // Engrenagem: miolo circular e coroa com oito dentes.
+  settings: [
+    { d: 'M12 15.1a3.1 3.1 0 1 0 0-6.2 3.1 3.1 0 0 0 0 6.2Z' },
+    {
+      d: 'M10.3 3.5h3.4l.5 2.3 1.6.9 2.2-.8 1.7 2.9-1.8 1.6v1.8l1.8 1.6-1.7 2.9-2.2-.8-1.6.9-.5 2.3h-3.4l-.5-2.3-1.6-.9-2.2.8-1.7-2.9 1.8-1.6v-1.8L4.3 8.8 6 5.9l2.2.8 1.6-.9.5-2.3Z',
+    },
   ],
   // Lixeira: tampa com alça, corpo afunilado e dois frisos.
   trash: [

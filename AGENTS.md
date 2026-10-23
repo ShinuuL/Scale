@@ -187,7 +187,11 @@ docker compose up --build -d
   `application/zip`), validação por magic bytes e quota de 200 MB por sala
 - Upload bloqueado em sala temporária (apenas persistente aceita arquivos)
 - Sistema de ícones internos: UI sem emojis, `apps/web/src/components/ui/Icon.tsx`
-  com 29 ícones (SVG vetorial, `stroke="currentColor"`), sem dependência externa
+  com 30 ícones (SVG vetorial, `stroke="currentColor"`), sem dependência externa
+- Configurações (menu de perfil, ícone `settings`): nome de usuário
+  (`PATCH /api/me`, reemite o JWT), foto de perfil (`PUT|GET|DELETE
+  /api/me/avatar`, até 32 MB, PNG/JPEG/WebP por magic bytes, em
+  `uploads/avatars`) e tema. Balde `profile`: 20 / 10 min por usuário
 
 ## Requisitos de Infra
 

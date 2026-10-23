@@ -306,6 +306,20 @@ export function resetFileUploadRateLimit(ip: string): void {
   reset(uploadStore, ip);
 }
 
+// Perfil (nome e foto): 20 / 10 min por USUARIO (chave = userId). A rota exige
+// login; a foto grava ate 32 MB no disco por chamada.
+const PROFILE_WINDOW_MS = 10 * 60_000;
+const PROFILE_MAX = 20;
+const profileStore = createBucket('profile');
+
+export function isProfileUpdateRateLimited(userId: string): RateLimitResult {
+  return take(profileStore, userId, PROFILE_WINDOW_MS, PROFILE_MAX);
+}
+
+export function resetProfileUpdateRateLimit(userId: string): void {
+  reset(profileStore, userId);
+}
+
 // Exclusao de sala: 20 / 10 min por USUARIO (chave = userId). A rota exige
 // login, entao o balde nao depende de IP; sem isencao de loopback.
 const ROOM_DELETE_WINDOW_MS = 10 * 60_000;

@@ -25,6 +25,19 @@ export const ALLOWED_MIME_RE =
 export const CHAT_FILE_ACCEPT =
   'image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,audio/*,application/zip';
 
+/** Tamanho maximo da foto de perfil (bytes; 32 MB decimais). */
+export const MAX_AVATAR_SIZE_BYTES = 32_000_000;
+
+/** Formatos aceitos na foto de perfil (conferidos por magic bytes no servidor). */
+export const AVATAR_MIMES = ['image/png', 'image/jpeg', 'image/webp'] as const;
+
+/** Valor do `accept` do input da foto de perfil. */
+export const AVATAR_FILE_ACCEPT = AVATAR_MIMES.join(',');
+
+/** Limites do nome de exibicao do usuario. */
+export const USER_NAME_MIN = 1;
+export const USER_NAME_MAX = 100;
+
 /** Limites do nome da sala. */
 export const ROOM_NAME_MIN = 3;
 export const ROOM_NAME_MAX = 50;

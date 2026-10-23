@@ -67,6 +67,20 @@ export async function fetchWithRetry(
   throw lastError;
 }
 
+export interface MeUser {
+  id: string;
+  email: string;
+  name: string;
+  createdAt: string;
+  /** ISO da ultima troca de foto; null = sem foto. */
+  avatarUpdatedAt?: string | null;
+}
+
+/** URL da propria foto, com versao para furar cache ao trocar. */
+export function avatarUrl(avatarUpdatedAt: string | null | undefined): string | null {
+  return avatarUpdatedAt ? `/api/me/avatar?v=${encodeURIComponent(avatarUpdatedAt)}` : null;
+}
+
 class ApiClient {
   private baseUrl: string;
 
@@ -162,8 +176,34 @@ class ApiClient {
     return authResponseSchema.parse(data);
   }
 
-  async getMe(): Promise<{ user: { id: string; email: string; name: string; createdAt: string } }> {
+  async getMe(): Promise<{ user: MeUser }> {
     return this.request('/api/auth/me');
+  }
+
+  // ─── Perfil ─────────────────────────────────────────────────
+  async updateProfile(input: { name: string }): Promise<{ user: MeUser }> {
+    return this.request('/api/me', { method: 'PATCH', body: JSON.stringify(input) });
+  }
+
+  /** Multipart: sem Content-Type manual (o browser define o boundary). */
+  async uploadAvatar(file: File): Promise<{ user: MeUser }> {
+    const form = new FormData();
+    form.append('avatar', file);
+    const response = await fetch(`${this.baseUrl}/api/me/avatar`, {
+      method: 'PUT',
+      body: form,
+      credentials: 'include',
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error: ApiError = { error: body.error || `HTTP ${response.status}`, status: response.status };
+      throw error;
+    }
+    return body as { user: MeUser };
+  }
+
+  async deleteAvatar(): Promise<{ user: MeUser }> {
+    return this.request('/api/me/avatar', { method: 'DELETE', body: '{}' });
   }
 
   // ─── Health ─────────────────────────────────────────────────
