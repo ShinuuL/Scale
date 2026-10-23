@@ -197,7 +197,7 @@ Dashboard em `/metrics` com cards (uptime, salas, peers) e auto-refresh a cada 1
 
 Proxy do backend com dois tokens distintos:
 
-- `MCP_TOKEN`: quem chama o MCP (`curl -H "Authorization: Bearer $MCP_TOKEN" http://localhost:4001/mcp/metrics`).
+- `MCP_TOKEN`: quem chama o MCP (`curl -H "Authorization: Bearer $MCP_TOKEN" http://127.0.0.1:4001/mcp/metrics`). Obrigatorio, minimo 32 caracteres (o MCP aborta o start sem ele), comparado em tempo constante. O MCP so e publicado em `127.0.0.1:4001`, nao tem CORS e valida `:id` como UUID.
 - `METRICS_SERVICE_TOKEN`: token de servico (>= 32 caracteres) que o MCP usa para chamar `/api/metrics`; o backend le o mesmo valor do `.env` e compara em tempo constante. Sem ele, `/mcp/metrics` responde **503** com instrucao. Usuarios logados so leem `/api/metrics` se o email estiver em `METRICS_ADMIN_EMAILS` (vazio = ninguem; demais recebem 403).
 
 ## Testes

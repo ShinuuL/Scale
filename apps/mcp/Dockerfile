@@ -15,7 +15,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 RUN apk add --no-cache wget
 COPY --from=builder /app/apps/mcp/dist ./dist
-# Dependencias hoisted na raiz do workspace (fastify, @fastify/cors).
+# Dependencias hoisted na raiz do workspace (fastify, zod).
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/apps/mcp/package.json ./
 USER node

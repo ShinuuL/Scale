@@ -135,7 +135,8 @@ services:
     profiles:
       - mcp
     ports:
-      - "4001:4001"
+      # So loopback: o MCP e para ferramentas no host, nunca para a LAN/tunel.
+      - "127.0.0.1:4001:4001"
     environment:
       - PORT=4001
       - MCP_TOKEN=${MCP_TOKEN}
