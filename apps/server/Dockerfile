@@ -3,10 +3,14 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY package.json package-lock.json* ./
+COPY packages/shared/package.json ./packages/shared/
 COPY apps/server/package.json ./apps/server/
 COPY apps/server/prisma ./apps/server/prisma
-RUN npm install --workspace=scale-backend
+RUN npm install --workspace=@scale/shared --workspace=scale-backend
 RUN npx prisma generate --schema=apps/server/prisma/schema.prisma
+# @scale/shared: compilado para ESM + .d.ts antes do server (o server importa o dist).
+COPY packages/shared ./packages/shared
+RUN npm run build --workspace=@scale/shared
 COPY apps/server ./apps/server
 RUN npm run build --workspace=scale-backend
 
@@ -27,6 +31,10 @@ COPY --from=builder /app/apps/server/dist ./dist
 # resolution from dist/*.js finds them without clobbering root versions.
 COPY --from=builder /app/apps/server/node_modules ./dist/node_modules
 COPY --from=builder /app/node_modules ./node_modules
+# node_modules/@scale/shared e um symlink do workspace para ../packages/shared:
+# o alvo precisa existir na imagem final (so package.json + dist).
+COPY --from=builder /app/packages/shared/package.json ./packages/shared/package.json
+COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
 COPY --from=builder /app/apps/server/prisma ./prisma
 COPY --from=builder /app/apps/server/package.json ./
 USER appuser

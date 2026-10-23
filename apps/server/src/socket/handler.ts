@@ -16,7 +16,9 @@ import {
   chatMessageSchema,
   chatEditSchema,
   chatDeleteSchema,
-} from './validation.js';
+  MAX_PARTICIPANTS,
+  type PeerInfo,
+} from '@scale/shared';
 
 interface SocketUser {
   userId: string | null;
@@ -35,7 +37,7 @@ interface RoomPeer {
 const roomPeers = new Map<string, Map<string, RoomPeer>>();
 const emptyTimers = new Map<string, NodeJS.Timeout>();
 
-const MAX_PARTICIPANTS = 8;
+// MAX_PARTICIPANTS vem de @scale/shared (teto da malha, mesmo valor do cliente).
 const EMPTY_ROOM_TTL_MS = 5 * 60 * 1000; // 5 minutos vazia → apaga (temporárias)
 
 // --- Chat (Opção A) — buffer FIFO ~100 por sala temporária ---
@@ -211,12 +213,13 @@ export function createSocketServer(httpServer: HttpServer): Server {
         socket.data.roomId = roomId;
 
         // Notify others
-        socket.to(roomId).emit('room:peer-joined', {
+        const joined: PeerInfo = {
           peerId: socket.id,
           userId: user.userId,
           name: user.name,
           guestName: user.guestName,
-        });
+        };
+        socket.to(roomId).emit('room:peer-joined', joined);
 
         // Send current peers list to the new joiner.
         //
@@ -228,7 +231,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
         // mais antigo não era o que iniciava a offer.
         const peersList = Array.from(peers.values())
           .filter((p) => p.socketId !== socket.id)
-          .map((p) => ({
+          .map((p): PeerInfo => ({
             peerId: p.socketId,
             userId: p.userId,
             name: p.name,

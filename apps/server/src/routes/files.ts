@@ -3,7 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
-import { sanitizeFilename, detectMagicBytes, saveFile, getQuotaUsage, ALLOWED_MIME_RE, UPLOADS_ROOT } from '../lib/uploads.js';
+import { sanitizeFilename, detectMagicBytes, saveFile, getQuotaUsage, UPLOADS_ROOT } from '../lib/uploads.js';
+import { ALLOWED_MIME_RE, CHAT_MESSAGE_MAX, MAX_FILE_SIZE_BYTES } from '@scale/shared';
 import { extractAccessFromQuery, hasRoomAccess } from '../lib/roomAccess.js';
 import { addChatFilesBytes, incQuotaExceeded } from '../lib/metrics.js';
 import { isFileUploadRateLimited } from '../lib/rateLimit.js';
@@ -65,7 +66,7 @@ export async function filesRoutes(fastify: FastifyInstance): Promise<void> {
       }
 
       const buf = await part.toBuffer();
-      if (buf.length > 15_000_000) return reply.code(413).send({ error: 'File too large. Max 15MB' });
+      if (buf.length > MAX_FILE_SIZE_BYTES) return reply.code(413).send({ error: 'File too large. Max 15MB' });
       const mime = part.mimetype;
       if (!ALLOWED_MIME_RE.test(mime)) return reply.code(400).send({ error: 'Tipo não permitido', mime });
       // Magic bytes ESTRITO (critic): se detectMagicBytes devolve um mime canônico
@@ -93,7 +94,7 @@ export async function filesRoutes(fastify: FastifyInstance): Promise<void> {
 
     // cria ChatMessage para agrupar arquivos (content vem do campo multipart 'content')
     const contentField = fields.content ?? (request.body as Record<string, unknown>)?.content;
-    const content = (typeof contentField === 'string' ? contentField : '').trim().slice(0, 500) ?? '';
+    const content = (typeof contentField === 'string' ? contentField : '').trim().slice(0, CHAT_MESSAGE_MAX) ?? '';
     const userId = (request as unknown as { userId?: string }).userId ?? null;
     // Autor do upload: sem guestName a mensagem cai no fallback 'Anon' de
     // ChatMessageItem.tsx:84 e o autor do arquivo se perde na UI.

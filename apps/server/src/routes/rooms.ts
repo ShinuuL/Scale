@@ -5,13 +5,11 @@ import bcrypt from 'bcryptjs';
 import { prisma } from '../lib/prisma.js';
 import { isRoomCreateRateLimited } from '../lib/rateLimit.js';
 import { getClientIp } from '../lib/clientIp.js';
+import { createRoomSchema as sharedCreateRoomSchema } from '@scale/shared';
 
-const createRoomSchema = z.object({
-  name: z.string().min(3).max(50),
-  isPersistent: z.boolean().default(false),
-  isPrivate: z.boolean().default(false),
-  maxParticipants: z.number().int().min(2).max(8).default(8),
-  ttlMinutes: z.number().int().min(1).max(1440).optional(), // 1 min to 24 hours
+// Campos comuns (nome, persistencia, teto, TTL) vem de @scale/shared; o server
+// acrescenta a senha da sala privada.
+const createRoomSchema = sharedCreateRoomSchema.extend({
   password: z.string().min(8).max(128).optional(),
 });
 

@@ -2,8 +2,11 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY package.json package-lock.json* ./
+COPY packages/shared/package.json ./packages/shared/
 COPY apps/web/package.json ./apps/web/
-RUN npm install --workspace=scale-frontend
+RUN npm install --workspace=@scale/shared --workspace=scale-frontend
+COPY packages/shared ./packages/shared
+RUN npm run build --workspace=@scale/shared
 COPY apps/web ./apps/web
 # Injetados pelo docker-compose (build.args). O Next inlina NEXT_PUBLIC_* no
 # bundle do browser em BUILD time, entao precisam existir nesta etapa —

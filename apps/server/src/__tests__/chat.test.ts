@@ -5,7 +5,7 @@ import { prisma } from '../lib/prisma.js';
 describe('chat validation', () => {
   // Lazy imports — will fail until schemas are exported
   async function getSchemas() {
-    const mod = await import('../socket/validation.js');
+    const mod = await import('@scale/shared');
     return {
       chatMessageSchema: mod.chatMessageSchema,
       chatEditSchema: mod.chatEditSchema,

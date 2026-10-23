@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import type { Socket } from 'socket.io-client';
+import { CHAT_MESSAGE_MAX } from '@scale/shared';
 import { chatMessageClientSchema, chatEditClientSchema } from '@/lib/validation';
 
 // ─── Tipos públicos ────────────────────────────────────────────
@@ -226,7 +227,7 @@ export function useChat(
     async (files: File[], content?: string, guestName?: string) => {
       const form = new FormData();
       const trimmedContent = content?.trim();
-      if (trimmedContent) form.append('content', trimmedContent.slice(0, 500));
+      if (trimmedContent) form.append('content', trimmedContent.slice(0, CHAT_MESSAGE_MAX));
       // O backend e quem monta a mensagem: sem o nome aqui o autor do arquivo
       // aparece como "Anon" (ChatMessageItem.tsx). Vai ANTES dos arquivos para
       // que a checagem de membership do servidor ja veja os campos.

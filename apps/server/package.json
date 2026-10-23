@@ -19,6 +19,7 @@
     "@fastify/helmet": "^13.1.1",
     "@fastify/multipart": "^9.4.0",
     "@prisma/client": "^6.0.0",
+    "@scale/shared": "*",
     "bcryptjs": "^3.0.3",
     "fastify": "^5.0.0",
     "jsonwebtoken": "^9.0.3",

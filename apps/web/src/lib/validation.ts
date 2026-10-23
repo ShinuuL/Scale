@@ -1,22 +1,10 @@
 import { z } from 'zod';
+import { ALLOWED_MIME_RE, CHAT_MESSAGE_MAX, MAX_FILE_SIZE_BYTES } from '@scale/shared';
 
 // ─── Room schemas ───────────────────────────────────────────────
-/** Limites do nome da sala, compartilhados entre o formulário e o schema. */
-export const ROOM_NAME_MIN = 3;
-export const ROOM_NAME_MAX = 50;
-
-export const createRoomSchema = z.object({
-  name: z
-    .string()
-    .min(ROOM_NAME_MIN, `Room name must be at least ${ROOM_NAME_MIN} characters`)
-    .max(ROOM_NAME_MAX, `Room name must be at most ${ROOM_NAME_MAX} characters`),
-  isPersistent: z.boolean().default(false),
-  isPrivate: z.boolean().default(false),
-  maxParticipants: z.number().int().min(2).max(8).default(8),
-  ttlMinutes: z.number().int().min(1).max(1440).optional(),
-});
-
-export type CreateRoomInput = z.infer<typeof createRoomSchema>;
+// Schema de criacao e limites do nome sao os MESMOS do server (@scale/shared).
+export { ROOM_NAME_MIN, ROOM_NAME_MAX, createRoomSchema } from '@scale/shared';
+export type { CreateRoomInput } from '@scale/shared';
 
 // ─── Auth schemas ───────────────────────────────────────────────
 export const loginSchema = z.object({
@@ -117,20 +105,20 @@ export const chatMessageClientSchema = z
   .string()
   .trim()
   .min(1, 'Mensagem não pode estar vazia')
-  .max(500, 'Máx. 500 caracteres');
+  .max(CHAT_MESSAGE_MAX, `Máx. ${CHAT_MESSAGE_MAX} caracteres`);
 
 export const chatEditClientSchema = z
   .string()
   .trim()
   .min(1, 'Mensagem não pode estar vazia')
-  .max(500, 'Máx. 500 caracteres');
+  .max(CHAT_MESSAGE_MAX, `Máx. ${CHAT_MESSAGE_MAX} caracteres`);
 
-export const ALLOWED_MIME_CLIENT_RE =
-  /^(image\/.*|application\/pdf|text\/plain|audio\/.*|application\/zip)$/;
+/** Mesma allowlist do server (@scale/shared); o server ainda confere magic bytes. */
+export const ALLOWED_MIME_CLIENT_RE = ALLOWED_MIME_RE;
 
 export const fileClientSchema = z
   .object({
     file: z.instanceof(File),
   })
-  .refine((f) => f.file.size <= 15_000_000, 'Máx. 15MB')
+  .refine((f) => f.file.size <= MAX_FILE_SIZE_BYTES, 'Máx. 15MB')
   .refine((f) => ALLOWED_MIME_CLIENT_RE.test(f.file.type), 'Tipo não permitido');

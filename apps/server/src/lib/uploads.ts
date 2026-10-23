@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { prisma } from './prisma.js';
 
-export const ALLOWED_MIME_RE = /^(image\/.*|application\/pdf|text\/plain|audio\/.*|application\/zip)$/;
+// Allowlist de MIME: fonte unica em @scale/shared (ALLOWED_MIME_RE).
 export const UPLOADS_ROOT = path.resolve(process.cwd(), 'uploads');
 
 export function sanitizeFilename(name: string): string {

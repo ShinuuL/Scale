@@ -3,13 +3,14 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import type { Socket } from 'socket.io-client';
 import type { ChatApi, ChatMessage } from '@/hooks/useChat';
+import { CHAT_MESSAGE_MAX, MAX_FILES_PER_MESSAGE } from '@scale/shared';
 import { chatMessageClientSchema, fileClientSchema } from '@/lib/validation';
 import { ChatMessageItem } from '@/components/ChatMessageItem';
 import { Icon, type IconName } from '@/components/ui/Icon';
 
 const MENTION_TOKEN_RE = /@(\w[\w .-]{0,49})/g;
 const MENTION_TRAILING_RE = /@(\w[\w .-]{0,49})$/;
-const MAX_FILES = 5;
+const MAX_FILES = MAX_FILES_PER_MESSAGE;
 
 function extractMentions(text: string, peers: string[]): string[] {
   const matches = Array.from(text.matchAll(MENTION_TOKEN_RE), (m) => m[1].trim());
@@ -205,7 +206,7 @@ export function ChatPanel({
 
   if (!open) return null;
 
-  const charOverflow = input.length > 500;
+  const charOverflow = input.length > CHAT_MESSAGE_MAX;
   const canSend = (input.trim().length > 0 || selectedFiles.length > 0) && !charOverflow;
 
   const panelContent = (
@@ -356,7 +357,7 @@ export function ChatPanel({
             data-testid="char-counter"
             className={`text-xs ${charOverflow ? 'text-red-400 font-medium' : 'text-slate-400'}`}
           >
-            {input.length}/500
+            {input.length}/{CHAT_MESSAGE_MAX}
           </span>
           <div className="flex items-center gap-2">
             <label className="text-xs px-2 py-1.5 bg-white/10 rounded cursor-pointer text-slate-300 hover:bg-white/15">

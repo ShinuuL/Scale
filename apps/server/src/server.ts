@@ -13,6 +13,7 @@ import { messagesRoutes } from './routes/messages.js';
 import { filesRoutes } from './routes/files.js';
 import { createSocketServer } from './socket/handler.js';
 import { gcDeletedFiles } from './lib/uploads.js';
+import { MAX_FILE_SIZE_BYTES, MAX_FILES_PER_MESSAGE } from '@scale/shared';
 import { resolveTrustProxy } from './lib/clientIp.js';
 import multipart from '@fastify/multipart';
 
@@ -37,7 +38,9 @@ await server.register(cookie);
 await server.register(corsPlugin);
 await server.register(helmetPlugin);
 await server.register(authPlugin);
-await server.register(multipart, { limits: { fileSize: 15_000_000, files: 5 } });
+await server.register(multipart, {
+  limits: { fileSize: MAX_FILE_SIZE_BYTES, files: MAX_FILES_PER_MESSAGE },
+});
 
 // Routes
 await server.register(authRoutes);

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { io, Socket } from 'socket.io-client';
 import type { ChatMessage } from '@/hooks/useChat';
+import type { JoinRoomPayload, PeerInfo, PeerLeftEvent, ScreenShareStateEvent } from '@scale/shared';
 
 function getWsUrl(): string {
   // Porta do backend para HTTP simples. Exposta como variável (default 4000)
@@ -24,12 +25,8 @@ function getWsUrl(): string {
   return process.env.NEXT_PUBLIC_WS_URL || `http://localhost:${port}`;
 }
 
-export interface PeerInfo {
-  peerId: string;
-  userId: string | null;
-  name: string;
-  guestName?: string;
-}
+// Shape do wire definido uma vez para web e server.
+export type { PeerInfo } from '@scale/shared';
 
 export interface JoinRoomResult {
   success: boolean;
@@ -57,12 +54,12 @@ export interface UseSocketReturn {
   emitAnswer: (roomId: string, targetPeerId: string, answer: RTCSessionDescriptionInit) => Promise<void>;
   emitIceCandidate: (roomId: string, targetPeerId: string, candidate: RTCIceCandidate) => Promise<void>;
   onPeerJoined: (cb: (peer: PeerInfo) => void) => () => void;
-  onPeerLeft: (cb: (data: { peerId: string }) => void) => () => void;
+  onPeerLeft: (cb: (data: PeerLeftEvent) => void) => () => void;
   onSignalOffer: (cb: (data: { fromPeerId: string; userId: string | null; name: string; offer: RTCSessionDescriptionInit }) => void) => () => void;
   onSignalAnswer: (cb: (data: { fromPeerId: string; userId: string | null; name: string; answer: RTCSessionDescriptionInit }) => void) => () => void;
   onSignalIceCandidate: (cb: (data: { fromPeerId: string; userId: string | null; candidate: RTCIceCandidateInit }) => void) => () => void;
   emitScreenShareState: (roomId: string, targetPeerId: string, isScreenSharing: boolean) => Promise<void>;
-  onScreenShareState: (cb: (data: { fromPeerId: string; isScreenSharing: boolean }) => void) => () => void;
+  onScreenShareState: (cb: (data: ScreenShareStateEvent) => void) => () => void;
   onReconnect: (cb: () => void) => () => void;
   guestName: string;
   setGuestName: (name: string) => void;
@@ -80,11 +77,11 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
   const [guestName, setGuestName] = useState(guestNameOverride ?? `Guest-${Math.random().toString(36).slice(2, 6)}`);
   const callbacksRef = useRef({
     peerJoined: [] as Array<(peer: PeerInfo) => void>,
-    peerLeft: [] as Array<(data: { peerId: string }) => void>,
+    peerLeft: [] as Array<(data: PeerLeftEvent) => void>,
     signalOffer: [] as Array<(data: { fromPeerId: string; userId: string | null; name: string; offer: RTCSessionDescriptionInit }) => void>,
     signalAnswer: [] as Array<(data: { fromPeerId: string; userId: string | null; name: string; answer: RTCSessionDescriptionInit }) => void>,
     signalIceCandidate: [] as Array<(data: { fromPeerId: string; userId: string | null; candidate: RTCIceCandidateInit }) => void>,
-    screenShareState: [] as Array<(data: { fromPeerId: string; isScreenSharing: boolean }) => void>,
+    screenShareState: [] as Array<(data: ScreenShareStateEvent) => void>,
     reconnect: [] as Array<() => void>,
   });
 
@@ -138,7 +135,7 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
       callbacksRef.current.peerJoined.forEach((cb) => cb(data));
     });
 
-    sock.on('room:peer-left', (data: { peerId: string }) => {
+    sock.on('room:peer-left', (data: PeerLeftEvent) => {
       callbacksRef.current.peerLeft.forEach((cb) => cb(data));
     });
 
@@ -154,7 +151,7 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
       callbacksRef.current.signalIceCandidate.forEach((cb) => cb(data));
     });
 
-    sock.on('signal:screen-share-state', (data: { fromPeerId: string; isScreenSharing: boolean }) => {
+    sock.on('signal:screen-share-state', (data: ScreenShareStateEvent) => {
       callbacksRef.current.screenShareState.forEach((cb) => cb(data));
     });
 
@@ -190,7 +187,7 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
           return;
         }
 
-        const payload: { roomId: string; inviteToken?: string; guestName?: string; password?: string } = {
+        const payload: JoinRoomPayload = {
           roomId,
         };
         if (inviteToken) payload.inviteToken = inviteToken;
@@ -335,7 +332,7 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
     };
   }, []);
 
-  const onPeerLeft = useCallback((cb: (data: { peerId: string }) => void): (() => void) => {
+  const onPeerLeft = useCallback((cb: (data: PeerLeftEvent) => void): (() => void) => {
     callbacksRef.current.peerLeft.push(cb);
     return () => {
       const idx = callbacksRef.current.peerLeft.indexOf(cb);
@@ -367,7 +364,7 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
     };
   }, []);
 
-  const onScreenShareState = useCallback((cb: (data: { fromPeerId: string; isScreenSharing: boolean }) => void): (() => void) => {
+  const onScreenShareState = useCallback((cb: (data: ScreenShareStateEvent) => void): (() => void) => {
     callbacksRef.current.screenShareState.push(cb);
     return () => {
       const idx = callbacksRef.current.screenShareState.indexOf(cb);

@@ -3,15 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "workspaces": [
+    "packages/*",
     "apps/*"
   ],
   "scripts": {
-    "dev": "node scripts/dev.mjs",
-    "dev:backend": "npm run dev -w scale-backend",
-    "dev:frontend": "npm run dev -w scale-frontend",
-    "build": "npm run build --workspaces --if-present",
-    "lint": "npm run lint --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present",
+    "dev": "npm run build:shared && node scripts/dev.mjs",
+    "dev:backend": "npm run build:shared && npm run dev -w scale-backend",
+    "dev:frontend": "npm run build:shared && npm run dev -w scale-frontend",
+    "build:shared": "npm run build -w @scale/shared",
+    "build": "npm run build:shared && npm run build -w scale-backend -w scale-frontend -w scale-mcp",
+    "lint": "npm run build:shared && npm run lint --workspaces --if-present",
+    "test": "npm run build:shared && npm run test --workspaces --if-present",
     "test:e2e": "playwright test",
     "docker:config": "docker compose --profile mcp config"
   },
