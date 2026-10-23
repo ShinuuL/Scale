@@ -45,7 +45,7 @@
 
 ## Ícone
 
-O ícone do Scale é o **S escamado** em PNG: gradiente **azul → roxo** (`#3b82f6 → #8b5cf6 → #7c3aed`), escamas sobrepostas e **3 nós brancos** conectados por uma linha curva fina — os peers da mesh. O PNG (`frontend/public/logo.png`, 512×512, fundo transparente) é a **fonte da verdade**. O `logo.svg` existe apenas como fallback vetorial extra e **nunca é referenciado** na aplicação.
+O ícone do Scale é o **S escamado** em PNG: gradiente **azul → roxo** (`#3b82f6 → #8b5cf6 → #7c3aed`), escamas sobrepostas e **3 nós brancos** conectados por uma linha curva fina — os peers da mesh. O PNG (`apps/web/public/logo.png`, 512×512, fundo transparente) é a **fonte da verdade**. O `logo.svg` existe apenas como fallback vetorial extra e **nunca é referenciado** na aplicação.
 
 ### Formatos
 
@@ -68,7 +68,7 @@ O ícone do Scale é o **S escamado** em PNG: gradiente **azul → roxo** (`#3b8
 ## Iconografia de UI
 
 A interface **não usa emojis**: todo ícone da aplicação é um **SVG vetorial** do
-componente interno `frontend/src/components/ui/Icon.tsx` (catálogo fechado de
+componente interno `apps/web/src/components/ui/Icon.tsx` (catálogo fechado de
 **29 ícones**), sem biblioteca externa de ícones (lucide, heroicons, react-icons
 e afins). O arquivo é `"use client"` e depende apenas de `clsx`.
 

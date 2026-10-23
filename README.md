@@ -1,6 +1,6 @@
 # Scale
 
-![Scale logo](./frontend/public/logo.png)
+![Scale logo](./apps/web/public/logo.png)
 
 **P2P mesh 2-8 com acesso remoto por túnel cloudflared** — Sistema de videochamadas P2P com escamas de dragão. Sala de voz e tela compartilhada, expostas por um túnel rápido `*.trycloudflare.com`. Suporta 2-8 participantes, salas temporárias e persistentes, com wizard de onboarding.
 
@@ -267,7 +267,7 @@ cd backend && npx prisma studio       # Interface visual do DB
 - **PRs**: Descrever mudancas, anexar testes e screenshots
 - **TypeScript**: Strict mode, sem `any`, validacao com Zod
 - **Testes**: TDD, testes antes ou durante implementacao
-- **UI**: sem emojis na interface; icones sao SVG internos de `frontend/src/components/ui/Icon.tsx`, sem dependencia externa
+- **UI**: sem emojis na interface; icones sao SVG internos de `apps/web/src/components/ui/Icon.tsx`, sem dependencia externa
 
 ## Licenca
 

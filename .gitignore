@@ -15,7 +15,7 @@ coverage/
 init.md
 
 # Uploads de chat (dados de runtime, recriados sob demanda por uploads.ts)
-backend/uploads/
+apps/server/uploads/
 uploads/
 
 # Playwright

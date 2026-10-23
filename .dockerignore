@@ -1,0 +1,21 @@
+# Contexto de build = raiz do monorepo. Nada de artefatos do host (node_modules
+# do Windows, builds locais, bancos e anexos de dev) entra na imagem.
+**/node_modules
+**/dist
+**/.next
+**/out
+**/*.tsbuildinfo
+**/*.db
+**/*.db-journal
+apps/server/uploads
+data
+.env
+.env.*
+!.env.example
+.git
+test-results
+playwright-report
+.playwright-mcp
+.superpowers
+docs
+e2e

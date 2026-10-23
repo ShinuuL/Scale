@@ -14,7 +14,7 @@ export interface LogoProps {
 const GLOW_CLASS = 'drop-shadow-[0_0_8px_rgba(139,92,246,0.38)]';
 
 /**
- * Logo do Scale — PNG escamado (frontend/public/logo.png) é a fonte da
+ * Logo do Scale — PNG escamado (apps/web/public/logo.png) é a fonte da
  * verdade. O SVG (logo.svg) existe apenas como fallback vetorial e nunca
  * é referenciado aqui.
  */

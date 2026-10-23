@@ -42,7 +42,7 @@ Sistema de videochamadas P2P (mesh) com escamas de dragão — sala de voz e tel
 ### Interface (UI)
 - **Sem emojis na interface**: texto renderizado, `aria-label`, `title`, `placeholder`
   e `alt` usam palavras, nunca emoji.
-- Ícones são **SVG internos** de `frontend/src/components/ui/Icon.tsx`
+- Ícones são **SVG internos** de `apps/web/src/components/ui/Icon.tsx`
   (`viewBox 0 0 24 24`, `stroke="currentColor"`, `strokeWidth 1.75`,
   tamanho default 16).
 - **Proibido adicionar biblioteca de ícones** (lucide, heroicons, react-icons e
@@ -121,7 +121,7 @@ docker compose --profile mcp up --build --abort-on-container-exit
   allowlist de MIME (`image/*`, `application/pdf`, `text/plain`, `audio/*`,
   `application/zip`), validação por magic bytes e quota de 200 MB por sala
 - Upload bloqueado em sala temporária (apenas persistente aceita arquivos)
-- Sistema de ícones internos: UI sem emojis, `frontend/src/components/ui/Icon.tsx`
+- Sistema de ícones internos: UI sem emojis, `apps/web/src/components/ui/Icon.tsx`
   com 29 ícones (SVG vetorial, `stroke="currentColor"`), sem dependência externa
 
 ## Requisitos de Infra

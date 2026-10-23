@@ -4,7 +4,7 @@ services:
   backend:
     build:
       context: .
-      dockerfile: backend/Dockerfile
+      dockerfile: apps/server/Dockerfile
     ports:
       # Porta do HOST configuravel. Dentro do container o backend sempre
       # escuta 4000 (ver environment abaixo). O .env usa 4100 para nao
@@ -73,7 +73,7 @@ services:
   frontend:
     build:
       context: .
-      dockerfile: frontend/Dockerfile
+      dockerfile: apps/web/Dockerfile
       args:
         # Injetados pelo docker-compose (build.args). O Next inlina NEXT_PUBLIC_*
         # no bundle do browser em BUILD time, entao precisam existir nesta etapa.
@@ -181,7 +181,7 @@ services:
   mcp:
     build:
       context: .
-      dockerfile: mcp/Dockerfile
+      dockerfile: apps/mcp/Dockerfile
     profiles:
       - mcp
     ports:

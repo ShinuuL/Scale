@@ -4,8 +4,8 @@ import path from 'node:path';
 /**
  * Fonte unica de portas para os testes E2E.
  *
- * Le o .env da raiz (mesmo comportamento de frontend/next.config.js e
- * backend/package.json) para nao hardcodar 4000/4100 espalhado pelos specs.
+ * Le o .env da raiz (mesmo comportamento de apps/web/next.config.js e
+ * apps/server/package.json) para nao hardcodar 4000/4100 espalhado pelos specs.
  * Nesta maquina a 4000 esta ocupada por um PostgreSQL local, entao o backend
  * roda na 4100.
  */

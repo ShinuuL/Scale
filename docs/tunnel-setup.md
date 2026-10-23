@@ -293,7 +293,7 @@ docker compose logs backend --tail 20
 ### HTTP fora de localhost: o cookie `Secure` é descartado
 
 No container o backend roda com `NODE_ENV=production`, então o cookie de auth
-(`token`) é setado com `Secure` (`backend/src/routes/auth.ts`). Browsers só
+(`token`) é setado com `Secure` (`apps/server/src/routes/auth.ts`). Browsers só
 aceitam cookie `Secure` em HTTPS **ou** em `localhost`.
 
 Consequência prática: se você acessar por **HTTP puro num endereço que não é

@@ -39,7 +39,7 @@ const targets = [
       BACKEND_URL: backendUrl,
       NEXT_PUBLIC_BACKEND_URL: backendUrl,
       NEXT_PUBLIC_WS_URL: backendUrl,
-      // Lido pelo getWsUrl() no browser — ver frontend/src/hooks/useSocket.ts.
+      // Lido pelo getWsUrl() no browser — ver apps/web/src/hooks/useSocket.ts.
       NEXT_PUBLIC_BACKEND_PORT: String(browserPort),
     },
   },
