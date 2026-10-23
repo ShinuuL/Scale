@@ -31,16 +31,29 @@ server.get('/health', async () => {
 });
 
 // ─── Helpers ──────────────────────────────────────────────────
-async function backendFetch<T>(path: string): Promise<T> {
+/** Resposta não-2xx do backend, carregando o status para o chamador tratar. */
+class BackendHttpError extends Error {
+  constructor(readonly status: number) {
+    super(`Backend returned ${status}`);
+    this.name = 'BackendHttpError';
+  }
+}
+
+/**
+ * `auth: true` anexa o JWT (BACKEND_TOKEN). Só `/api/metrics` pede — anexar o
+ * JWT a todas as rotas mudaria a resposta das demais (ex.: GET /api/rooms/:id
+ * devolve `inviteToken` para o dono autenticado, dado que o MCP não precisa).
+ */
+async function backendFetch<T>(path: string, opts: { auth?: boolean } = {}): Promise<T> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (BACKEND_TOKEN) headers.Authorization = `Bearer ${BACKEND_TOKEN}`;
+  if (opts.auth && BACKEND_TOKEN) headers.Authorization = `Bearer ${BACKEND_TOKEN}`;
 
   const res = await fetch(`${BACKEND_URL}${path}`, {
     headers,
     signal: AbortSignal.timeout(5000),
   });
   if (!res.ok) {
-    throw new Error(`Backend returned ${res.status}`);
+    throw new BackendHttpError(res.status);
   }
   return (await res.json()) as T;
 }
@@ -58,8 +71,9 @@ server.get('/mcp/rooms', async (_request, reply) => {
 
 // ─── GET /mcp/metrics ─────────────────────────────────────────
 // Requer Bearer MCP_TOKEN (verificada no onRequest hook) e, do lado do
-// backend, um JWT valido (BACKEND_TOKEN). Sem a env o backend responde 401 e
-// devolvemos 503 com a instrucao — em vez de um 502 generico "unavailable".
+// backend, um JWT valido (BACKEND_TOKEN). Falta de token ou token vencido
+// vira 503 com a instrucao — o backend está no ar, então 502 "unavailable"
+// mentiria sobre a causa.
 server.get('/mcp/metrics', async (_request, reply) => {
   if (!BACKEND_TOKEN) {
     return reply.code(503).send({
@@ -69,10 +83,17 @@ server.get('/mcp/metrics', async (_request, reply) => {
     });
   }
   try {
-    const data = await backendFetch<Record<string, unknown>>('/api/metrics');
+    const data = await backendFetch<Record<string, unknown>>('/api/metrics', { auth: true });
     return reply.send(data);
   } catch (err) {
     server.log.error(err, 'Failed to fetch metrics from backend');
+    if (err instanceof BackendHttpError && err.status === 401) {
+      return reply.code(503).send({
+        error:
+          'BACKEND_TOKEN inválido ou expirado (backend respondeu 401). ' +
+          'Renove o token com POST /api/auth/login.',
+      });
+    }
     return reply.code(502).send({ error: 'Backend unavailable' });
   }
 });

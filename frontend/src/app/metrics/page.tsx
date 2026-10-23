@@ -96,7 +96,7 @@ export default function MetricsPage() {
       cancelled = true;
       clearInterval(interval);
     };
-  }, []);
+  }, [needsAuth]);
 
   const roomBreaks = metrics
     ? [...metrics.peers.perRoom].sort((a, b) => b - a).slice(0, 12)
