@@ -62,6 +62,49 @@ const ICE_RESTART_MAX_ATTEMPTS = 3;
 const ICE_DISCONNECTED_WAIT_MS = 3000;
 const ICE_RESTART_DEDUPE_MS = 3000;
 
+// Quanto esperar, depois do primeiro ontrack de vídeo, para alertar que a
+// faixa de áudio remota nunca chegou (peer que "some" o áudio).
+const AUDIO_MISSING_WARN_MS = 10000;
+
+// Processamento de voz explícito: sem isto o Chrome usa defaults que variam por
+// dispositivo e o colega ouvia ruído de fundo/eco do alto-falante.
+export const AUDIO_CONSTRAINTS: MediaTrackConstraints = {
+  echoCancellation: true,
+  noiseSuppression: true,
+  autoGainControl: true,
+  channelCount: 1,
+};
+
+/**
+ * Transceiver de áudio que REALMENTE está no SDP: o associado a um m-line
+ * (mid != null) vence; sem negociação ainda, cai no primeiro de áudio. Um
+ * transceiver órfão (mid null depois de negociar) nunca transmite nada.
+ */
+export function findAudioTransceiver(pc: RTCPeerConnection): RTCRtpTransceiver | undefined {
+  const audio = pc.getTransceivers().filter((t) => t.receiver.track?.kind === 'audio');
+  return audio.find((t) => t.mid !== null) ?? audio[0];
+}
+
+/**
+ * Lado que responde, logo após setRemoteDescription(offer) e antes do
+ * createAnswer: o m=audio da offer criou (ou reaproveitou) um transceiver
+ * `recvonly`. Promove a `sendrecv` — mesmo sem microfone ainda, para que o
+ * replaceTrack posterior (initMedia) dispense renegociação — e anexa a faixa.
+ */
+export function prepareAudioForAnswer(pc: RTCPeerConnection, localStream: MediaStream | null): void {
+  const transceiver = findAudioTransceiver(pc);
+  if (!transceiver) return;
+  if (transceiver.direction !== 'sendrecv') transceiver.direction = 'sendrecv';
+  const track = localStream?.getAudioTracks()[0];
+  if (track && transceiver.sender.track !== track) {
+    // setStreams leva o msid na answer → event.streams[0] populado do outro lado.
+    if (localStream && typeof transceiver.sender.setStreams === 'function') {
+      transceiver.sender.setStreams(localStream);
+    }
+    void transceiver.sender.replaceTrack(track);
+  }
+}
+
 interface IceRestartState {
   attempts: number;
   lastAttemptAt: number;
@@ -112,12 +155,18 @@ export function useWebRTC(
   const [localScreenStream, setLocalScreenStream] = useState<MediaStream | null>(null);
   const [isMuted, setIsMuted] = useState(false);
   const [isDeafened, setIsDeafened] = useState(false);
+  // Espelho de `isDeafened` para callbacks fora do ciclo de render (ontrack):
+  // sem o ref, o handler leria o estado congelado do closure e uma faixa que
+  // chega depois do deafen nasceria audível.
+  const isDeafenedRef = useRef(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [audioMuted, setAudioMuted] = useState(false);
   const [mediaError, setMediaError] = useState<string | null>(null);
   const peersMetaRef = useRef<Map<string, PeerMeta>>(new Map());
   const iceConfigRef = useRef<RTCConfiguration>(DEFAULT_ICE_SERVERS);
   const iceRestartStateRef = useRef<Map<string, IceRestartState>>(new Map());
+  // Timers do aviso "peer conectado sem faixa de áudio" — limpos no cleanup.
+  const audioDiagnosticTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   // Fetch ICE servers on mount (TURN/STUN from backend)
   useEffect(() => {
@@ -149,6 +198,12 @@ export function useWebRTC(
         clearTimeout(state.disconnectTimer);
       }
       iceRestartStateRef.current.delete(peerId);
+      // Timer do aviso "sem faixa de áudio" também precisa morrer com o peer.
+      const audioTimer = audioDiagnosticTimersRef.current.get(peerId);
+      if (audioTimer) {
+        clearTimeout(audioTimer);
+        audioDiagnosticTimersRef.current.delete(peerId);
+      }
       broadcastPeersUpdate();
       if (reason) {
         console.debug(`[WebRTC] removed peer ${peerId}: ${reason}`);
@@ -223,14 +278,56 @@ export function useWebRTC(
 
   // ─── Create PeerConnection for a specific remote peer ────────
   const createPeerConnection = useCallback(
-    (peerId: string, meta: PeerMeta): RTCPeerConnection => {
+    (peerId: string, meta: PeerMeta, role: 'offerer' | 'answerer' = 'offerer'): RTCPeerConnection => {
       const pc = new RTCPeerConnection(iceConfigRef.current);
 
-      // Add local tracks
-      if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach((track) => {
-          pc.addTrack(track, localStreamRef.current!);
-        });
+      // Lado que RESPONDE: NÃO pré-cria transceiver. JSEP 5.10: ao aplicar uma
+      // offer remota, o browser só reaproveita transceivers criados por
+      // `addTrack` — um criado por `addTransceiver` fica órfão (mid null) e o
+      // m=audio da offer ganha um transceiver NOVO recvonly. O microfone ia
+      // para o órfão e quem respondia nunca era ouvido (áudio de mão única).
+      // O transceiver certo é preparado em `prepareAudioForAnswer`, depois do
+      // setRemoteDescription(offer).
+      if (role === 'answerer') {
+        console.debug(`[WebRTC] PC ${peerId} (answerer): transceiver de áudio vem da offer`);
+      } else {
+
+      // ─── Transceiver de áudio pré-criado (CAUSA RAIZ do bug de áudio) ───
+      // O transceiver é criado ANTES de qualquer offer, mesmo sem mídia
+      // local. Motivo: o backend emite `room:peer-joined` antes do ack do
+      // `join-room`, então a offer do outro lado chega ao novato enquanto o
+      // prompt de permissão do microfone ainda está aberto. Com o
+      // `addTrack` condicional antigo (`if (localStreamRef.current)`), o PC
+      // do novato nascia SEM transceiver e o SDP negociado ficava sem
+      // `m=audio` — o áudio só aparecia quando uma renegociação fortuita
+      // (ICE restart, screen share) arrastava um transceiver pendente junto
+      // ("começou a me ouvir do nada").
+      //
+      // `streams` (W3C RTCRtpTransceiverInit): "When the remote
+      // RTCPeerConnection's track event fires corresponding to the
+      // RTCRtpReceiver being added, these are the streams that will be put
+      // in the event." É o que garante `event.streams[0]` populado no peer
+      // remoto (e portanto a stream de áudio que o <audio> recebe).
+      // Verificado em Chromium: `replaceTrack` SÍNCRONO antes do
+      // `createOffer` já produz o `a=msid`/`a=ssrc msid` na offer.
+      const localStream = localStreamRef.current;
+      const audioTransceiver = pc.addTransceiver('audio', {
+        direction: 'sendrecv',
+        ...(localStream ? { streams: [localStream] } : {}),
+      });
+      // Se a mídia já estiver pronta, anexa pelo transceiver JÁ existente.
+      // replaceTrack (e não addTrack): addTrack criaria um SEGUNDO
+      // transceiver de áudio. A Promise não é aguardada de propósito — o
+      // algoritmo de replaceTrack é síncrono em relação ao msid da offer.
+      const localAudioTrack = localStream?.getAudioTracks()[0];
+      if (localAudioTrack) {
+        void audioTransceiver.sender.replaceTrack(localAudioTrack);
+      }
+
+      console.debug(
+        `[WebRTC] PC ${peerId}: ${pc.getTransceivers().length} transceiver(s) — ` +
+          `áudio direction=${audioTransceiver.direction}, sender.track=${audioTransceiver.sender.track?.kind ?? 'null'}`,
+      );
       }
 
       // ICE candidates → signaling
@@ -240,14 +337,63 @@ export function useWebRTC(
         }
       };
 
-      // Handle remote stream
+      // Handle remote stream — áudio e tela em campos SEPARADOS
       pc.ontrack = (event) => {
-        const [remoteStream] = event.streams;
         const existing = peersRef.current.get(peerId);
-        if (existing && remoteStream) {
-          existing.stream = remoteStream;
-          broadcastPeersUpdate();
+        if (!existing) return;
+
+        // A faixa de áudio pode chegar sem stream associada (ontrack de um
+        // receiver cujo sender fez replaceTrack tardio — verificado em
+        // Chromium: event.streams fica vazio). Fallback: uma stream nova
+        // contendo só a faixa recebida.
+        const remoteStream = event.streams[0] ?? new MediaStream([event.track]);
+
+        console.debug(
+          `[WebRTC] ontrack de ${peerId}: kind=${event.track.kind}, ` +
+            `streams=${event.streams.length}, muted=${event.track.muted}`,
+        );
+
+        // Defeito 4: a faixa nova nasce com enabled=true. Quem está "surdo"
+        // (deafen) precisa dela já silenciada, senão o áudio remoto volta
+        // sozinho no meio da renegociação.
+        if (event.track.kind === 'audio') {
+          event.track.enabled = !isDeafenedRef.current;
         }
+
+        // Defeito 2: o screen share chega por `addTrack(videoTrack,
+        // screenStream)`, sendo screenStream uma MediaStream DIFERENTE (só
+        // de vídeo). Sobrescrever `stream` com ela deixava o <audio> com um
+        // srcObject sem faixa alguma = silêncio. Discrimina por kind.
+        if (event.track.kind === 'video') {
+          existing.screenStream = remoteStream;
+        } else {
+          existing.stream = remoteStream;
+        }
+
+        // Diagnóstico: peer conectado há tempo e sem faixa de áudio recebida
+        // é o caso "some o áudio de um lado". Timer limpo no cleanup do peer.
+        if (event.track.kind === 'audio') {
+          const pending = audioDiagnosticTimersRef.current.get(peerId);
+          if (pending) {
+            clearTimeout(pending);
+            audioDiagnosticTimersRef.current.delete(peerId);
+          }
+        } else if (!audioDiagnosticTimersRef.current.has(peerId)) {
+          const timer = setTimeout(() => {
+            audioDiagnosticTimersRef.current.delete(peerId);
+            const peer = peersRef.current.get(peerId);
+            // `peer.stream === null` = nenhum receiver de áudio entregou faixa.
+            if (peer && !peer.stream) {
+              console.warn(
+                `[WebRTC] peer ${peerId} sem faixa de áudio recebida há mais de ` +
+                  `${AUDIO_MISSING_WARN_MS / 1000}s (receiver de áudio não entregou ontrack)`,
+              );
+            }
+          }, AUDIO_MISSING_WARN_MS);
+          audioDiagnosticTimersRef.current.set(peerId, timer);
+        }
+
+        broadcastPeersUpdate();
       };
 
       pc.onconnectionstatechange = () => {
@@ -410,7 +556,7 @@ export function useWebRTC(
     }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
+        audio: AUDIO_CONSTRAINTS,
         video: false,
       });
       localStreamRef.current = stream;
@@ -419,18 +565,33 @@ export function useWebRTC(
       setAudioMuted(false);
       setMediaError(null);
 
-      // Add audio track to all existing peer connections (PCs may have been
-      // created before media was available)
+      // Anexa a faixa de áudio aos PCs que nasceram ANTES da mídia ficar
+      // pronta (corrida com o signaling: a offer do peer chega enquanto o
+      // prompt de permissão está aberto).
+      //
+      // Por TRANSCEIVER, não por `getSenders().find(s => s.track?.kind ===
+      // 'audio')`: antes do replaceTrack o `sender.track` é null, então o
+      // find não acha nada e o código antigo caía no `addTrack` — que cria um
+      // transceiver NOVO exigindo renegociação. Como não existe
+      // `onnegotiationneeded` no projeto, a renegociação nunca acontecia e o
+      // áudio não chegava. O transceiver de áudio já foi criado e negociado
+      // em createPeerConnection, e `replaceTrack` em transceiver negociado
+      // NÃO exige renegociação.
       const audioTrack = stream.getAudioTracks()[0];
       if (audioTrack) {
-        peersRef.current.forEach((pc) => {
-          const audioSender = pc.connection.getSenders().find((s) => s.track?.kind === 'audio');
-          if (audioSender) {
-            audioSender.replaceTrack(audioTrack);
-          } else {
-            pc.connection.addTrack(audioTrack, stream);
+        let attached = 0;
+        peersRef.current.forEach((peer) => {
+          const audioTransceiver = findAudioTransceiver(peer.connection);
+          if (!audioTransceiver) {
+            console.warn('[WebRTC] initMedia: PC sem transceiver de áudio —', peer.peerId);
+            return;
           }
+          void audioTransceiver.sender.replaceTrack(audioTrack);
+          attached += 1;
         });
+        console.debug(
+          `[WebRTC] initMedia: faixa de áudio anexada por replaceTrack em ${attached} PC(s)`,
+        );
       }
     } catch (err) {
       const e = err as { name?: string; message?: string };
@@ -470,6 +631,8 @@ export function useWebRTC(
       }
     });
     iceRestartStateRef.current.clear();
+    audioDiagnosticTimersRef.current.forEach((timer) => clearTimeout(timer));
+    audioDiagnosticTimersRef.current.clear();
     broadcastPeersUpdate();
   }, [broadcastPeersUpdate]);
 
@@ -511,6 +674,12 @@ export function useWebRTC(
     }
     const newDeafened = !isDeafened;
     setIsDeafened(newDeafened);
+    // Ref em sincronia: `ontrack` (fora do ciclo de render) usa este valor
+    // para já entregar a faixa nova silenciada.
+    isDeafenedRef.current = newDeafened;
+    // Aplica em TODAS as streams de áudio conhecidas de cada peer. Usar só
+    // `pc.stream` perdia o deafen quando a stream era trocada por um ontrack
+    // posterior (a faixa nova nascia enabled=true).
     peersRef.current.forEach((pc) => {
       if (pc.stream) {
         pc.stream.getAudioTracks().forEach((track) => {
@@ -712,7 +881,7 @@ export function useWebRTC(
           peerId: data.fromPeerId,
           userId: data.userId,
           name: data.name,
-          connection: createPeerConnection(data.fromPeerId, meta),
+          connection: createPeerConnection(data.fromPeerId, meta, 'answerer'),
           stream: null,
           screenStream: null,
           audioMuted: false,
@@ -768,6 +937,7 @@ export function useWebRTC(
       if (!remoteOfferApplied) {
         await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
       }
+      prepareAudioForAnswer(pc, localStreamRef.current);
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
       socketHook.emitAnswer(roomId, data.fromPeerId, answer);
