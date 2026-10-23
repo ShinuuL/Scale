@@ -140,3 +140,36 @@ describe('item 1 — chat:delete limpa prevContent e leituras nao vazam conteudo
     expect(rest.payload).not.toContain('anterior');
   });
 });
+
+describe('item 2 — GET /api/files/:id de arquivo apagado responde 410 imediato', () => {
+  let h: Harness;
+  let roomId: string;
+
+  beforeAll(async () => {
+    h = await buildHarness();
+    const room = await prisma.room.create({ data: { name: 'Audit Item2', isPersistent: true } });
+    roomId = room.id;
+  });
+
+  afterAll(async () => {
+    await prisma.room.deleteMany({ where: { name: 'Audit Item2' } }).catch(() => {});
+    await h.app.close();
+  });
+
+  it('deletedAt de 1 minuto atras ja e 410', async () => {
+    const msg = await prisma.chatMessage.create({ data: { roomId, content: 'f' } });
+    const file = await prisma.chatFile.create({
+      data: {
+        roomId,
+        messageId: msg.id,
+        filename: 'a.txt',
+        mime: 'text/plain',
+        size: 3,
+        path: `uploads/${roomId}/a.txt`,
+        deletedAt: new Date(Date.now() - 60_000),
+      },
+    });
+    const res = await h.app.inject({ method: 'GET', url: `/api/files/${file.id}` });
+    expect(res.statusCode).toBe(410);
+  });
+});

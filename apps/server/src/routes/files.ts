@@ -135,7 +135,9 @@ export async function filesRoutes(fastify: FastifyInstance): Promise<void> {
       return reply.code(403).send({ error: 'Not a room member' });
     }
 
-    if (file.deletedAt && Date.now() - new Date(file.deletedAt).getTime() > 7 * 24 * 60 * 60 * 1000) {
+    // Arquivo apagado (soft delete) some na hora: os 7 dias de carencia valem
+    // so para GC/quota (lib/uploads.ts), nunca para download.
+    if (file.deletedAt != null) {
       return reply.code(410).send({ error: 'Gone' });
     }
     const abs = path.resolve(process.cwd(), file.path);
