@@ -27,7 +27,14 @@ export async function metricsRoutes(fastify: FastifyInstance): Promise<void> {
     async (request, reply) => {
       const [totalRooms, activeRooms] = await Promise.all([
         prisma.room.count(),
-        prisma.room.count({ where: { status: 'ACTIVE' } }),
+        // Ativa = status ACTIVE E dentro do prazo: temporaria vencida que
+        // ainda nao passou pela varredura (lib/roomDeletion.ts) nao conta.
+        prisma.room.count({
+          where: {
+            status: 'ACTIVE',
+            OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+          },
+        }),
       ]);
 
       const byRoom = getRoomPeersSnapshot();

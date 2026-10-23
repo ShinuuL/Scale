@@ -5,10 +5,10 @@ import bcrypt from 'bcryptjs';
 import { prisma } from '../lib/prisma.js';
 import { isRoomCreateRateLimited, isRoomDeleteRateLimited } from '../lib/rateLimit.js';
 import { isSystemAdmin } from '../lib/env.js';
-import { removeRoomUploads } from '../lib/uploads.js';
+import { purgeRoom } from '../lib/roomDeletion.js';
 import { getClientIp } from '../lib/clientIp.js';
 import { createRoomSchema as sharedCreateRoomSchema } from '@scale/shared';
-import { evictRoom, getRoomPeersSnapshot } from '../socket/handler.js';
+import { getRoomPeersSnapshot } from '../socket/handler.js';
 
 // Campos comuns (nome, persistencia, teto, TTL) vem de @scale/shared; o server
 // acrescenta a senha da sala privada.
@@ -314,26 +314,10 @@ export async function roomRoutes(fastify: FastifyInstance): Promise<void> {
           .send({ error: 'Only the room owner or a system admin can delete it' });
       }
 
-      // 1) Avisa e tira todo mundo da sala (antes de sumir com o banco, para
-      //    nenhum peer continuar sinalizando numa sala inexistente).
+      // Avisa e tira todo mundo, apaga banco e disco (lib/roomDeletion.ts —
+      // mesma rotina da varredura de salas temporarias vencidas).
       const io = (fastify as unknown as { io?: import('socket.io').Server }).io;
-      evictRoom(io, id);
-
-      // 2) Banco: tudo numa transacao (o schema ja tem onDelete: Cascade, mas
-      //    apagar explicitamente nao depende do PRAGMA foreign_keys).
-      await prisma.$transaction([
-        prisma.chatFile.deleteMany({ where: { roomId: id } }),
-        prisma.chatMessage.deleteMany({ where: { roomId: id } }),
-        prisma.roomMember.deleteMany({ where: { roomId: id } }),
-        prisma.room.delete({ where: { id } }),
-      ]);
-
-      // 3) Disco em best-effort: falhar aqui nao desfaz a exclusao.
-      try {
-        await removeRoomUploads(id);
-      } catch (err) {
-        request.log.error({ err, roomId: id }, 'room delete: failed to remove uploads dir');
-      }
+      await purgeRoom(io, id, request.log);
 
       request.log.info(
         { roomId: id, userId, deletedAs: isOwner ? 'owner' : 'admin' },

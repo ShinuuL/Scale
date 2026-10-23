@@ -15,6 +15,7 @@ import { messagesRoutes } from './routes/messages.js';
 import { filesRoutes } from './routes/files.js';
 import { createSocketServer } from './socket/handler.js';
 import { gcDeletedFiles } from './lib/uploads.js';
+import { sweepExpiredRooms, ROOM_SWEEP_INTERVAL_MS } from './lib/roomDeletion.js';
 import { MAX_FILE_SIZE_BYTES, MAX_FILES_PER_MESSAGE } from '@scale/shared';
 import { resolveTrustProxy } from './lib/clientIp.js';
 import { buildLoggerOptions } from './lib/logger.js';
@@ -79,6 +80,14 @@ const gcTimer = setInterval(() => {
 }, 24 * 60 * 60 * 1000);
 gcTimer.unref();
 
+// Varredura de salas temporarias vencidas (lib/roomDeletion.ts): roda no
+// start (limpa o que venceu com o backend fora do ar) e a cada 5 min.
+const runRoomSweep = (): void => {
+  sweepExpiredRooms({ io, log: server.log }).catch((err) => server.log.error(err));
+};
+const roomSweepTimer = setInterval(runRoomSweep, ROOM_SWEEP_INTERVAL_MS);
+roomSweepTimer.unref();
+
 const start = async (): Promise<void> => {
   const port = env.PORT;
 
@@ -90,6 +99,7 @@ const start = async (): Promise<void> => {
     // Start server
     await server.listen({ port, host: '0.0.0.0' });
     server.log.info(`Server running on port ${port}`);
+    runRoomSweep();
     server.log.info('Socket.io server attached');
   } catch (err) {
     server.log.error(err);
