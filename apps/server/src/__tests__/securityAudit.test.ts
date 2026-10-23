@@ -761,3 +761,49 @@ describe('item 12 — error handler global: 5xx sem detalhes, 4xx com mensagem',
     expect(JSON.parse(res.payload)).toEqual({ error: 'Campo invalido' });
   });
 });
+
+describe('item 13 — Cache-Control: no-store em rotas privadas', () => {
+  let app: FastifyInstance;
+
+  beforeAll(async () => {
+    const { securityPlugin, isNoStorePath } = await import('../plugins/security.js');
+    expect(isNoStorePath('/api/rooms/abc/messages?limit=50')).toBe(true);
+    expect(isNoStorePath('/api/health')).toBe(false);
+    app = Fastify({ logger: false });
+    await app.register(securityPlugin);
+    for (const url of [
+      '/api/auth/me',
+      '/api/rooms/:id/messages',
+      '/api/files/:id',
+      '/api/metrics',
+      '/api/turn/credentials',
+      '/api/health',
+      '/api/rooms',
+    ]) {
+      app.get(url, async () => ({ ok: true }));
+    }
+    app.get('/api/auth/fail', async (_req, reply) => reply.code(401).send({ error: 'x' }));
+    await app.ready();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it.each([
+    '/api/auth/me',
+    '/api/auth/fail',
+    '/api/rooms/550e8400-e29b-41d4-a716-446655440000/messages?limit=50',
+    '/api/files/abc',
+    '/api/metrics?format=prometheus',
+    '/api/turn/credentials',
+  ])('%s → no-store', async (url) => {
+    const res = await app.inject({ method: 'GET', url });
+    expect(res.headers['cache-control']).toBe('no-store');
+  });
+
+  it.each(['/api/health', '/api/rooms'])('%s publica nao recebe no-store', async (url) => {
+    const res = await app.inject({ method: 'GET', url });
+    expect(res.headers['cache-control']).toBeUndefined();
+  });
+});
