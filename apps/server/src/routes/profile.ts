@@ -58,7 +58,29 @@ function tooMany(reply: FastifyReply, retryAfterSeconds: number): FastifyReply {
     .send({ error: 'Too many profile updates. Try again later.' });
 }
 
-const userSelect = { id: true, email: true, name: true, createdAt: true, avatarUpdatedAt: true } as const;
+/** Campos do proprio usuario devolvidos por /api/auth/me e pelas rotas de perfil. */
+export const meSelect = {
+  id: true,
+  email: true,
+  name: true,
+  createdAt: true,
+  avatarUpdatedAt: true,
+  username: { select: { name: true } },
+} as const;
+
+type MeRow = {
+  id: string;
+  email: string;
+  name: string;
+  createdAt: Date;
+  avatarUpdatedAt: Date | null;
+  username: { name: string } | null;
+};
+
+/** Achata o @nome (tabela Username) para `username: string | null`. */
+export function toMe(u: MeRow) {
+  return { ...u, username: u.username?.name ?? null };
+}
 
 export async function profileRoutes(fastify: FastifyInstance): Promise<void> {
   const auth = { preHandler: [fastify.authenticate as never] };
@@ -80,7 +102,8 @@ export async function profileRoutes(fastify: FastifyInstance): Promise<void> {
     }
 
     const user = await prisma.user
-      .update({ where: { id: userId }, data: { name: parsed.data.name }, select: userSelect })
+      .update({ where: { id: userId }, data: { name: parsed.data.name }, select: meSelect })
+      .then(toMe)
       .catch(() => null);
     if (!user) return reply.code(404).send({ error: 'User not found' });
 
@@ -128,8 +151,8 @@ export async function profileRoutes(fastify: FastifyInstance): Promise<void> {
     const user = await prisma.user.update({
       where: { id: userId },
       data: { avatarPath: path.relative(process.cwd(), abs), avatarMime: mime, avatarUpdatedAt: new Date() },
-      select: userSelect,
-    });
+      select: meSelect,
+    }).then(toMe);
     if (current.avatarPath) await removeAvatarFile(current.avatarPath);
 
     return reply.send({ user });
@@ -146,8 +169,8 @@ export async function profileRoutes(fastify: FastifyInstance): Promise<void> {
     const user = await prisma.user.update({
       where: { id: userId },
       data: { avatarPath: null, avatarMime: null, avatarUpdatedAt: null },
-      select: userSelect,
-    });
+      select: meSelect,
+    }).then(toMe);
     await removeAvatarFile(current.avatarPath);
     return reply.send({ user });
   });

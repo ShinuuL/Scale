@@ -31,6 +31,8 @@ describe('expurgo dos baldes de rate limit', () => {
   it('registra TODOS os baldes no expurgo', () => {
     expect(Object.keys(rateLimitStoreSizes()).sort()).toEqual([
       'chat',
+      'dm',
+      'friendRequest',
       'loginEmail',
       'loginIp',
       'profile',

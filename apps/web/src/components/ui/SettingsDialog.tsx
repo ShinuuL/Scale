@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AVATAR_FILE_ACCEPT, MAX_AVATAR_SIZE_BYTES, USER_NAME_MAX } from '@scale/shared';
+import { AVATAR_FILE_ACCEPT, MAX_AVATAR_SIZE_BYTES, USER_NAME_MAX, USERNAME_MAX, usernameSchema } from '@scale/shared';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { Input } from '@/components/ui/Input';
@@ -24,6 +24,7 @@ function errorMessage(err: unknown, fallback: string): string {
     typeof err === 'object' && err !== null && 'status' in err
       ? (err as { status?: unknown }).status
       : undefined;
+  if (status === 409) return 'Esse @nome já está em uso. Escolha outro.';
   if (status === 413) return 'A foto passa de 32 MB.';
   if (status === 400) return 'Formato não aceito. Use PNG, JPEG ou WebP.';
   if (status === 429) return 'Muitas alterações seguidas. Tente de novo em alguns minutos.';
@@ -39,7 +40,8 @@ export function SettingsDialog({ user, onClose, onUserChange }: SettingsDialogPr
   const dialogRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState(user?.name ?? '');
-  const [busy, setBusy] = useState<'name' | 'avatar' | null>(null);
+  const [username, setUsername] = useState(user?.username ?? '');
+  const [busy, setBusy] = useState<'name' | 'username' | 'avatar' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
 
@@ -90,6 +92,30 @@ export function SettingsDialog({ user, onClose, onUserChange }: SettingsDialogPr
       setSaved('Nome atualizado.');
     } catch (err) {
       setError(errorMessage(err, 'Não foi possível salvar o nome.'));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const usernameParsed = usernameSchema.safeParse(username);
+  const usernameChanged =
+    !!user && usernameParsed.success && usernameParsed.data !== (user.username ?? '');
+  const usernameHint =
+    username.trim() && !usernameParsed.success ? usernameParsed.error.issues[0]?.message : undefined;
+
+  const saveUsername = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!usernameChanged || !usernameParsed.success) return;
+    setBusy('username');
+    setError(null);
+    setSaved(null);
+    try {
+      const res = await api.setUsername(usernameParsed.data);
+      onUserChange?.(res.user);
+      setUsername(res.user.username ?? '');
+      setSaved('@nome atualizado.');
+    } catch (err) {
+      setError(errorMessage(err, 'Não foi possível salvar o @nome.'));
     } finally {
       setBusy(null);
     }
@@ -227,6 +253,31 @@ export function SettingsDialog({ user, onClose, onUserChange }: SettingsDialogPr
               <div className="flex justify-end">
                 <Button type="submit" size="sm" disabled={!nameChanged || busy !== null} aria-busy={busy === 'name'}>
                   {busy === 'name' ? 'Salvando...' : 'Salvar nome'}
+                </Button>
+              </div>
+            </form>
+
+            <form onSubmit={(e) => void saveUsername(e)} className="space-y-3">
+              <Input
+                id="settings-username"
+                label="@nome (para amizades)"
+                value={username}
+                maxLength={USERNAME_MAX + 1}
+                onChange={(e) => setUsername(e.target.value)}
+                autoComplete="username"
+                spellCheck={false}
+                placeholder="ex.: shinuu"
+                error={usernameHint}
+                helperText="Único. Letras sem acento, números e _, de 3 a 20 caracteres."
+              />
+              <div className="flex justify-end">
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={!usernameChanged || busy !== null}
+                  aria-busy={busy === 'username'}
+                >
+                  {busy === 'username' ? 'Salvando...' : 'Salvar @nome'}
                 </Button>
               </div>
             </form>

@@ -177,6 +177,7 @@ docker compose up --build -d
 ### Não incluído (por agora)
 - Gravação de chamadas
 - Suporte a múltiplos dispositivos por usuário
+- Anexos em mensagem privada (DM) — planejado
 - Escalabilidade além de 8 peers
 
 ### Já incluído (implementado e testado)
@@ -192,6 +193,20 @@ docker compose up --build -d
   (`PATCH /api/me`, reemite o JWT), foto de perfil (`PUT|GET|DELETE
   /api/me/avatar`, até 32 MB, PNG/JPEG/WebP por magic bytes, em
   `uploads/avatars`) e tema. Balde `profile`: 20 / 10 min por usuário
+- Amizades e mensagens privadas (página `/friends`, só logado):
+  - @nome único (`PUT /api/me/username`, `[a-z0-9_]` 3..20, minúsculo) na
+    tabela `Username` — tabela própria porque o `prisma db push` do container
+    recusa `@unique` novo em tabela existente sem `--accept-data-loss`.
+  - Pedido pelo @nome (`POST /api/friends/requests`; pedido cruzado vira
+    aceite), aceitar/recusar/cancelar, desfazer amizade. Balde
+    `friendRequest`: 30 / hora por usuário.
+  - DM só texto, só entre amigos (`GET|POST /api/dm/:userId/messages`, até
+    2000 caracteres, paginado por `before`). Balde `dm`: 20 / 10 s por
+    usuário. Anexos ficam para depois, em tabela própria.
+  - Tempo real: socket logado entra em `user:<userId>`; eventos
+    `friends:changed` e `dm:message`. DTO público sem e-mail.
+  - Foto de amigo: `GET /api/users/:userId/avatar` (amigo ou si mesmo; sem
+    amizade = 404 igual a "sem foto")
 
 ## Requisitos de Infra
 

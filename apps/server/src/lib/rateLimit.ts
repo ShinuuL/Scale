@@ -320,6 +320,33 @@ export function resetProfileUpdateRateLimit(userId: string): void {
   reset(profileStore, userId);
 }
 
+// Pedidos de amizade: 30 / hora por USUARIO. Freia a varredura de @nomes
+// (o pedido revela se o nome existe).
+const FRIEND_REQUEST_WINDOW_MS = 60 * 60_000;
+const FRIEND_REQUEST_MAX = 30;
+const friendRequestStore = createBucket('friendRequest');
+
+export function isFriendRequestRateLimited(userId: string): RateLimitResult {
+  return take(friendRequestStore, userId, FRIEND_REQUEST_WINDOW_MS, FRIEND_REQUEST_MAX);
+}
+
+export function resetFriendRequestRateLimit(userId: string): void {
+  reset(friendRequestStore, userId);
+}
+
+// Mensagens privadas: 20 / 10 s por USUARIO (mesma ordem do chat de sala).
+const DM_WINDOW_MS = 10_000;
+const DM_MAX = 20;
+const dmStore = createBucket('dm');
+
+export function isDirectMessageRateLimited(userId: string): RateLimitResult {
+  return take(dmStore, userId, DM_WINDOW_MS, DM_MAX);
+}
+
+export function resetDirectMessageRateLimit(userId: string): void {
+  reset(dmStore, userId);
+}
+
 // Exclusao de sala: 20 / 10 min por USUARIO (chave = userId). A rota exige
 // login, entao o balde nao depende de IP; sem isencao de loopback.
 const ROOM_DELETE_WINDOW_MS = 10 * 60_000;

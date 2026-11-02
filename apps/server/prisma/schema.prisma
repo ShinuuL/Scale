@@ -25,6 +25,62 @@ model User {
 
   ownedRooms  Room[]
   roomMembers RoomMember[]
+
+  username               Username?
+  friendRequestsSent     Friendship[]    @relation("FriendshipRequester")
+  friendRequestsReceived Friendship[]    @relation("FriendshipAddressee")
+  directMessagesSent     DirectMessage[] @relation("DirectMessageSender")
+  directMessagesReceived DirectMessage[] @relation("DirectMessageRecipient")
+}
+
+// @nome de usuario unico (minusculo, [a-z0-9_]). Tabela propria em vez de
+// coluna `@unique` em User: o `prisma db push` do container recusa adicionar
+// unique em tabela existente sem --accept-data-loss; tabela nova nao tem esse
+// problema. Sem linha = o usuario ainda nao escolheu.
+model Username {
+  name      String   @id
+  userId    String   @unique
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+enum FriendshipStatus {
+  PENDING
+  ACCEPTED
+}
+
+// Uma linha por par: quem pediu (requester) e quem recebeu (addressee). O par
+// inverso nunca coexiste — o pedido cruzado vira aceite (routes/social.ts).
+model Friendship {
+  id          String           @id @default(uuid())
+  requesterId String
+  addresseeId String
+  status      FriendshipStatus @default(PENDING)
+  createdAt   DateTime         @default(now())
+  acceptedAt  DateTime?
+
+  requester User @relation("FriendshipRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  addressee User @relation("FriendshipAddressee", fields: [addresseeId], references: [id], onDelete: Cascade)
+
+  @@unique([requesterId, addresseeId])
+  @@index([addresseeId, status])
+}
+
+// Mensagem privada entre amigos. So texto por enquanto; anexos entram depois
+// numa tabela propria (como ChatFile), sem mudar esta.
+model DirectMessage {
+  id          String   @id @default(uuid())
+  senderId    String
+  recipientId String
+  content     String
+  createdAt   DateTime @default(now())
+
+  sender    User @relation("DirectMessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  recipient User @relation("DirectMessageRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+
+  @@index([senderId, recipientId, createdAt])
+  @@index([recipientId, senderId, createdAt])
 }
 
 model Room {

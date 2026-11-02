@@ -14,6 +14,7 @@ import { metricsRoutes } from './routes/metrics.js';
 import { messagesRoutes } from './routes/messages.js';
 import { filesRoutes } from './routes/files.js';
 import { profileRoutes } from './routes/profile.js';
+import { socialRoutes } from './routes/social.js';
 import { createSocketServer } from './socket/handler.js';
 import { gcDeletedFiles } from './lib/uploads.js';
 import { sweepExpiredRooms, ROOM_SWEEP_INTERVAL_MS } from './lib/roomDeletion.js';
@@ -60,6 +61,7 @@ await server.register(metricsRoutes);
 await server.register(messagesRoutes);
 await server.register(filesRoutes);
 await server.register(profileRoutes);
+await server.register(socialRoutes);
 
 // Health check
 server.get('/health', async () => {

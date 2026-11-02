@@ -162,6 +162,12 @@ export function ProfileMenu({ name, email, isAuthenticated, user, onUserChange, 
           <div className="my-1 border-t border-white/[0.08]" role="separator" />
 
           <div className="py-1">
+            {isAuthenticated && (
+              <Link href="/friends" role="menuitem" tabIndex={-1} className={itemClass} onClick={() => close(false)}>
+                <Icon name="users" size={16} className="text-slate-400" />
+                Amigos
+              </Link>
+            )}
             <button
               type="button"
               role="menuitem"

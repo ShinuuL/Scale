@@ -8,6 +8,7 @@ import {
   DUMMY_PASSWORD_HASH,
 } from '../lib/auth.js';
 import { getClientIp } from '../lib/clientIp.js';
+import { meSelect, toMe } from './profile.js';
 import { findUserByEmail, normalizeEmail, normalizeStoredEmail } from '../lib/userEmail.js';
 import {
   isLoginRateLimited,
@@ -205,16 +206,13 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
       return reply.code(401).send({ error: 'Not authenticated' });
     }
 
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { id: true, email: true, name: true, createdAt: true, avatarUpdatedAt: true },
-    });
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: meSelect });
 
     if (!user) {
       return reply.code(404).send({ error: 'User not found' });
     }
 
-    return reply.send({ user });
+    return reply.send({ user: toMe(user) });
   });
 
   // POST /api/auth/refresh

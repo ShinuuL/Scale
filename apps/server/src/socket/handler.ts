@@ -104,6 +104,12 @@ export function readCookie(header: string | undefined, name: string): string | u
   return undefined;
 }
 
+/**
+ * Sala pessoal do usuario logado (todas as abas dele): avisos de amizade e
+ * mensagens privadas (routes/social.ts). Convidado nao entra em nenhuma.
+ */
+export const userRoom = (userId: string): string => `user:${userId}`;
+
 export function createSocketServer(httpServer: HttpServer): Server {
   const io = new Server(httpServer, {
     cors: {
@@ -186,6 +192,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
 
   io.on('connection', (socket) => {
     const user: SocketUser = socket.data.user;
+    if (user.userId) void socket.join(userRoom(user.userId));
 
     /**
      * O REMETENTE precisa estar na sala que cita no payload: sem isto um socket

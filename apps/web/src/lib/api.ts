@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { CreateRoomInput, RoomResponse, RoomListItem, AuthResponse, LoginInput, RegisterInput, Metrics } from './validation';
+import { directMessageSchema, dmSendSchema, friendsListSchema, type DirectMessage, type FriendsList } from '@scale/shared';
 import { createRoomSchema, authResponseSchema, roomResponseSchema, roomListItemSchema, metricsSchema } from './validation';
 
 // Caminhos SEMPRE relativos (`/api/...`): em producao o Caddy serve o frontend
@@ -74,11 +75,20 @@ export interface MeUser {
   createdAt: string;
   /** ISO da ultima troca de foto; null = sem foto. */
   avatarUpdatedAt?: string | null;
+  /** @nome unico; null = ainda nao escolheu (necessario para amizades). */
+  username?: string | null;
 }
 
 /** URL da propria foto, com versao para furar cache ao trocar. */
 export function avatarUrl(avatarUpdatedAt: string | null | undefined): string | null {
   return avatarUpdatedAt ? `/api/me/avatar?v=${encodeURIComponent(avatarUpdatedAt)}` : null;
+}
+
+/** URL da foto de um amigo (ou a propria), com versao para furar cache. */
+export function userAvatarUrl(userId: string, avatarUpdatedAt: string | null | undefined): string | null {
+  return avatarUpdatedAt
+    ? `/api/users/${encodeURIComponent(userId)}/avatar?v=${encodeURIComponent(avatarUpdatedAt)}`
+    : null;
 }
 
 class ApiClient {
@@ -204,6 +214,48 @@ class ApiClient {
 
   async deleteAvatar(): Promise<{ user: MeUser }> {
     return this.request('/api/me/avatar', { method: 'DELETE', body: '{}' });
+  }
+
+  async setUsername(username: string): Promise<{ user: MeUser }> {
+    return this.request('/api/me/username', { method: 'PUT', body: JSON.stringify({ username }) });
+  }
+
+  // ─── Amizades e mensagens privadas ──────────────────────────
+  async getFriends(): Promise<FriendsList> {
+    return friendsListSchema.parse(await this.request('/api/friends'));
+  }
+
+  async sendFriendRequest(username: string): Promise<{ status: 'PENDING' | 'ACCEPTED' }> {
+    return this.request('/api/friends/requests', { method: 'POST', body: JSON.stringify({ username }) });
+  }
+
+  async acceptFriendRequest(id: string): Promise<void> {
+    await this.request(`/api/friends/requests/${encodeURIComponent(id)}/accept`, { method: 'POST', body: '{}' });
+  }
+
+  /** Recusa (recebido) ou cancela (enviado). */
+  async deleteFriendRequest(id: string): Promise<void> {
+    await this.request(`/api/friends/requests/${encodeURIComponent(id)}`, { method: 'DELETE', body: '{}' });
+  }
+
+  async removeFriend(userId: string): Promise<void> {
+    await this.request(`/api/friends/${encodeURIComponent(userId)}`, { method: 'DELETE', body: '{}' });
+  }
+
+  async getDirectMessages(userId: string, before?: string): Promise<{ messages: DirectMessage[]; hasMore: boolean }> {
+    const qs = before ? `?before=${encodeURIComponent(before)}` : '';
+    const data = await this.request<{ messages: unknown[]; hasMore: boolean }>(
+      `/api/dm/${encodeURIComponent(userId)}/messages${qs}`,
+    );
+    return { messages: z.array(directMessageSchema).parse(data.messages), hasMore: data.hasMore === true };
+  }
+
+  async sendDirectMessage(userId: string, content: string): Promise<DirectMessage> {
+    const data = await this.request<{ message: unknown }>(`/api/dm/${encodeURIComponent(userId)}/messages`, {
+      method: 'POST',
+      body: JSON.stringify(dmSendSchema.parse({ content })),
+    });
+    return directMessageSchema.parse(data.message);
   }
 
   // ─── Health ─────────────────────────────────────────────────
