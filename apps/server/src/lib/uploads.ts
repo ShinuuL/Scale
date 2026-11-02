@@ -34,18 +34,35 @@ export function detectMagicBytes(buf: Buffer): string | null {
   return null;
 }
 
-export async function saveFile(roomId: string, fileId: string, filename: string, buffer: Buffer): Promise<string> {
+/**
+ * Caminho de destino de um upload: `uploads/<roomId>/<fileId>-<nome>`, com
+ * sandbox (a pasta da sala fica dentro de UPLOADS_ROOT e o arquivo dentro da
+ * pasta) e a pasta ja criada. O upload grava por stream direto nele.
+ */
+export async function prepareFilePath(
+  roomId: string,
+  fileId: string,
+  filename: string,
+): Promise<{ abs: string; rel: string }> {
   const sanitized = sanitizeFilename(filename);
-  const dir = path.resolve(UPLOADS_ROOT, roomId);
-  // sandbox check
-  const resolvedDir = path.resolve(dir);
-  if (!resolvedDir.startsWith(UPLOADS_ROOT)) throw new Error('Invalid roomId');
+  const resolvedDir = path.resolve(UPLOADS_ROOT, roomId);
+  if (!resolvedDir.startsWith(UPLOADS_ROOT + path.sep)) throw new Error('Invalid roomId');
   await fs.mkdir(resolvedDir, { recursive: true });
-  const filePath = path.join(resolvedDir, `${fileId}-${sanitized}`);
-  const resolvedFile = path.resolve(filePath);
-  if (!resolvedFile.startsWith(resolvedDir)) throw new Error('Path traversal blocked');
-  await fs.writeFile(resolvedFile, buffer, { mode: 0o600 });
-  return path.relative(process.cwd(), resolvedFile);
+  const resolvedFile = path.resolve(resolvedDir, `${fileId}-${sanitized}`);
+  if (!resolvedFile.startsWith(resolvedDir + path.sep)) throw new Error('Path traversal blocked');
+  return { abs: resolvedFile, rel: path.relative(process.cwd(), resolvedFile) };
+}
+
+/** Primeiros bytes de um arquivo ja gravado (para conferir magic bytes). */
+export async function readFileHead(abs: string, length = 16): Promise<Buffer> {
+  const handle = await fs.open(abs, 'r');
+  try {
+    const buf = Buffer.alloc(length);
+    const { bytesRead } = await handle.read(buf, 0, length, 0);
+    return buf.subarray(0, bytesRead);
+  } finally {
+    await handle.close();
+  }
 }
 
 /**
@@ -61,16 +78,17 @@ export async function removeRoomUploads(roomId: string): Promise<void> {
   await fs.rm(dir, { recursive: true, force: true });
 }
 
+/**
+ * Bytes usados pela sala (vivos + apagados ha menos de 7 dias). SQL cru porque
+ * `size` e Int de 32 bits no Prisma: com a cota de 2 GB a SOMA passa de 2^31 e
+ * o `aggregate` estouraria. O SQLite soma em 64 bits e devolve BigInt.
+ */
 export async function getQuotaUsage(roomId: string): Promise<number> {
   const sevenDaysAgo = new Date(Date.now() - 7*24*60*60*1000);
-  const agg = await prisma.chatFile.aggregate({
-    where: {
-      roomId,
-      OR: [{ deletedAt: null }, { deletedAt: { gt: sevenDaysAgo } }]
-    },
-    _sum: { size: true }
-  });
-  return agg._sum.size ?? 0;
+  const rows = await prisma.$queryRaw<Array<{ total: bigint | number | null }>>`
+    SELECT SUM("size") AS total FROM "ChatFile"
+    WHERE "roomId" = ${roomId} AND ("deletedAt" IS NULL OR "deletedAt" > ${sevenDaysAgo})`;
+  return Number(rows[0]?.total ?? 0);
 }
 
 export async function gcDeletedFiles(): Promise<{ deletedCount: number }> {

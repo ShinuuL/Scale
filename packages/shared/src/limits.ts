@@ -6,8 +6,14 @@
 /** Tamanho maximo (caracteres, apos trim) de uma mensagem de chat. */
 export const CHAT_MESSAGE_MAX = 500;
 
-/** Tamanho maximo de um arquivo anexado ao chat (bytes; 15 MB decimais). */
-export const MAX_FILE_SIZE_BYTES = 15_000_000;
+/** Tamanho maximo de um arquivo anexado ao chat (bytes; 250 MB decimais). */
+export const MAX_FILE_SIZE_BYTES = 250_000_000;
+
+/**
+ * Cota de arquivos por sala persistente (bytes; 2 GB decimais). Conta os
+ * arquivos vivos e os apagados ha menos de 7 dias (ainda no disco ate o GC).
+ */
+export const ROOM_FILE_QUOTA_BYTES = 2_000_000_000;
 
 /** Quantidade maxima de arquivos por mensagem. */
 export const MAX_FILES_PER_MESSAGE = 5;

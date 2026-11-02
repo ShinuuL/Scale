@@ -73,6 +73,13 @@ function createChatMock(overrides: Partial<ChatApi> = {}): ChatApi {
   };
 }
 
+/** Arquivo que se diz maior que o limite sem alocar 250 MB no teste. */
+function bigFile(): File {
+  const f = new File(['x'], 'big.zip', { type: 'application/zip' });
+  Object.defineProperty(f, 'size', { value: 250_000_001 });
+  return f;
+}
+
 describe('validation cliente (Task 9)', () => {
   it('rejeita vazio/trim e >500', () => {
     expect(chatMessageClientSchema.safeParse('   ').success).toBe(false);
@@ -86,8 +93,8 @@ describe('validation cliente (Task 9)', () => {
     expect(chatEditClientSchema.safeParse('novo texto').success).toBe(true);
   });
 
-  it('fileClientSchema rejeita >15MB e mime fora da allowlist', () => {
-    const big = new File([new ArrayBuffer(15_000_001)], 'big.zip', { type: 'application/zip' });
+  it('fileClientSchema rejeita >250MB e mime fora da allowlist', () => {
+    const big = bigFile();
     expect(fileClientSchema.safeParse({ file: big }).success).toBe(false);
 
     const exe = new File([new ArrayBuffer(10)], 'malware.exe', { type: 'application/x-msdownload' });
@@ -637,16 +644,16 @@ describe('ChatPanel (Task 10)', () => {
   });
 
   it('uploadErrorMessage traduz os erros do servidor', () => {
-    expect(uploadErrorMessage(413, 'File too large. Max 15MB')).toMatch(/15 MB/);
+    expect(uploadErrorMessage(413, 'File too large. Max 250MB')).toMatch(/250 MB/);
     expect(uploadErrorMessage(413, 'Quota exceeded')).toMatch(/Cota/);
     expect(uploadErrorMessage(403, 'Not a room member')).toMatch(/permissão/);
     expect(uploadErrorMessage(502)).toBe('Falha no envio (HTTP 502).');
   });
 
-  it('rejeita arquivo >15MB ou mime fora da allowlist nos chips', () => {
+  it('rejeita arquivo >250MB ou mime fora da allowlist nos chips', () => {
     renderChatPanel();
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
-    const big = new File([new ArrayBuffer(15_000_001)], 'big.zip', { type: 'application/zip' });
+    const big = bigFile();
     const exe = new File(['MZ'], 'malware.exe', { type: 'application/x-msdownload' });
     const ok = new File(['ok'], 'ok.txt', { type: 'text/plain' });
 

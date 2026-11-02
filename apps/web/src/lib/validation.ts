@@ -115,5 +115,5 @@ export const fileClientSchema = z
   .object({
     file: z.instanceof(File),
   })
-  .refine((f) => f.file.size <= MAX_FILE_SIZE_BYTES, 'Máx. 15MB')
+  .refine((f) => f.file.size <= MAX_FILE_SIZE_BYTES, 'Máx. 250 MB')
   .refine((f) => ALLOWED_MIME_CLIENT_RE.test(f.file.type), 'Tipo não permitido');

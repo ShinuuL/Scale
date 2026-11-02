@@ -1,9 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import fs from 'node:fs';
+import fsp from 'node:fs/promises';
+import { pipeline } from 'node:stream/promises';
 import path from 'node:path';
 import { prisma } from '../lib/prisma.js';
-import { sanitizeFilename, detectMagicBytes, saveFile, getQuotaUsage, UPLOADS_ROOT } from '../lib/uploads.js';
-import { ALLOWED_MIME_RE, CHAT_MESSAGE_MAX, MAX_FILE_SIZE_BYTES, parseGuestName } from '@scale/shared';
+import { sanitizeFilename, detectMagicBytes, prepareFilePath, readFileHead, getQuotaUsage, UPLOADS_ROOT } from '../lib/uploads.js';
+import { ALLOWED_MIME_RE, CHAT_MESSAGE_MAX, MAX_FILES_PER_MESSAGE, ROOM_FILE_QUOTA_BYTES, parseGuestName } from '@scale/shared';
 import { guardRoomParticipation } from '../lib/roomAccess.js';
 import { addChatFilesBytes, incQuotaExceeded } from '../lib/metrics.js';
 import { toPublicFile } from '../lib/publicDto.js';
@@ -49,43 +51,68 @@ export async function filesRoutes(fastify: FastifyInstance): Promise<void> {
     const participant = await guardRoomParticipation(request, reply, room);
     if (!participant) return reply;
 
-    const files = await request.parts(); // fastify-multipart
-    const parts: Array<{ filename: string; mime: string; buffer: Buffer; fieldname: string }> = [];
+    // Arquivos de ate 250 MB: cada parte vai por STREAM direto ao disco (nunca
+    // inteira na memoria). Qualquer recusa apaga o que ja foi gravado nesta
+    // requisicao — nada fica orfao no disco nem conta na cota.
+    const quotaBefore = await getQuotaUsage(roomId);
+    const saved: Array<{ id: string; filename: string; mime: string; size: number; abs: string; rel: string }> = [];
     const fields: Record<string, string> = {};
-    let fileCount = 0;
-    let totalNew = 0;
-    for await (const part of files) {
-      if (part.type === 'field') {
-        fields[part.fieldname] = String(part.value ?? '');
-        continue;
-      }
+    const discard = async (): Promise<void> => {
+      await Promise.all(saved.map((f) => fsp.unlink(f.abs).catch(() => {})));
+    };
+    const reject = async (code: number, body: Record<string, unknown>) => {
+      await discard();
+      return reply.code(code).send(body);
+    };
 
-      const buf = await part.toBuffer();
-      if (buf.length > MAX_FILE_SIZE_BYTES) return reply.code(413).send({ error: 'File too large. Max 15MB' });
-      const mime = part.mimetype;
-      if (!ALLOWED_MIME_RE.test(mime)) return reply.code(400).send({ error: 'Tipo não permitido', mime });
-      // Magic bytes ESTRITO (critic): se detectMagicBytes devolve um mime canônico
-      // e ele difere do declarado → 400. Isso bloqueia QUALQUER mismatch, incl.
-      // application/pdf com image/png declarado (o branch antigo de prefix-match
-      // deixava passar). text/plain não tem magic (detected null) → permitido pelo
-      // mime declarado.
-      const detected = detectMagicBytes(buf);
-      if (detected !== null && detected !== mime) {
-        return reply.code(400).send({ error: 'Magic bytes mismatch', detected, declared: mime });
+    try {
+      for await (const part of request.parts()) {
+        if (part.type === 'field') {
+          fields[part.fieldname] = String(part.value ?? '');
+          continue;
+        }
+
+        const mime = part.mimetype;
+        if (!ALLOWED_MIME_RE.test(mime)) {
+          part.file.resume();
+          return await reject(400, { error: 'Tipo não permitido', mime });
+        }
+
+        const id = crypto.randomUUID();
+        const { abs, rel } = await prepareFilePath(roomId, id, part.filename);
+        const entry = { id, filename: part.filename, mime, size: 0, abs, rel };
+        saved.push(entry);
+        await pipeline(part.file, fs.createWriteStream(abs, { mode: 0o600 }));
+        // Limite do busboy (MAX_FILE_SIZE_BYTES no server.ts): estourou -> truncado.
+        if (part.file.truncated) return await reject(413, { error: 'File too large. Max 250MB' });
+        entry.size = (await fsp.stat(abs)).size;
+
+        // Magic bytes ESTRITO: se detectMagicBytes devolve um mime canonico e
+        // ele difere do declarado -> 400 (bloqueia QUALQUER mismatch, incl.
+        // application/pdf declarado image/png). text/plain nao tem magic
+        // (detected null) -> permitido pelo mime declarado.
+        const detected = detectMagicBytes(await readFileHead(abs));
+        if (detected !== null && detected !== mime) {
+          return await reject(400, { error: 'Magic bytes mismatch', detected, declared: mime });
+        }
+
+        const totalNew = saved.reduce((sum, f) => sum + f.size, 0);
+        if (quotaBefore + totalNew > ROOM_FILE_QUOTA_BYTES) {
+          incQuotaExceeded();
+          return await reject(413, { error: 'Quota exceeded' });
+        }
       }
-      parts.push({ filename: part.filename, mime, buffer: buf, fieldname: part.fieldname });
-      fileCount += 1;
-      totalNew += buf.length;
+    } catch (err) {
+      // Limites do multipart (FilesLimitError, RequestFileTooLargeError) e
+      // cliente que caiu no meio do envio.
+      await discard();
+      throw err;
     }
+
+    const fileCount = saved.length;
+    const totalNew = saved.reduce((sum, f) => sum + f.size, 0);
     if (fileCount === 0) return reply.code(400).send({ error: 'Nenhum arquivo enviado' });
-
-    if (fileCount > 5) return reply.code(400).send({ error: 'Máx. 5 arquivos por mensagem' });
-
-    const quota = await getQuotaUsage(roomId);
-    if (quota + totalNew > 200 * 1024 * 1024) {
-      incQuotaExceeded();
-      return reply.code(413).send({ error: 'Quota exceeded' });
-    }
+    if (fileCount > MAX_FILES_PER_MESSAGE) return reject(400, { error: 'Máx. 5 arquivos por mensagem' });
 
     // cria ChatMessage para agrupar arquivos (content vem do campo multipart 'content')
     const contentField = fields.content ?? (request.body as Record<string, unknown>)?.content;
@@ -102,11 +129,9 @@ export async function filesRoutes(fastify: FastifyInstance): Promise<void> {
     });
 
     const createdFiles = [];
-    for (const p of parts) {
-      const fileId = crypto.randomUUID();
-      const relPath = await saveFile(roomId, fileId, p.filename, p.buffer);
+    for (const f of saved) {
       const cf = await prisma.chatFile.create({
-        data: { id: fileId, roomId, messageId: message.id, filename: sanitizeFilename(p.filename), mime: p.mime, size: p.buffer.length, path: relPath, uploadedBy: userId, guestId },
+        data: { id: f.id, roomId, messageId: message.id, filename: sanitizeFilename(f.filename), mime: f.mime, size: f.size, path: f.rel, uploadedBy: userId, guestId },
       });
       createdFiles.push(cf);
     }

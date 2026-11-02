@@ -183,9 +183,15 @@ docker compose up --build -d
 ### Já incluído (implementado e testado)
 - Chat de texto em sala (persistente e temporária) com menções `@`, edição
   (janela de 15 min) e exclusão pelo autor
-- Partilha de arquivos no chat: até 5 por mensagem, 15 MB por arquivo,
+- Partilha de arquivos no chat: até 5 por mensagem, 250 MB por arquivo,
   allowlist de MIME (`image/*`, `application/pdf`, `text/plain`, `audio/*`,
-  `application/zip`), validação por magic bytes e quota de 200 MB por sala
+  `application/zip`), validação por magic bytes e quota de 2 GB por sala
+  (`ROOM_FILE_QUOTA_BYTES`). O upload grava por **stream** direto no disco
+  (nunca o arquivo inteiro na memória); recusa no meio apaga o que já foi
+  gravado. Soma da quota em SQL cru (64 bits: passa de 2^31).
+  - Pelo túnel `*.trycloudflare.com` a Cloudflare corta requisições acima de
+    100 MB (limite do plano gratuito): arquivos maiores só sobem pelo acesso
+    direto ao proxy (localhost/LAN)
 - Upload bloqueado em sala temporária (apenas persistente aceita arquivos)
 - Sistema de ícones internos: UI sem emojis, `apps/web/src/components/ui/Icon.tsx`
   com 30 ícones (SVG vetorial, `stroke="currentColor"`), sem dependência externa

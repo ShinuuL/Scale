@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import bcrypt from 'bcryptjs';
-import { sanitizeFilename, detectMagicBytes, getQuotaUsage } from '../lib/uploads.js';
+import { sanitizeFilename, detectMagicBytes, getQuotaUsage, UPLOADS_ROOT } from '../lib/uploads.js';
 import { prisma } from '../lib/prisma.js';
 import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
@@ -261,7 +261,7 @@ describe('REST files', () => {
     await app.close();
   });
 
-  it('POST rejeita temporária, >15MB, >5 files, mime fora allowlist, magic mismatch, quota 200MB', async () => {
+  it('POST rejeita temporária, acima do limite, >5 files, mime fora allowlist, magic mismatch, quota 2GB', async () => {
     // temporária
     const tempRes = await app.inject({
       method: 'POST',
@@ -272,7 +272,8 @@ describe('REST files', () => {
     });
     expect(tempRes.statusCode).toBe(400);
 
-    // >15MB — @fastify/multipart throws RequestFileTooLargeError (413)
+    // Acima do limite do multipart (aqui 15 MB no app de teste; 250 MB no
+    // server.ts) — o stream estoura RequestFileTooLargeError (413).
     const big = Buffer.concat([PNG, Buffer.alloc(15_000_001)]);
     const bigRes = await app.inject({
       method: 'POST',
@@ -334,25 +335,36 @@ describe('REST files', () => {
     expect(JSON.parse(pdfContent.payload).detected).toBe('application/pdf');
     expect(JSON.parse(pdfContent.payload).declared).toBe('image/png');
 
-    // quota 200MB
+    // quota 2 GB: soma em 64 bits (passa de 2^31) e conta apagados < 7 dias
     const quotaRoom = await prisma.room.create({
       data: { name: 'REST Quota', isPersistent: true },
     });
     const quotaMsg = await prisma.chatMessage.create({
       data: { roomId: quotaRoom.id, content: 'quota' },
     });
-    await prisma.chatFile.createMany({
-      data: Array.from({ length: 199 }, (_, i) => ({
-        roomId: quotaRoom.id,
-        messageId: quotaMsg.id,
-        filename: `q${i}.bin`,
-        mime: 'application/zip',
-        size: 1_048_576, // 1 MiB each → 199 MiB total
-        path: `uploads/${quotaRoom.id}/q${i}.bin`,
-      })),
+    const row = (i: number, size: number, deletedAt: Date | null = null) => ({
+      roomId: quotaRoom.id,
+      messageId: quotaMsg.id,
+      filename: `q${i}.bin`,
+      mime: 'application/zip',
+      size,
+      path: `uploads/${quotaRoom.id}/q${i}.bin`,
+      deletedAt,
     });
-    // 199 MiB < 200 MiB; uploading 2 MiB → exceeds quota → 413
-    const upload2mb = Buffer.concat([PNG, Buffer.alloc(2 * 1024 * 1024)]);
+    await prisma.chatFile.createMany({
+      data: [
+        row(0, 1_099_000_000),
+        row(1, 900_000_000, new Date(Date.now() - 24 * 60 * 60 * 1000)), // apagado ontem: conta
+        row(2, 2_000_000_000, new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)), // apagado ha 30 dias: nao conta
+      ],
+    });
+    expect(await getQuotaUsage(quotaRoom.id)).toBe(1_999_000_000);
+    await prisma.chatFile.create({ data: row(3, 1_200_000_000) });
+    expect(await getQuotaUsage(quotaRoom.id)).toBe(3_199_000_000); // > 2^31
+    await prisma.chatFile.deleteMany({ where: { roomId: quotaRoom.id, filename: 'q3.bin' } });
+
+    // 1,999 GB usados; 2 MB novos -> passa de 2 GB -> 413 e nada fica no disco
+    const upload2mb = Buffer.concat([PNG, Buffer.alloc(2_000_000)]);
     const quotaRes = await app.inject({
       method: 'POST',
       url: `/api/rooms/${quotaRoom.id}/files`,
@@ -361,6 +373,9 @@ describe('REST files', () => {
       ])),
     });
     expect(quotaRes.statusCode).toBe(413);
+    expect(JSON.parse(quotaRes.payload).error).toBe('Quota exceeded');
+    const left = await fs.readdir(path.join(UPLOADS_ROOT, quotaRoom.id)).catch(() => []);
+    expect(left).toEqual([]);
     await prisma.room.delete({ where: { id: quotaRoom.id } }).catch(() => {});
   });
 

@@ -91,8 +91,8 @@ export function uploadErrorMessage(status: number, serverError?: string): string
       return 'Sem permissão para enviar arquivos nesta sala.';
     case 413:
       return serverError === 'Quota exceeded'
-        ? 'Cota de 200 MB da sala atingida.'
-        : 'Arquivo grande demais (máx. 15 MB).';
+        ? 'Cota de 2 GB da sala atingida.'
+        : 'Arquivo grande demais (máx. 250 MB).';
     case 429:
       return 'Muitos envios seguidos. Aguarde e tente de novo.';
     default:

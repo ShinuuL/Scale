@@ -31,14 +31,14 @@ describe('chat validation', () => {
     expect(chatMessageSchema.safeParse({ ...base, mentions: [...base.mentions!, 'extra'] }).success).toBe(false);
   });
 
-  it('fileMeta rejeita size >15MB', async () => {
+  it('fileMeta rejeita size >250MB', async () => {
     const { fileMetaSchema } = await getSchemas();
     expect(
       fileMetaSchema.safeParse({
         roomId: '550e8400-e29b-41d4-a716-446655440000',
         filename: 'a.zip',
         mime: 'application/zip',
-        size: 15_000_001,
+        size: 250_000_001,
       }).success,
     ).toBe(false);
   });
