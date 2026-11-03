@@ -18,7 +18,10 @@ param(
   [string]$Pasta = '/opt/scale',
   [switch]$SemDeploy
 )
-$ErrorActionPreference = 'Stop'
+# 'Continue' (nao 'Stop'): no PowerShell 5.1 o stderr de comando nativo (o
+# Docker escreve o progresso do build la) viraria erro fatal. As falhas sao
+# detectadas por $LASTEXITCODE apos cada comando.
+$ErrorActionPreference = 'Continue'
 Set-Location (Split-Path $PSScriptRoot -Parent)
 
 if (git status --porcelain) {
