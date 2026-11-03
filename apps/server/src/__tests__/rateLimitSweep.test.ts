@@ -33,6 +33,7 @@ describe('expurgo dos baldes de rate limit', () => {
       'chat',
       'dm',
       'friendRequest',
+      'githubOAuth',
       'loginEmail',
       'loginIp',
       'profile',

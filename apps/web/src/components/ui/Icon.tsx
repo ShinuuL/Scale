@@ -32,6 +32,7 @@ export type IconName =
   | 'close'
   | 'document'
   | 'eye'
+  | 'github'
   | 'globe'
   | 'image'
   | 'info'
@@ -239,6 +240,14 @@ export const ICONS: Record<IconName, IconShape[]> = {
     { d: 'M12 15.1a3.1 3.1 0 1 0 0-6.2 3.1 3.1 0 0 0 0 6.2Z' },
     {
       d: 'M10.3 3.5h3.4l.5 2.3 1.6.9 2.2-.8 1.7 2.9-1.8 1.6v1.8l1.8 1.6-1.7 2.9-2.2-.8-1.6.9-.5 2.3h-3.4l-.5-2.3-1.6-.9-2.2.8-1.7-2.9 1.8-1.6v-1.8L4.3 8.8 6 5.9l2.2.8 1.6-.9.5-2.3Z',
+    },
+  ],
+  // Marca do GitHub (silhueta solida): unico icone de marca, usado so no botao
+  // "Entrar com GitHub", onde a marca identifica o provedor.
+  github: [
+    {
+      d: 'M12 2.2a9.8 9.8 0 0 0-3.1 19.1c.5.1.7-.2.7-.5v-1.7c-2.7.6-3.3-1.3-3.3-1.3-.4-1.1-1.1-1.4-1.1-1.4-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.5 2.3 1.1 2.9.8.1-.6.3-1.1.6-1.3-2.2-.2-4.5-1.1-4.5-4.9 0-1.1.4-2 1-2.6-.1-.3-.4-1.3.1-2.6 0 0 .8-.3 2.7 1a9.3 9.3 0 0 1 4.9 0c1.9-1.3 2.7-1 2.7-1 .5 1.3.2 2.3.1 2.6.6.7 1 1.6 1 2.6 0 3.8-2.3 4.6-4.5 4.9.4.3.7.9.7 1.8v2.7c0 .3.2.6.7.5A9.8 9.8 0 0 0 12 2.2Z',
+      filled: true,
     },
   ],
   // Lixeira: tampa com alça, corpo afunilado e dois frisos.

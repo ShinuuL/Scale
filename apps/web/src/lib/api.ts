@@ -186,6 +186,12 @@ class ApiClient {
     return authResponseSchema.parse(data);
   }
 
+  /** Provedores de login externos ligados no servidor (o botao some quando desligado). */
+  async getAuthProviders(): Promise<{ github: boolean }> {
+    const data = await this.request<unknown>('/api/auth/providers');
+    return z.object({ github: z.boolean() }).parse(data);
+  }
+
   async getMe(): Promise<{ user: MeUser }> {
     return this.request('/api/auth/me');
   }

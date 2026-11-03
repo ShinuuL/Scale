@@ -42,14 +42,16 @@ describe('Icon', () => {
     expect(svg).toHaveAttribute('stroke-linejoin', 'round');
   });
 
-  it('só os ícones de estado "ligado" (mic, speaker) usam preenchimento sólido', () => {
+  it('só os ícones de estado "ligado" (mic, speaker) e a marca do GitHub usam preenchimento sólido', () => {
     const filled = (name: IconName) =>
       ICONS[name].filter((shape) => shape.filled).length;
     expect(filled('mic')).toBe(1);
     expect(filled('speaker')).toBe(1);
+    // Marca de terceiro: a silhueta oficial e solida (nao e estado "ligado").
+    expect(filled('github')).toBe(1);
 
     const rest = Object.keys(ICONS).filter(
-      (name) => name !== 'mic' && name !== 'speaker',
+      (name) => name !== 'mic' && name !== 'speaker' && name !== 'github',
     ) as IconName[];
     for (const name of rest) {
       expect(filled(name), `${name} não deveria ter forma preenchida`).toBe(0);

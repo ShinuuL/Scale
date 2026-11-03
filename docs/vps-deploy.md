@@ -63,6 +63,20 @@ cat .deployed-commit                  # commit em produção
 
 Editar configuração (admins, TURN...): `nano /opt/scale/.env` e depois `./deploy/deploy.sh`.
 
+## Login com GitHub
+
+1. Em https://github.com/settings/developers, crie um **OAuth App**:
+   - Homepage URL: `https://scale.nexushosts.tech:8443`
+   - Authorization callback URL: `https://scale.nexushosts.tech:8443/api/auth/github/callback`
+2. Gere um client secret.
+3. Na VPS, edite `/opt/scale/.env` (não cole o secret em chat nem no Git):
+   ```
+   GITHUB_CLIENT_ID=<client id>
+   GITHUB_CLIENT_SECRET=<client secret>
+   PUBLIC_URL=https://scale.nexushosts.tech:8443
+   ```
+4. Rode `./deploy/deploy.sh`. O botão "Entrar com GitHub" aparece no login.
+
 ## Backup e restauração
 
 ```bash

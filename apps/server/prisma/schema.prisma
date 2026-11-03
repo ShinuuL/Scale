@@ -27,10 +27,24 @@ model User {
   roomMembers RoomMember[]
 
   username               Username?
+  githubAccount          GithubAccount?
   friendRequestsSent     Friendship[]    @relation("FriendshipRequester")
   friendRequestsReceived Friendship[]    @relation("FriendshipAddressee")
   directMessagesSent     DirectMessage[] @relation("DirectMessageSender")
   directMessagesReceived DirectMessage[] @relation("DirectMessageRecipient")
+}
+
+// Conta GitHub vinculada (login OAuth). Tabela propria pelo mesmo motivo do
+// Username (`db push` nao adiciona unique em tabela existente). O access token
+// do GitHub NAO e guardado: so serve para ler a identidade no callback.
+model GithubAccount {
+  id        String   @id @default(cuid())
+  githubId  String   @unique
+  login     String
+  userId    String   @unique
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 // @nome de usuario unico (minusculo, [a-z0-9_]). Tabela propria em vez de

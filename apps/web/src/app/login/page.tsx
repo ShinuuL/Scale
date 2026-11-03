@@ -1,18 +1,26 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Icon } from '@/components/ui/Icon';
 import Link from 'next/link';
+import { GithubLoginButton, readGithubError } from '@/components/auth/GithubLogin';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Erro do login com GitHub (/login?github=<codigo>). Em efeito, nao no
+  // estado inicial: a pagina e pre-renderizada sem query (export estatico).
+  useEffect(() => {
+    const githubError = readGithubError();
+    if (githubError) setError(githubError);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -74,6 +82,8 @@ export default function LoginPage() {
               {loading ? 'Entrando...' : 'Entrar'}
             </Button>
           </form>
+
+          <GithubLoginButton />
 
           <div className="mt-4 text-center">
             <Link

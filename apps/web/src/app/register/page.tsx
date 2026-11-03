@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Icon } from '@/components/ui/Icon';
 import Link from 'next/link';
+import { GithubLoginButton } from '@/components/auth/GithubLogin';
 
 export default function RegisterPage() {
   const [name, setName] = useState('');
@@ -85,6 +86,8 @@ export default function RegisterPage() {
               {loading ? 'Criando conta...' : 'Criar Conta'}
             </Button>
           </form>
+
+          <GithubLoginButton label="Criar conta com GitHub" />
 
           <div className="mt-4 text-center">
             <Link

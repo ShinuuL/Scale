@@ -1,10 +1,11 @@
 import type { FastifyServerOptions } from 'fastify';
 
 /** Parametros de query que nunca podem aparecer em log. */
-const SENSITIVE_QUERY_KEYS = new Set(['password', 'invitetoken', 'token']);
+// code/state: callback do OAuth do GitHub (code de uso unico + anti-CSRF).
+const SENSITIVE_QUERY_KEYS = new Set(['password', 'invitetoken', 'token', 'code', 'state']);
 
 /**
- * Remove da URL os parametros sensiveis (password, inviteToken, token) antes de
+ * Remove da URL os parametros sensiveis (password, inviteToken, token, code, state) antes de
  * ela entrar no log. A rota continua recebendo a URL original.
  */
 export function redactUrl(url: string): string {

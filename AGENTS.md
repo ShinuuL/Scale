@@ -129,6 +129,20 @@ docker compose up --build -d
 - `GET /api/rooms` ("Salas na rede", exige login): só salas públicas ATIVAS,
   com `{ id, name, participantCount, isPersistent, hasPassword }`.
 
+### Login com GitHub (OAuth App)
+- Opcional: liga com `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` e `PUBLIC_URL`
+  (callback `<PUBLIC_URL>/api/auth/github/callback`). Sem os três, o botão some
+  (`GET /api/auth/providers`) e as rotas mandam para `/login?github=desligado`.
+- `state` anti-CSRF em cookie HttpOnly `SameSite=Lax` (o callback é navegação
+  vinda do github.com), `__Host-` em produção (site irmão não planta cookie),
+  uso único, 10 min. `code`/`state` são redigidos nos logs.
+- Escopos `read:user user:email`; o access token não é gravado.
+- Conta: githubId vinculado (tabela `GithubAccount`) entra; e-mail já cadastrado
+  sem vínculo **não** é vinculado sozinho (o cadastro por senha não verifica
+  e-mail); senão cria conta com o e-mail primário **verificado** do GitHub.
+- Balde `githubOAuth`: 20 / 10 min por IP; criação também conta no `register`.
+- Erros voltam como `/login?github=<cancelado|falhou|email_em_uso|sem_email|limite|desligado>`.
+
 ### Convidado (guestId)
 - O servidor emite um `guestId` (UUID v4) no cookie `scale_guest` — HttpOnly,
   SameSite=Strict, Secure em produção, 180 dias, assinado (HMAC,
@@ -194,7 +208,7 @@ docker compose up --build -d
     direto ao proxy (localhost/LAN)
 - Upload bloqueado em sala temporária (apenas persistente aceita arquivos)
 - Sistema de ícones internos: UI sem emojis, `apps/web/src/components/ui/Icon.tsx`
-  com 30 ícones (SVG vetorial, `stroke="currentColor"`), sem dependência externa
+  com 31 ícones (SVG vetorial, `stroke="currentColor"`), sem dependência externa
 - Configurações (menu de perfil, ícone `settings`): nome de usuário
   (`PATCH /api/me`, reemite o JWT), foto de perfil (`PUT|GET|DELETE
   /api/me/avatar`, até 32 MB, PNG/JPEG/WebP por magic bytes, em

@@ -292,6 +292,20 @@ export function resetRefreshRateLimit(ip: string): void {
   reset(refreshStore, ip);
 }
 
+// Login com GitHub: 20 / 10 min por IP, somando inicio e callback. Cada
+// callback faz duas chamadas HTTP ao GitHub; o balde segura o abuso disso.
+const GITHUB_OAUTH_WINDOW_MS = 10 * 60_000;
+const GITHUB_OAUTH_MAX = 20;
+const githubOAuthStore = createBucket('githubOAuth');
+
+export function isGithubOAuthRateLimited(ip: string): RateLimitResult {
+  return ipBucket(githubOAuthStore, ip, GITHUB_OAUTH_WINDOW_MS, GITHUB_OAUTH_MAX);
+}
+
+export function resetGithubOAuthRateLimit(ip: string): void {
+  reset(githubOAuthStore, ip);
+}
+
 // Upload de arquivos: 30 / min por IP. Cada upload grava bytes no disco e no
 // SQLite; o balde fica ANTES de bufferizar o multipart.
 const UPLOAD_WINDOW_MS = 60_000;
