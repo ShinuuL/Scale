@@ -235,6 +235,13 @@ docker compose up --build -d
 - Health checks para todos os serviços
 - Profile `tunnel` para habilitar o túnel cloudflared
 
+### Produção (VPS)
+- `https://scale.nexushosts.tech:8443`. Overlay `docker-compose.prod.yml` +
+  `deploy/`. Guia e comandos de atualização: `docs/vps-deploy.md`.
+- VPS compartilhada: 80/443 são do Nexus. O Scale tem Caddy próprio (`edge`,
+  `172.28.0.6`) na 8443, com TLS por DNS-01 delegado ao acme-dns.
+- Produção = commit: atualizar só com `deploy/enviar.ps1` (recusa árvore suja).
+
 ### Acesso remoto (tunel)
 - Tunel publico via cloudflared (URL efemera `*.trycloudflare.com`)
 - Sem necessidade de port forwarding

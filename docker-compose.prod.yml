@@ -1,0 +1,65 @@
+# Overlay de PRODUCAO (VPS com dominio proprio + HTTPS).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
+#
+# (ou ./deploy/deploy.sh, que faz isso). Ver docs/vps-deploy.md.
+#
+# O que muda em relacao ao compose base:
+#   - novo servico `edge` (Caddy) em ${EDGE_PORT:-8443} com TLS via DNS-01
+#     (acme-dns), pois 80/443 da VPS sao de outro projeto;
+#   - `proxy` deixa de ser publicado em 0.0.0.0 (so loopback, diagnostico);
+#   - backend confia tambem na borda (172.28.0.6) no TRUST_PROXY;
+#   - restart automatico em todos os servicos.
+# O tunel cloudflared NAO e usado aqui (nao ative o profile `tunnel`).
+
+services:
+  backend:
+    restart: unless-stopped
+    environment:
+      # Cadeia de hops na VPS: cliente -> edge (172.28.0.6) -> proxy
+      # (172.28.0.4) -> backend. So esses hops, nunca a subnet/gateway.
+      - TRUST_PROXY=172.28.0.4/32,172.28.0.6/32
+
+  proxy:
+    ports: !override
+      - "127.0.0.1:${PROXY_PORT:-8080}:8080"
+
+  edge:
+    build:
+      context: .
+      dockerfile: deploy/edge.Dockerfile
+    image: scale-edge:latest
+    restart: unless-stopped
+    depends_on:
+      proxy:
+        condition: service_healthy
+    ports:
+      # VPS compartilhada: 80/443 sao de outro projeto. HTTPS em porta propria.
+      - "${EDGE_PORT:-8443}:${EDGE_PORT:-8443}"
+      - "${EDGE_PORT:-8443}:${EDGE_PORT:-8443}/udp" # HTTP/3
+    environment:
+      - SCALE_DOMAIN=${SCALE_DOMAIN:?defina SCALE_DOMAIN no .env}
+      - EDGE_PORT=${EDGE_PORT:-8443}
+      - ACMEDNS_USERNAME=${ACMEDNS_USERNAME:?defina ACMEDNS_USERNAME no .env}
+      - ACMEDNS_PASSWORD=${ACMEDNS_PASSWORD:?defina ACMEDNS_PASSWORD no .env}
+      - ACMEDNS_SUBDOMAIN=${ACMEDNS_SUBDOMAIN:?defina ACMEDNS_SUBDOMAIN no .env}
+      - ACMEDNS_SERVER_URL=${ACMEDNS_SERVER_URL:-https://auth.acme-dns.io}
+    volumes:
+      - ./deploy/Caddyfile.edge:/etc/caddy/Caddyfile:ro
+      - edge_data:/data
+      - edge_config:/config
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:2019/config/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      scale:
+        # IP ESTATICO: entra no TRUST_PROXY do backend e no trusted_proxies
+        # do Caddyfile interno.
+        ipv4_address: 172.28.0.6
+
+volumes:
+  edge_data:
+  edge_config:

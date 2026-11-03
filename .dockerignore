@@ -20,3 +20,4 @@ playwright-report
 docs
 e2e
 apps/web/.caddy
+backups

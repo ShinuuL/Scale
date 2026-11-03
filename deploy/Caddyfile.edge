@@ -1,0 +1,34 @@
+# Caddyfile.edge — borda de PRODUCAO (VPS): termina o TLS do dominio proprio.
+#
+# A VPS e compartilhada: as portas 80/443 sao de outro projeto. Por isso o
+# Scale atende em {$EDGE_PORT} (ex.: https://scale.nexushosts.tech:8443) e o
+# certificado (Let's Encrypt) sai pelo desafio DNS-01 delegado ao acme-dns:
+#   _acme-challenge.<dominio>  CNAME  <ACMEDNS_SUBDOMAIN>.<host do acme-dns>
+# As credenciais do acme-dns so permitem gravar o TXT desse nome.
+#
+# Certificados no volume `edge_data` (NAO apague: rate limit do Let's Encrypt).
+#
+# IP real: a borda recebe a conexao direta do cliente e NAO confia em nenhum
+# X-Forwarded-For de entrada. O proxy interno confia so nela (172.28.0.6/32).
+{
+	# Sem porta 80: nao ha listener de redirecionamento HTTP->HTTPS.
+	auto_https disable_redirects
+}
+
+{$SCALE_DOMAIN}:{$EDGE_PORT} {
+	tls {
+		dns acmedns {
+			username {$ACMEDNS_USERNAME}
+			password {$ACMEDNS_PASSWORD}
+			subdomain {$ACMEDNS_SUBDOMAIN}
+			server_url {$ACMEDNS_SERVER_URL}
+		}
+		# A checagem de propagacao do Caddy nao segue bem o CNAME delegado e
+		# expira mesmo com o TXT publicado. Em vez dela: espera fixa.
+		propagation_delay 30s
+		propagation_timeout -1
+	}
+	encode zstd gzip
+	header Strict-Transport-Security "max-age=31536000"
+	reverse_proxy proxy:8080
+}

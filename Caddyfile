@@ -33,7 +33,7 @@
 # X-Forwarded-For e furar os baldes por IP.
 {
 	servers {
-		trusted_proxies static 172.28.0.5/32
+		trusted_proxies static 172.28.0.5/32 172.28.0.6/32
 	}
 }
 

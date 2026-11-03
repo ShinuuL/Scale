@@ -38,3 +38,6 @@ apps/desktop/dist/
 
 # Worktrees de agentes do Claude Code
 .claude/worktrees/
+
+# Backups da VPS (deploy/backup.sh)
+backups/
