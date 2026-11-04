@@ -16,7 +16,8 @@ import {
 import { prisma } from '../lib/prisma.js';
 import { isDirectMessageRateLimited, isFriendRequestRateLimited } from '../lib/rateLimit.js';
 import { AVATARS_ROOT, meSelect, toMe } from './profile.js';
-import { userRoom } from '../socket/handler.js';
+import { getRoomPeerUserId, userRoom } from '../socket/handler.js';
+import { guardRoomParticipation } from '../lib/roomAccess.js';
 
 /**
  * Amizades e mensagens privadas. Tudo exige login (convidado nao tem conta).
@@ -306,13 +307,42 @@ export async function socialRoutes(fastify: FastifyInstance): Promise<void> {
     // Sem amizade responde igual a "sem foto": nao confirma quem existe.
     if (other !== me && !(await areFriends(me, other))) return reply.code(404).send({ error: 'No avatar' });
 
-    const user = await prisma.user.findUnique({ where: { id: other }, select: { avatarPath: true, avatarMime: true } });
-    const abs = user?.avatarPath ? path.resolve(process.cwd(), user.avatarPath) : null;
-    if (!abs || !user?.avatarMime || !abs.startsWith(AVATARS_ROOT + path.sep)) {
-      return reply.code(404).send({ error: 'No avatar' });
-    }
-    reply.header('Content-Type', user.avatarMime);
-    reply.header('X-Content-Type-Options', 'nosniff');
-    return reply.send(fs.createReadStream(abs));
+    return sendUserAvatar(reply, other);
   });
+
+  // GET /api/rooms/:roomId/peers/:peerId/avatar — foto de quem esta na chamada.
+  // So participante da sala (room ticket no header, ou dono) e so de um peer
+  // que esta NELA agora; o userId nao trafega, o cliente so conhece o peerId.
+  // Convidado, peer fora da sala ou sem foto: o mesmo 404.
+  fastify.get('/api/rooms/:roomId/peers/:peerId/avatar', async (request, reply) => {
+    const params = peerAvatarParams.safeParse(request.params);
+    if (!params.success) return reply.code(404).send({ error: 'No avatar' });
+    const room = await prisma.room.findUnique({ where: { id: params.data.roomId } });
+    if (!room) return reply.code(404).send({ error: 'No avatar' });
+    if (!(await guardRoomParticipation(request, reply, room))) return reply;
+
+    const userId = getRoomPeerUserId(room.id, params.data.peerId);
+    if (!userId) return reply.code(404).send({ error: 'No avatar' });
+    // A foto muda de dono se o peerId for reaproveitado: cache curto e privado.
+    reply.header('Cache-Control', 'private, max-age=300');
+    return sendUserAvatar(reply, userId);
+  });
+}
+
+const peerAvatarParams = z.object({
+  roomId: z.string().uuid(),
+  // socket.id do Socket.io: 20 caracteres [A-Za-z0-9_-].
+  peerId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
+});
+
+/** Envia a foto do usuario (sandbox em AVATARS_ROOT) ou 404 "No avatar". */
+async function sendUserAvatar(reply: FastifyReply, userId: string): Promise<FastifyReply> {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { avatarPath: true, avatarMime: true } });
+  const abs = user?.avatarPath ? path.resolve(process.cwd(), user.avatarPath) : null;
+  if (!abs || !user?.avatarMime || !abs.startsWith(AVATARS_ROOT + path.sep)) {
+    return reply.code(404).send({ error: 'No avatar' });
+  }
+  reply.header('Content-Type', user.avatarMime);
+  reply.header('X-Content-Type-Options', 'nosniff');
+  return reply.send(fs.createReadStream(abs));
 }

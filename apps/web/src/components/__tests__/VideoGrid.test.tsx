@@ -93,4 +93,24 @@ describe('VideoGrid', () => {
     render(<VideoGrid {...base} peers={peers} localScreenStream={null} />);
     expect(document.querySelectorAll('audio')).toHaveLength(2);
   });
+
+  it('mostra a foto de perfil de quem tem; sem foto ou se a imagem falhar, a inicial', () => {
+    const peers = new Map([
+      ['p1', peer('p1', 'Bia', false)],
+      ['p2', peer('p2', 'Caio', false)],
+    ]);
+    const avatars = new Map([
+      [LOCAL_ID, '/api/me/avatar?v=1'],
+      ['p1', 'blob:foto-da-bia'],
+    ]);
+    render(<VideoGrid {...base} peers={peers} localScreenStream={null} avatars={avatars} />);
+    const imgs = Array.from(document.querySelectorAll('img'));
+    expect(imgs.map((i) => i.getAttribute('src'))).toEqual(['/api/me/avatar?v=1', 'blob:foto-da-bia']);
+    // Decorativa: o nome ja esta no rotulo do cartao.
+    imgs.forEach((i) => expect(i).toHaveAttribute('alt', ''));
+    expect(screen.getByText('C')).toBeInTheDocument();
+
+    fireEvent.error(imgs[1]);
+    expect(screen.getByText('B')).toBeInTheDocument();
+  });
 });

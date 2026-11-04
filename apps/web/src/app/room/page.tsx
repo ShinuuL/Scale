@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState, useEffect, useCallback, useRef } from 'react';
+import { Suspense, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useSocket } from '@/hooks/useSocket';
@@ -9,6 +9,7 @@ import { useDisconnectNotice } from '@/hooks/useDisconnectNotice';
 import { useRoomDeleted } from '@/hooks/useRoomDeleted';
 import { useSpeaking } from '@/hooks/useSpeaking';
 import { useChat } from '@/hooks/useChat';
+import { usePeerAvatars } from '@/hooks/usePeerAvatars';
 import { ChatPanel } from '@/components/ChatPanel';
 import { VideoGrid, LOCAL_ID } from '@/components/room/VideoGrid';
 import { RoomControls } from '@/components/room/RoomControls';
@@ -21,7 +22,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { ToastProvider, useToast } from '@/components/ui/Toast';
 import { Icon } from '@/components/ui/Icon';
 import { ProfileMenu } from '@/components/ui/ProfileMenu';
-import { api, type MeUser } from '@/lib/api';
+import { api, avatarUrl, type MeUser } from '@/lib/api';
 import { copyText } from '@/lib/clipboard';
 import { roomUrl } from '@/lib/roomLink';
 import { roomInviteHeaders } from '@/lib/roomAccess';
@@ -167,6 +168,19 @@ function RoomPageInner({ roomId }: { roomId: string }) {
 
   const webrtc = useWebRTC(socket, roomId);
   const displayName = accountName ?? socket.guestName;
+
+  // Fotos de perfil na chamada: a propria vem de /api/me/avatar; a dos outros
+  // participantes logados, pela rota da sala (room ticket no header).
+  const registeredPeerIds = Array.from(webrtc.peers.values())
+    .filter((p) => p.isRegistered)
+    .map((p) => p.peerId);
+  const peerAvatars = usePeerAvatars(roomId, registeredPeerIds, chat.roomTicket);
+  const ownAvatar = avatarUrl(account?.avatarUpdatedAt);
+  const callAvatars = useMemo(() => {
+    const map = new Map(peerAvatars);
+    if (ownAvatar) map.set(LOCAL_ID, ownAvatar);
+    return map;
+  }, [peerAvatars, ownAvatar]);
   // Transmissão escolhida para o palco (null = foco automático: a de outra
   // pessoa vence a sua). Lateral e faixa de miniaturas escrevem aqui.
   const [focusedShareId, setFocusedShareId] = useState<string | null>(null);
@@ -639,6 +653,7 @@ function RoomPageInner({ roomId }: { roomId: string }) {
             focusedShareId={focusedShareId}
             onFocusShare={setFocusedShareId}
             onStopShare={() => void webrtc.toggleScreenShare()}
+            avatars={callAvatars}
           />
         </div>
 

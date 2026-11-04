@@ -87,6 +87,15 @@ export function getRoomPeersSnapshot(): Map<string, number> {
   return snapshot;
 }
 
+/**
+ * Usuario logado por tras de um peer que esta AGORA na sala (null = convidado,
+ * peer inexistente ou fora dela). Usado pela foto de participante da chamada:
+ * o userId nunca trafega no wire, so o peerId.
+ */
+export function getRoomPeerUserId(roomId: string, peerId: string): string | null {
+  return roomPeers.get(roomId)?.get(peerId)?.userId ?? null;
+}
+
 /** Valor de um cookie no header `Cookie` do handshake (undefined se ausente). */
 export function readCookie(header: string | undefined, name: string): string | undefined {
   if (!header) return undefined;

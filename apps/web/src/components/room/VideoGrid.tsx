@@ -100,11 +100,26 @@ function StreamVideo({ stream, className }: { stream: MediaStream; className?: s
   return <video ref={ref} autoPlay playsInline muted className={className} />;
 }
 
-function Avatar({ name, speaking, size }: { name: string; speaking: boolean; size: 'lg' | 'md' | 'sm' }) {
+function Avatar({
+  name,
+  speaking,
+  size,
+  src,
+}: {
+  name: string;
+  speaking: boolean;
+  size: 'lg' | 'md' | 'sm';
+  /** Foto de perfil; sem ela (ou se falhar ao carregar) mostra a inicial. */
+  src?: string;
+}) {
+  const [broken, setBroken] = useState(false);
+  useEffect(() => setBroken(false), [src]);
+  const showPhoto = Boolean(src) && !broken;
+
   return (
     <div
       className={clsx(
-        'rounded-full flex items-center justify-center font-semibold select-none',
+        'rounded-full flex items-center justify-center font-semibold select-none overflow-hidden',
         'bg-brand-600/30 text-brand-200 border border-brand-500/30',
         'ring-offset-2 ring-offset-slate-900 transition-shadow duration-150 motion-reduce:transition-none',
         speaking ? 'ring-[3px] ring-brand-400' : 'ring-0',
@@ -114,7 +129,12 @@ function Avatar({ name, speaking, size }: { name: string; speaking: boolean; siz
       )}
       aria-hidden="true"
     >
-      {name.charAt(0).toUpperCase()}
+      {showPhoto ? (
+        // eslint-disable-next-line @next/next/no-img-element -- URL blob:/same-origin; next/image nao se aplica (export estatico)
+        <img src={src} alt="" className="h-full w-full object-cover" draggable={false} onError={() => setBroken(true)} />
+      ) : (
+        name.charAt(0).toUpperCase()
+      )}
     </div>
   );
 }
@@ -138,6 +158,7 @@ interface Member {
   name: string;
   isLocal: boolean;
   muted: boolean;
+  avatarUrl?: string;
 }
 
 /** Cartão de participante do canal de voz (sem vídeo: avatar + nome). */
@@ -153,7 +174,7 @@ function MemberCard({ member, speaking, compact }: { member: Member; speaking: b
         compact ? 'h-full w-full' : 'aspect-video w-full',
       )}
     >
-      <Avatar name={member.name} speaking={speaking} size={compact ? 'sm' : 'lg'} />
+      <Avatar name={member.name} speaking={speaking} size={compact ? 'sm' : 'lg'} src={member.avatarUrl} />
       <span className="absolute bottom-2 left-2 max-w-[75%] truncate rounded-md bg-black/60 px-2 py-0.5 text-xs font-medium text-white">
         {label}
       </span>
@@ -183,6 +204,8 @@ interface VideoGridProps {
   onFocusShare?: (id: string) => void;
   /** Encerra a própria transmissão (botão do cartão "Você está transmitindo"). */
   onStopShare?: () => void;
+  /** Fotos de perfil por id (LOCAL_ID ou peerId); sem entrada = inicial do nome. */
+  avatars?: Map<string, string>;
 }
 
 export function VideoGrid({
@@ -196,15 +219,17 @@ export function VideoGrid({
   focusedShareId = null,
   onFocusShare,
   onStopShare,
+  avatars,
 }: VideoGridProps) {
   const name = localName || 'Você';
   const peerArray = Array.from(peers.values());
   const members: Member[] = [
-    { id: LOCAL_ID, name, isLocal: true, muted: isMuted || !localStream },
+    { id: LOCAL_ID, name, isLocal: true, muted: isMuted || !localStream, avatarUrl: avatars?.get(LOCAL_ID) },
     ...peerArray.map((p) => ({
       id: p.peerId,
       name: p.name,
       isLocal: false,
+      avatarUrl: avatars?.get(p.peerId),
       muted: p.audioMuted || (p.stream?.getAudioTracks().length ?? 0) === 0,
     })),
   ];
