@@ -86,6 +86,105 @@ export const AUDIO_CONSTRAINTS: MediaTrackConstraints = {
   channelCount: 1,
 };
 
+// ─── Qualidade de voz (Opus) ──────────────────────────────────
+// Voz picotada pela internet: o Chrome negocia o Opus sem limite explícito e
+// com DTX livre. Fixamos FEC (recupera pacote perdido sem retransmitir), DTX
+// desligado (o DTX corta o som em pausas e o início das falas some), mono e
+// um bitrate de voz confortável.
+export const OPUS_MAX_BITRATE = 40000;
+const OPUS_FMTP: Record<string, string> = {
+  useinbandfec: '1',
+  usedtx: '0',
+  stereo: '0',
+  'sprop-stereo': '0',
+  maxaveragebitrate: String(OPUS_MAX_BITRATE),
+};
+const STATS_LOG_INTERVAL_MS = 10000;
+
+/**
+ * Ajusta o `a=fmtp` do Opus no SDP local antes de aplicar e enviar. Os
+ * parâmetros de fmtp são a preferência de RECEPÇÃO de quem os anuncia, por
+ * isso offer e answer passam por aqui.
+ */
+export function tuneOpusSdp(sdp: string): string {
+  const pt = /a=rtpmap:(\d+) opus\/48000/i.exec(sdp)?.[1];
+  if (!pt) return sdp;
+  const fmtpRe = new RegExp(`a=fmtp:${pt} ([^\\r\\n]*)`);
+  const match = fmtpRe.exec(sdp);
+  if (!match) {
+    const params = Object.entries(OPUS_FMTP).map(([k, v]) => `${k}=${v}`).join(';');
+    return sdp.replace(/(a=rtpmap:\d+ opus\/48000[^\r\n]*)(\r?\n)/i, `$1$2a=fmtp:${pt} ${params}$2`);
+  }
+  const current = new Map<string, string>();
+  for (const part of match[1].split(';')) {
+    const [k, v] = part.split('=');
+    if (k?.trim()) current.set(k.trim(), (v ?? '').trim());
+  }
+  for (const [k, v] of Object.entries(OPUS_FMTP)) current.set(k, v);
+  const merged = [...current].map(([k, v]) => `${k}=${v}`).join(';');
+  return sdp.replace(fmtpRe, `a=fmtp:${pt} ${merged}`);
+}
+
+function tuneOpus<T extends RTCSessionDescriptionInit>(desc: T): T {
+  return desc.sdp ? { ...desc, sdp: tuneOpusSdp(desc.sdp) } : desc;
+}
+
+/** Áudio com prioridade alta na fila de envio (DSCP) e teto de bitrate. */
+async function tuneAudioSender(pc: RTCPeerConnection): Promise<void> {
+  const sender = findAudioTransceiver(pc)?.sender;
+  if (!sender || typeof sender.getParameters !== 'function') return;
+  try {
+    const params = sender.getParameters();
+    if (!params.encodings || params.encodings.length === 0) return;
+    for (const enc of params.encodings) {
+      enc.maxBitrate = OPUS_MAX_BITRATE;
+      enc.priority = 'high';
+      (enc as RTCRtpEncodingParameters & { networkPriority?: RTCPriorityType }).networkPriority = 'high';
+    }
+    await sender.setParameters(params);
+  } catch (err) {
+    console.debug('[WebRTC] tuneAudioSender ignorado:', err);
+  }
+}
+
+/**
+ * Diagnóstico de voz no console a cada 10 s: perda, jitter, ocultação
+ * (trechos "inventados" pelo decoder = som picotado), RTT e tipo de rota.
+ */
+async function logAudioStats(pc: RTCPeerConnection, peerId: string): Promise<void> {
+  const report = await pc.getStats();
+  let lost = 0;
+  let received = 0;
+  let jitter = 0;
+  let concealed = 0;
+  let totalSamples = 0;
+  let rtt: number | undefined;
+  let route = '?';
+  const byId = new Map<string, Record<string, unknown>>();
+  report.forEach((s: Record<string, unknown>) => byId.set(s.id as string, s));
+  report.forEach((s: Record<string, unknown>) => {
+    if (s.type === 'inbound-rtp' && s.kind === 'audio') {
+      lost += Number(s.packetsLost ?? 0);
+      received += Number(s.packetsReceived ?? 0);
+      jitter = Math.max(jitter, Number(s.jitter ?? 0));
+      concealed += Number(s.concealedSamples ?? 0);
+      totalSamples += Number(s.totalSamplesReceived ?? 0);
+    }
+    if (s.type === 'candidate-pair' && s.nominated && s.state === 'succeeded') {
+      rtt = s.currentRoundTripTime as number | undefined;
+      const local = byId.get(s.localCandidateId as string);
+      const remote = byId.get(s.remoteCandidateId as string);
+      route = `${String(local?.candidateType)}->${String(remote?.candidateType)}`;
+    }
+  });
+  const lossPct = received + lost > 0 ? (100 * lost) / (received + lost) : 0;
+  const concealPct = totalSamples > 0 ? (100 * concealed) / totalSamples : 0;
+  console.info(
+    `[WebRTC][voz] ${peerId}: perda=${lossPct.toFixed(1)}% jitter=${(jitter * 1000).toFixed(0)}ms ` +
+      `ocultado=${concealPct.toFixed(1)}% rtt=${rtt !== undefined ? (rtt * 1000).toFixed(0) : '?'}ms rota=${route}`,
+  );
+}
+
 /**
  * Transceiver de áudio que REALMENTE está no SDP: o associado a um m-line
  * (mid != null) vence; sem negociação ainda, cai no primeiro de áudio. Um
@@ -325,7 +424,7 @@ export function useWebRTC(
         if (typeof pc.restartIce === 'function') {
           pc.restartIce();
         }
-        const offer = await pc.createOffer({ iceRestart: true });
+        const offer = tuneOpus(await pc.createOffer({ iceRestart: true }));
         await pc.setLocalDescription(offer);
         await socketHook.emitOffer(roomId, peerId, offer);
       } catch (err) {
@@ -344,7 +443,7 @@ export function useWebRTC(
     pendingNegotiationsRef.current.delete(peerId);
     makingOfferRef.current.add(peerId);
     try {
-      const offer = await pc.createOffer();
+      const offer = tuneOpus(await pc.createOffer());
       if (pc.signalingState !== 'stable') {
         pendingNegotiationsRef.current.add(peerId);
         return;
@@ -572,16 +671,30 @@ export function useWebRTC(
         broadcastPeersUpdate();
       };
 
+      let statsTimer: ReturnType<typeof setInterval> | null = null;
       pc.onconnectionstatechange = () => {
         const state = pc.connectionState;
         if (state === 'connected') {
           resetIceRestartState(peerId);
+          void tuneAudioSender(pc);
+          if (!statsTimer) {
+            statsTimer = setInterval(() => {
+              if (pc.connectionState === 'closed') {
+                if (statsTimer) clearInterval(statsTimer);
+                statsTimer = null;
+                return;
+              }
+              void logAudioStats(pc, peerId).catch(() => {});
+            }, STATS_LOG_INTERVAL_MS);
+          }
         } else if (state === 'failed') {
           // Connection failed: try to recover by restarting ICE (limited
           // attempts). Dropped only after exhausting the budget.
           void attemptIceRestart(peerId, 'connection-state');
         } else if (state === 'closed') {
           resetIceRestartState(peerId);
+          if (statsTimer) clearInterval(statsTimer);
+          statsTimer = null;
         }
         // 'disconnected' is handled below via oniceconnectionstatechange.
       };
@@ -690,7 +803,7 @@ export function useWebRTC(
         peersMetaRef.current.set(peer.peerId, meta);
         const pc = createPeerConnection(peer.peerId, meta);
         try {
-          const offer = await pc.createOffer();
+          const offer = tuneOpus(await pc.createOffer());
           await pc.setLocalDescription(offer);
           await socketHook.emitOffer(roomId, peer.peerId, offer);
           socketHook.emitScreenShareState(roomId, peer.peerId, Boolean(localScreenStreamRef.current));
@@ -991,7 +1104,7 @@ export function useWebRTC(
       // We are the existing peer — create offer to the new peer
       const pc = createPeerConnection(peer.peerId, meta);
       try {
-        const offer = await pc.createOffer();
+        const offer = tuneOpus(await pc.createOffer());
         await pc.setLocalDescription(offer);
         await socketHook.emitOffer(roomId, peer.peerId, offer);
           socketHook.emitScreenShareState(roomId, peer.peerId, Boolean(localScreenStreamRef.current));
@@ -1091,7 +1204,7 @@ export function useWebRTC(
       }
       prepareAudioForAnswer(pc, localStreamRef.current);
       if (syncScreenTracks(data.fromPeerId, pc)) pendingNegotiationsRef.current.add(data.fromPeerId);
-      const answer = await pc.createAnswer();
+      const answer = tuneOpus(await pc.createAnswer());
       await pc.setLocalDescription(answer);
       socketHook.emitAnswer(roomId, data.fromPeerId, answer);
       socketHook.emitScreenShareState(roomId, data.fromPeerId, Boolean(localScreenStreamRef.current));
