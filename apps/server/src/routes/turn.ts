@@ -1,21 +1,17 @@
 import type { FastifyInstance } from 'fastify';
-import { getEnv } from '../lib/env.js';
 import { isTurnRateLimited } from '../lib/rateLimit.js';
 import { getClientIp } from '../lib/clientIp.js';
-
-const STUN_SERVERS: RTCIceServer[] = [
-  { urls: 'stun:stun.l.google.com:19302' },
-];
+import { buildIceServers, isTurnMisconfigured } from '../lib/turnCredentials.js';
 
 export async function turnRoutes(fastify: FastifyInstance): Promise<void> {
   // GET /api/turn/credentials
   //
-  // Exige login: o endpoint entrega credenciais de relay (TURN) do coturn, que
-  // sao um recurso pago/limitado da instancia. Anonimo atras do tunel nao pode
-  // drenar esse recurso. Hoje ENABLE_TURN=false por padrao, entao na pratica o
-  // convidado sem sessao passa a usar APENAS STUN (nao ha regressao funcional:
-  // sem TURN ligado, o endpoint ja devolvia so STUN). Quando o TURN for ligado,
-  // a sessao passa a ser o gate para receber a credencial.
+  // Exige login. O caminho PRINCIPAL das credenciais e o evento
+  // `room:ice-servers` do join-room (socket/handler.ts), que cobre tambem o
+  // convidado — so quem entrou numa sala (senha/convite validados) recebe relay.
+  // Este endpoint fica para o usuario logado pegar a config antes do join.
+  // A credencial e temporaria (lib/turnCredentials.ts): vazar uma nao da acesso
+  // permanente ao coturn.
   fastify.get(
     '/api/turn/credentials',
     { preHandler: [fastify.authenticate as never] },
@@ -31,44 +27,11 @@ export async function turnRoutes(fastify: FastifyInstance): Promise<void> {
           .send({ error: 'Too many requests. Try again later.' });
       }
 
-      const env = getEnv();
-
-      if (!env.ENABLE_TURN) {
-        // TURN disabled — return STUN only
-        return reply.send({
-          iceServers: STUN_SERVERS,
-          turnEnabled: false,
-        });
+      if (isTurnMisconfigured()) {
+        fastify.log.warn('ENABLE_TURN=true mas falta TURN_URL e TURN_SECRET (ou TURN_USERNAME/TURN_CREDENTIAL)');
       }
 
-      // TURN enabled — return configured ICE servers
-      // In production, generate temporary TURN credentials via a provider API
-      // (e.g., Twilio, Metered, etc.) and return them here.
-      const turnUrl = process.env.TURN_URL;
-      const turnUsername = process.env.TURN_USERNAME;
-      const turnCredential = process.env.TURN_CREDENTIAL;
-
-      if (!turnUrl || !turnUsername || !turnCredential) {
-        // Fallback to STUN only if TURN not configured
-        fastify.log.warn('ENABLE_TURN=true but TURN_URL/TURN_USERNAME/TURN_CREDENTIAL not set');
-        return reply.send({
-          iceServers: STUN_SERVERS,
-          turnEnabled: false,
-          warning: 'TURN configured but credentials not provided',
-        });
-      }
-
-      return reply.send({
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          {
-            urls: turnUrl,
-            username: turnUsername,
-            credential: turnCredential,
-          },
-        ],
-        turnEnabled: true,
-      });
+      return reply.send(buildIceServers(`u${request.userId ?? ''}`));
     },
   );
 }

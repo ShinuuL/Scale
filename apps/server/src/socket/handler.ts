@@ -13,6 +13,7 @@ import {
 } from '../lib/rateLimit.js';
 import { GUEST_COOKIE_NAME, newGuestId, serializeGuestCookie, verifyGuestCookie } from '../lib/guestId.js';
 import { signRoomTicket, ticketSubject } from '../lib/roomTicket.js';
+import { buildIceServers } from '../lib/turnCredentials.js';
 import { incChatMessages, incChatEdits, incChatDeletes } from '../lib/metrics.js';
 import {
   toPublicMessage,
@@ -324,6 +325,13 @@ export function createSocketServer(httpServer: HttpServer): Server {
           name: user.name,
           guestName: user.guestName,
         };
+        // ICE servers (STUN + TURN com credencial temporaria) para QUEM ENTROU,
+        // logado ou convidado — senha/convite ja foram validados acima. Emitido
+        // ANTES do room:peer-joined: a offer de um peer antigo so nasce depois
+        // dele, e o Socket.io entrega em ordem, entao o PC do novato ja nasce
+        // com o relay configurado (sem TURN, CGNAT/4G = ninguem se ouve).
+        socket.emit('room:ice-servers', { roomId, ...buildIceServers(socket.id) });
+
         socket.to(roomId).emit('room:peer-joined', joined);
 
         // Send current peers list to the new joiner.

@@ -117,10 +117,9 @@ async function fetchIceServers(): Promise<RTCConfiguration> {
     const res = await fetch(url, {
       signal: AbortSignal.timeout(3000),
     });
-    // 401 = sem sessão (convidado anônimo): o endpoint de credenciais TURN
-    // passou a exigir login. Tratamos como "sem TURN" e caímos no fallback
-    // STUN abaixo — o app segue funcionando (hoje ENABLE_TURN=false, então já
-    // não havia relay a receber). Qualquer outro !ok também cai no STUN.
+    // 401 = sem sessão (convidado): normal. O convidado recebe o TURN pelo
+    // evento `room:ice-servers` do join-room; aqui fica só STUN até lá.
+    // Qualquer outro !ok também cai no STUN.
     if (!res.ok) {
       if (res.status === 401) {
         console.debug('[WebRTC] TURN exige login — usando apenas STUN');
@@ -168,12 +167,45 @@ export function useWebRTC(
   // Timers do aviso "peer conectado sem faixa de áudio" — limpos no cleanup.
   const audioDiagnosticTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
-  // Fetch ICE servers on mount (TURN/STUN from backend)
+  // Config recebida do join-room (room:ice-servers) vence o fetch inicial:
+  // sem esta marca, um fetch lento terminaria DEPOIS e voltaria para só STUN.
+  const iceFromRoomRef = useRef(false);
+
+  // Fetch ICE servers on mount (TURN/STUN from backend) — só funciona logado.
   useEffect(() => {
     fetchIceServers().then((config) => {
-      iceConfigRef.current = config;
+      if (!iceFromRoomRef.current) iceConfigRef.current = config;
     });
   }, []);
+
+  // ICE servers do join-room: STUN + TURN com credencial temporária, também
+  // para convidado. O servidor emite ANTES do room:peer-joined, então PCs
+  // novos já nascem com relay; os existentes (re-join) recebem via
+  // setConfiguration e usam o TURN no próximo ICE restart.
+  const rawSocket = socketHook.socket;
+  useEffect(() => {
+    if (!rawSocket || typeof rawSocket.on !== 'function') return;
+    const onIceServers = (payload: { roomId?: string; iceServers?: RTCIceServer[]; turnEnabled?: boolean }) => {
+      if (payload?.roomId !== roomId || !Array.isArray(payload.iceServers) || payload.iceServers.length === 0) {
+        return;
+      }
+      const config: RTCConfiguration = { iceServers: payload.iceServers };
+      iceFromRoomRef.current = true;
+      iceConfigRef.current = config;
+      console.debug(`[WebRTC] ICE servers da sala (TURN ${payload.turnEnabled ? 'ligado' : 'desligado'})`);
+      peersRef.current.forEach((peer) => {
+        try {
+          peer.connection.setConfiguration({ ...peer.connection.getConfiguration(), ...config });
+        } catch (err) {
+          console.warn('[WebRTC] setConfiguration falhou para', peer.peerId, err);
+        }
+      });
+    };
+    rawSocket.on('room:ice-servers', onIceServers);
+    return () => {
+      rawSocket.off('room:ice-servers', onIceServers);
+    };
+  }, [rawSocket, roomId]);
 
   // ─── Broadcast peer map updates ───────────────────────────────
   const broadcastPeersUpdate = useCallback(() => {

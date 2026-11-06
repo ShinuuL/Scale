@@ -67,12 +67,53 @@ services:
         # IP ESTATICO: este endereco entra em TRUST_PROXY (ver environment).
         ipv4_address: 172.28.0.2
 
+  # Relay TURN (profile `turn`). Sem ele a chamada so conecta quando os dois
+  # lados conseguem P2P direto; atras de CGNAT/4G/rede de empresa ninguem se
+  # ouve. O AUDIO NAO passa pelo tunel cloudflared: estas portas UDP/TCP tem de
+  # estar abertas no firewall/roteador do host, apontando para esta maquina.
+  #
+  # Credencial temporaria (REST API do coturn): o backend assina com o mesmo
+  # TURN_SECRET (lib/turnCredentials.ts). No .env do backend:
+  #   ENABLE_TURN=true
+  #   TURN_URL=turn:<IP-ou-dominio-publico>:3478?transport=udp,turn:<IP-ou-dominio-publico>:3478?transport=tcp
+  #   TURN_SECRET=<openssl rand -hex 32>
+  #   TURN_EXTERNAL_IP=<IP publico do host>
   coturn:
-    image: coturn/coturn
+    image: coturn/coturn:4.6
     profiles:
       - turn
+    restart: unless-stopped
+    command:
+      - -n
+      - --log-file=stdout
+      - --listening-port=3478
+      - --min-port=49160
+      - --max-port=49200
+      - --fingerprint
+      - --use-auth-secret
+      - --static-auth-secret=${TURN_SECRET:-defina-TURN_SECRET-no-env}
+      - --realm=${TURN_REALM:-scale}
+      - --external-ip=${TURN_EXTERNAL_IP:-127.0.0.1}
+      - --no-cli
+      - --no-tls
+      - --no-dtls
+      - --no-multicast-peers
+      # Nao deixa o relay virar ponte para a rede interna/Docker (SSRF).
+      - --denied-peer-ip=0.0.0.0-0.255.255.255
+      - --denied-peer-ip=10.0.0.0-10.255.255.255
+      - --denied-peer-ip=100.64.0.0-100.127.255.255
+      - --denied-peer-ip=127.0.0.0-127.255.255.255
+      - --denied-peer-ip=169.254.0.0-169.254.255.255
+      - --denied-peer-ip=172.16.0.0-172.31.255.255
+      - --denied-peer-ip=192.168.0.0-192.168.255.255
+      - --total-quota=100
+      - --user-quota=12
     ports:
       - "3478:3478/udp"
+      - "3478:3478/tcp"
+      # Faixa de relay: pequena de proposito (cada porta publicada custa um
+      # proxy no Docker). ~40 portas = ~20 participantes usando relay.
+      - "49160-49200:49160-49200/udp"
     networks:
       - scale
 
