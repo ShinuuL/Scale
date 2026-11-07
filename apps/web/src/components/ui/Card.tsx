@@ -11,7 +11,7 @@ interface CardProps extends HTMLAttributes<HTMLDivElement> {
 const variantClasses = {
   glass: 'glass',
   subtle: 'glass-subtle',
-  solid: 'bg-slate-900 border border-slate-800 rounded-2xl',
+  solid: 'bg-surface-tertiary border border-line rounded-xl',
 } as const;
 
 export function Card({ children, variant = 'glass', className, ...props }: CardProps) {
@@ -32,7 +32,7 @@ export function CardHeader({ children, className }: { children: ReactNode; class
 
 export function CardTitle({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <h3 className={clsx('text-lg font-semibold text-white', className)}>
+    <h3 className={clsx('text-lg font-semibold text-ink-primary', className)}>
       {children}
     </h3>
   );
@@ -40,7 +40,7 @@ export function CardTitle({ children, className }: { children: ReactNode; classN
 
 export function CardDescription({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <p className={clsx('text-sm text-slate-400 mt-1', className)}>
+    <p className={clsx('text-sm text-ink-muted mt-1', className)}>
       {children}
     </p>
   );

@@ -85,3 +85,28 @@ Verificações: `npm run lint` falhou no frontend (`next: not found`); etapa
 três avisos. Build não executado por dependência faltante. Compose config
 impedido por `.env` ausente. Não foram instaladas dependências ou iniciados
 serviços. `git diff --check` passou; não houve testes de hardware/VPS.
+
+## 2026-11-07 — redesign de interface
+
+Na branch `feat/scale-interface`, foram atualizadas a identidade visual, a navegação shell, as rotas Salas/Amigos/Ajuda, os estados
+de carregamento/erro/vazio, os controles de sala, chat, dispositivos e diálogos
+de saída. A sessão da home distingue falha de autenticação de visitante; o
+painel de dispositivos e o painel PWA fecham com Escape e restauram foco.
+
+Verificações finais: `npm run lint` global sem erros (dois avisos
+`no-console` preexistentes no backend); `npm run test -w scale-frontend`
+passou com **178 testes**; `npm run build` global passou antes dos últimos
+ajustes só de frontend, seguido por `npm run build -w scale-frontend` após eles.
+O export estático e a CSP geraram 10 páginas e 29 hashes. Detector Impeccable
+retornou `[]`; `git diff --check` passou.
+
+QA local com Chrome em `http://localhost:18480` e instância descartável isolada:
+home/login/cadastro/navegação; usuário sintético e convidado na sala; cabeçalho
+e overflow em 1280/390/320 px; chat e dispositivos; confirmação de saída,
+Escape/cancelamento e foco; painel PWA com retorno de foco. Sem `pageerror`, CSP,
+React ou hydration. As únicas respostas HTTP em erro foram 401 do `GET
+/api/auth/me` enquanto anônimo e 404 de avatar ausente de participantes; ambas
+esperadas nesses estados. Áudio/hardware real, permissões de microfone e TURN
+não foram validados; nenhuma captura de tela foi salva. Preview atualizado em
+**http://localhost:18480**, backend e proxy saudáveis; o projeto de validação
+original permanece em execução, com seus dados preservados.

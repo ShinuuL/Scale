@@ -3,13 +3,19 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { clsx } from 'clsx';
-import { USERNAME_MAX, usernameSchema, type DirectMessage, type FriendsList, type PublicUser } from '@scale/shared';
+import {
+  USERNAME_MAX,
+  usernameSchema,
+  type DirectMessage,
+  type FriendsList,
+  type PublicUser,
+} from '@scale/shared';
 import { api, type MeUser } from '@/lib/api';
 import { useUserEvents } from '@/hooks/useUserEvents';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { Input } from '@/components/ui/Input';
-import { Logo } from '@/components/ui/Logo';
+import { AppShell } from '@/components/layout/AppShell';
 import { ProfileMenu } from '@/components/ui/ProfileMenu';
 import { DirectChat } from '@/components/friends/DirectChat';
 import { UserAvatar } from '@/components/friends/UserAvatar';
@@ -35,7 +41,7 @@ function UsernameSetup({ onSaved }: { onSaved: (user: MeUser) => void }) {
 
   return (
     <form
-      className="glass mx-auto max-w-md space-y-4 rounded-2xl p-6"
+      className="mx-auto max-w-md space-y-4 p-6"
       onSubmit={async (e) => {
         e.preventDefault();
         if (!parsed.success) return;
@@ -56,7 +62,7 @@ function UsernameSetup({ onSaved }: { onSaved: (user: MeUser) => void }) {
     >
       <div>
         <h2 className="text-base font-semibold text-white">Escolha seu @nome</h2>
-        <p className="mt-1 text-sm text-slate-400">É por ele que seus amigos encontram você.</p>
+        <p className="mt-1 text-sm text-ink-muted">É por ele que seus amigos encontram você.</p>
       </div>
       <Input
         id="setup-username"
@@ -67,7 +73,9 @@ function UsernameSetup({ onSaved }: { onSaved: (user: MeUser) => void }) {
         autoComplete="username"
         spellCheck={false}
         placeholder="ex.: shinuu"
-        error={error ?? (value.trim() && !parsed.success ? parsed.error.issues[0]?.message : undefined)}
+        error={
+          error ?? (value.trim() && !parsed.success ? parsed.error.issues[0]?.message : undefined)
+        }
         helperText="Letras sem acento, números e _, de 3 a 20 caracteres."
       />
       <div className="flex justify-end">
@@ -81,7 +89,8 @@ function UsernameSetup({ onSaved }: { onSaved: (user: MeUser) => void }) {
 
 export default function FriendsPage() {
   const [me, setMe] = useState<MeUser | null>(null);
-  const [authState, setAuthState] = useState<'loading' | 'guest' | 'ready'>('loading');
+  const [authState, setAuthState] = useState<'loading' | 'guest' | 'ready' | 'error'>('loading');
+  const [authAttempt, setAuthAttempt] = useState(0);
   const [list, setList] = useState<FriendsList>(EMPTY);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [incomingByFriend, setIncomingByFriend] = useState<Record<string, DirectMessage[]>>({});
@@ -89,22 +98,31 @@ export default function FriendsPage() {
   const [addValue, setAddValue] = useState('');
   const [addStatus, setAddStatus] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
   const [adding, setAdding] = useState(false);
+  const [view, setView] = useState<'conversations' | 'manage'>('conversations');
+  const [listState, setListState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
+    setAuthState('loading');
     api
       .getMe()
       .then((res) => {
         setMe(res.user);
         setAuthState('ready');
       })
-      .catch(() => setAuthState('guest'));
-  }, []);
+      .catch((error: unknown) =>
+        setAuthState((error as { status?: number }).status === 401 ? 'guest' : 'error'),
+      );
+  }, [authAttempt]);
 
   const refresh = useCallback(() => {
     api
       .getFriends()
-      .then(setList)
-      .catch(() => {});
+      .then((result) => {
+        setList(result);
+        setListState('ready');
+      })
+      .catch(() => setListState('error'));
   }, []);
 
   const hasUsername = !!me?.username;
@@ -116,7 +134,10 @@ export default function FriendsPage() {
     onFriendsChanged: refresh,
     onDirectMessage: (m) => {
       if (!me) return;
-      if (m.senderId !== me.id) window.dispatchEvent(new CustomEvent('scale:notification', { detail: { tag: 'direct-message' } }));
+      if (m.senderId !== me.id)
+        window.dispatchEvent(
+          new CustomEvent('scale:notification', { detail: { tag: 'direct-message' } }),
+        );
       const friendId = m.senderId === me.id ? m.recipientId : m.senderId;
       setIncomingByFriend((prev) => ({ ...prev, [friendId]: [...(prev[friendId] ?? []), m] }));
       if (m.senderId !== me.id && friendId !== selectedId) {
@@ -128,10 +149,12 @@ export default function FriendsPage() {
   // Amigo removido some da conversa aberta.
   const selected: PublicUser | null = list.friends.find((f) => f.id === selectedId) ?? null;
   useEffect(() => {
-    if (selectedId && !list.friends.some((f) => f.id === selectedId) && list !== EMPTY) setSelectedId(null);
+    if (selectedId && !list.friends.some((f) => f.id === selectedId) && list !== EMPTY)
+      setSelectedId(null);
   }, [list, selectedId]);
 
   const openChat = (id: string) => {
+    setView('conversations');
     setSelectedId(id);
     setUnread((prev) => ({ ...prev, [id]: 0 }));
   };
@@ -149,7 +172,10 @@ export default function FriendsPage() {
       const res = await api.sendFriendRequest(parsed.data);
       setAddStatus({
         kind: 'ok',
-        text: res.status === 'ACCEPTED' ? 'Vocês agora são amigos.' : `Pedido enviado para @${parsed.data}.`,
+        text:
+          res.status === 'ACCEPTED'
+            ? 'Vocês agora são amigos.'
+            : `Pedido enviado para @${parsed.data}.`,
       });
       setAddValue('');
       refresh();
@@ -161,230 +187,414 @@ export default function FriendsPage() {
   };
 
   const act = async (fn: () => Promise<void>) => {
+    setActionError(null);
     try {
       await fn();
+    } catch {
+      setActionError('Não foi possível atualizar a amizade. Tente novamente.');
     } finally {
       refresh();
     }
   };
 
-  const sectionTitle = 'px-1 pb-2 text-xs font-medium uppercase tracking-wide text-slate-400';
+  const context =
+    authState === 'ready' && me && hasUsername ? (
+      <div className="flex h-full flex-col">
+        <div className="border-b border-line p-4">
+          <h2 className="text-base font-semibold text-ink-primary">Amigos</h2>
+          <p className="mt-1 truncate text-sm text-ink-muted">@{me.username}</p>
+          <button
+            type="button"
+            onClick={() => {
+              setView('manage');
+              setSelectedId(null);
+            }}
+            aria-current={view === 'manage' ? 'page' : undefined}
+            className={clsx(
+              'mt-4 flex min-h-11 w-full items-center gap-2 rounded-md px-3 text-left text-sm text-ink-secondary hover:bg-surface-hover',
+              view === 'manage' && 'bg-accent-subtle text-accent',
+            )}
+          >
+            <Icon name="users" />
+            <span className="flex-1">Gerenciar amigos</span>
+            {list.incoming.length > 0 && (
+              <span
+                className="rounded-full bg-accent-solid px-2 py-0.5 text-xs text-white"
+                aria-label={`${list.incoming.length} pedidos recebidos`}
+              >
+                {list.incoming.length}
+              </span>
+            )}
+          </button>
+        </div>
+        <div className="p-3">
+          <h2 className="px-2 py-2 text-sm font-semibold text-ink-secondary">Conversas</h2>
+          {listState === 'loading' && (
+            <p role="status" className="p-2 text-sm text-ink-muted">
+              Carregando amigos…
+            </p>
+          )}
+          {listState === 'error' && (
+            <div role="alert" className="p-2 text-sm text-ink-secondary">
+              <p>Não foi possível carregar seus amigos.</p>
+              <Button variant="ghost" size="sm" onClick={refresh}>
+                Tentar novamente
+              </Button>
+            </div>
+          )}
+          {listState === 'ready' && list.friends.length === 0 && (
+            <p className="px-2 py-3 text-sm leading-6 text-ink-muted">
+              Adicione um amigo pelo @nome para abrir uma conversa.
+            </p>
+          )}
+          <ul className="space-y-1">
+            {list.friends.map((friend) => (
+              <li key={friend.id}>
+                <button
+                  type="button"
+                  onClick={() => openChat(friend.id)}
+                  aria-current={selectedId === friend.id ? 'page' : undefined}
+                  className={clsx(
+                    'flex min-h-14 w-full items-center gap-3 rounded-md px-2 py-2 text-left hover:bg-surface-hover',
+                    selectedId === friend.id && 'bg-accent-subtle',
+                  )}
+                >
+                  <UserAvatar
+                    userId={friend.id}
+                    name={friend.name}
+                    avatarUpdatedAt={friend.avatarUpdatedAt}
+                    size="sm"
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-ink-primary">
+                      {friend.name}
+                    </span>
+                    <span className="block truncate text-xs text-ink-muted">
+                      @{friend.username}
+                    </span>
+                  </span>
+                  {(unread[friend.id] ?? 0) > 0 && (
+                    <span className="rounded-full bg-accent-solid px-2 py-0.5 text-xs text-white">
+                      {unread[friend.id]}
+                      <span className="sr-only"> mensagens novas nesta sessão</span>
+                    </span>
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <p className="mt-auto px-5 py-4 text-xs leading-5 text-ink-muted">
+          As mensagens novas são sinalizadas enquanto esta página está aberta.
+        </p>
+      </div>
+    ) : undefined;
 
   return (
-    <main id="main-content" className="flex h-[100dvh] flex-col">
-      <header className="border-b border-white/[0.06] bg-forest-950/70 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3">
-          <div className="flex items-center gap-3">
-            <Link href="/" className="group flex items-center gap-2">
-              <Logo variant="mark" size={28} />
-              <span className="text-base font-bold tracking-tight text-white transition-colors group-hover:text-brand-300">
-                Scale
-              </span>
-            </Link>
-            <span aria-hidden="true" className="text-slate-600">/</span>
-            <h1 className="text-sm font-semibold text-slate-200">Amigos</h1>
-          </div>
-          {authState === 'ready' && me && (
-            <ProfileMenu name={me.name} email={me.email} isAuthenticated user={me} onUserChange={setMe} />
-          )}
-        </div>
-      </header>
-
-      {authState === 'loading' && <p className="p-8 text-center text-sm text-slate-400">Carregando...</p>}
-
+    <AppShell
+      activeSection="friends"
+      title="Amigos"
+      contextSidebar={context}
+      accountSlot={
+        authState === 'ready' && me ? (
+          <ProfileMenu
+            name={me.name}
+            email={me.email}
+            isAuthenticated
+            user={me}
+            onUserChange={setMe}
+          />
+        ) : undefined
+      }
+      actions={
+        authState === 'ready' && hasUsername ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              setView('manage');
+              setSelectedId(null);
+            }}
+          >
+            Adicionar amigo
+          </Button>
+        ) : undefined
+      }
+    >
+      {authState === 'loading' && (
+        <p role="status" className="p-8 text-sm text-ink-muted">
+          Carregando sua conta…
+        </p>
+      )}
+      {authState === 'error' && (
+        <section role="alert" className="m-auto max-w-md p-6 text-center">
+          <h2 className="text-xl font-semibold text-ink-primary">Sua conta não carregou</h2>
+          <p className="mt-3 text-sm leading-6 text-ink-secondary">
+            Verifique sua conexão e tente novamente.
+          </p>
+          <Button
+            variant="secondary"
+            className="mt-4"
+            onClick={() => setAuthAttempt((attempt) => attempt + 1)}
+          >
+            Tentar novamente
+          </Button>
+        </section>
+      )}
       {authState === 'guest' && (
-        <div className="glass mx-auto mt-10 max-w-md space-y-3 rounded-2xl p-6 text-center">
-          <p className="text-sm text-slate-300">Amizades e mensagens privadas exigem uma conta.</p>
+        <section className="m-auto max-w-md space-y-4 p-6 text-center">
+          <Icon name="users" size={32} className="mx-auto text-accent" />
+          <h2 className="text-xl font-semibold text-ink-primary">Converse com seus amigos</h2>
+          <p className="text-sm leading-6 text-ink-secondary">
+            Entre na sua conta para adicionar amigos e trocar mensagens privadas.
+          </p>
           <div className="flex justify-center gap-2">
-            <Link href="/login" className="btn-primary text-sm">
+            <Link href="/login" className="btn-primary">
               Entrar
             </Link>
-            <Link href="/register" className="btn-secondary text-sm">
+            <Link href="/register" className="btn-secondary">
               Criar conta
             </Link>
           </div>
-        </div>
+        </section>
       )}
-
       {authState === 'ready' && me && !hasUsername && (
-        <div className="p-4 pt-10">
+        <div className="m-auto p-4">
           <UsernameSetup onSaved={setMe} />
         </div>
       )}
-
       {authState === 'ready' && me && hasUsername && (
-        <div className="mx-auto grid min-h-0 w-full max-w-6xl flex-1 md:grid-cols-[320px_1fr] md:gap-4 md:p-4">
-          <aside
-            aria-label="Amigos e pedidos"
-            className={clsx(
-              'min-h-0 space-y-6 overflow-y-auto p-4 md:rounded-2xl md:border md:border-white/[0.08] md:bg-forest-900/60',
-              selected && 'hidden md:block',
-            )}
-          >
-            <form onSubmit={(e) => void addFriend(e)} className="space-y-2">
-              <h2 className={sectionTitle}>Adicionar amigo</h2>
-              <p className="px-1 text-xs text-slate-400">
-                Seu @nome: <span className="font-medium text-slate-200">@{me.username}</span>
-              </p>
-              <div className="flex gap-2">
-                <label htmlFor="add-friend" className="sr-only">
-                  @nome do amigo
-                </label>
-                <input
-                  id="add-friend"
-                  value={addValue}
-                  onChange={(e) => setAddValue(e.target.value)}
-                  maxLength={USERNAME_MAX + 1}
-                  spellCheck={false}
-                  autoComplete="off"
-                  placeholder="@nome do amigo"
-                  className="input-base min-w-0 flex-1"
-                />
-                <Button type="submit" disabled={!addValue.trim() || adding} aria-busy={adding}>
-                  Adicionar
-                </Button>
-              </div>
-              {addStatus && (
-                <p
-                  role={addStatus.kind === 'error' ? 'alert' : 'status'}
-                  className={clsx('px-1 text-xs', addStatus.kind === 'error' ? 'text-red-300' : 'text-brand-200')}
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          {actionError && (
+            <p role="alert" className="border-b border-line px-5 py-3 text-sm text-red-300">
+              {actionError}
+            </p>
+          )}
+          {view === 'conversations' && selected ? (
+            <DirectChat
+              key={selected.id}
+              meId={me.id}
+              friend={selected}
+              incoming={incomingByFriend[selected.id] ?? []}
+              onBack={() => setSelectedId(null)}
+              onRemoveFriend={() =>
+                void act(async () => {
+                  await api.removeFriend(selected.id);
+                  setSelectedId(null);
+                })
+              }
+            />
+          ) : (
+            <div className="min-h-0 flex-1 overflow-y-auto p-5 sm:p-8">
+              <div className="mx-auto max-w-3xl">
+                <div className="mb-8 flex items-start justify-between gap-4">
+                  <div>
+                    <h2 className="text-[28px] font-semibold tracking-tight text-ink-primary">
+                      {view === 'manage' ? 'Seus amigos' : 'Uma conversa começa aqui'}
+                    </h2>
+                    <p className="mt-2 text-sm leading-6 text-ink-secondary">
+                      {view === 'manage'
+                        ? 'Encontre pessoas pelo @nome e acompanhe seus pedidos.'
+                        : 'Escolha um amigo no painel de conversas ou adicione alguém pelo @nome.'}
+                    </p>
+                  </div>
+                </div>
+                <form
+                  onSubmit={(event) => void addFriend(event)}
+                  className="border-b border-line pb-7"
                 >
-                  {addStatus.text}
-                </p>
-              )}
-            </form>
-
-            {list.incoming.length > 0 && (
-              <section aria-labelledby="incoming-title">
-                <h2 id="incoming-title" className={sectionTitle}>
-                  Pedidos recebidos ({list.incoming.length})
-                </h2>
-                <ul className="space-y-1">
-                  {list.incoming.map((r) => (
-                    <li key={r.id} className="flex items-center gap-3 rounded-lg px-2 py-2">
-                      <UserAvatar userId={r.user.id} name={r.user.name} avatarUpdatedAt={r.user.avatarUpdatedAt} size="sm" />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm text-white">{r.user.name}</p>
-                        <p className="truncate text-xs text-slate-400">@{r.user.username}</p>
-                      </div>
-                      <Button
-                        size="sm"
-                        onClick={() => void act(() => api.acceptFriendRequest(r.id))}
-                        aria-label={`Aceitar pedido de ${r.user.name}`}
+                  <h2 className="text-base font-semibold text-ink-primary">Adicionar amigo</h2>
+                  <label htmlFor="add-friend" className="mt-3 block text-sm text-ink-secondary">
+                    @nome do amigo
+                  </label>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <input
+                      id="add-friend"
+                      value={addValue}
+                      onChange={(event) => setAddValue(event.target.value)}
+                      maxLength={USERNAME_MAX + 1}
+                      spellCheck={false}
+                      autoComplete="off"
+                      placeholder="nome_do_amigo"
+                      className="input-base min-w-0 flex-1 basis-44"
+                    />
+                    <Button type="submit" disabled={!addValue.trim() || adding} aria-busy={adding}>
+                      {adding ? 'Enviando…' : 'Enviar pedido'}
+                    </Button>
+                  </div>
+                  {addStatus && (
+                    <p
+                      role={addStatus.kind === 'error' ? 'alert' : 'status'}
+                      className={clsx(
+                        'mt-3 text-sm',
+                        addStatus.kind === 'error' ? 'text-red-300' : 'text-accent',
+                      )}
+                    >
+                      {addStatus.text}
+                    </p>
+                  )}
+                </form>
+                {listState === 'error' ? (
+                  <div role="alert" className="py-6">
+                    <p className="text-sm text-ink-secondary">
+                      Não foi possível carregar seus amigos e pedidos.
+                    </p>
+                    <Button variant="secondary" className="mt-3" onClick={refresh}>
+                      Tentar novamente
+                    </Button>
+                  </div>
+                ) : listState === 'loading' ? (
+                  <p role="status" className="py-6 text-sm text-ink-muted">
+                    Carregando amigos e pedidos…
+                  </p>
+                ) : (
+                  <>
+                    <section className="border-b border-line py-7" aria-labelledby="incoming-title">
+                      <h2
+                        id="incoming-title"
+                        className="mb-3 text-base font-semibold text-ink-primary"
                       >
-                        <Icon name="check" size={14} />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => void act(() => api.deleteFriendRequest(r.id))}
-                        aria-label={`Recusar pedido de ${r.user.name}`}
+                        Pedidos recebidos{' '}
+                        <span className="ml-1 text-sm font-normal text-ink-muted">
+                          {list.incoming.length}
+                        </span>
+                      </h2>
+                      {list.incoming.length === 0 ? (
+                        <p className="text-sm text-ink-muted">Você não tem pedidos pendentes.</p>
+                      ) : (
+                        <ul className="divide-y divide-line">
+                          {list.incoming.map((request) => (
+                            <li key={request.id} className="flex flex-wrap items-center gap-3 py-3">
+                              <UserAvatar
+                                userId={request.user.id}
+                                name={request.user.name}
+                                avatarUpdatedAt={request.user.avatarUpdatedAt}
+                                size="sm"
+                              />
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-medium text-ink-primary">
+                                  {request.user.name}
+                                </p>
+                                <p className="truncate text-xs text-ink-muted">
+                                  @{request.user.username}
+                                </p>
+                              </div>
+                              <Button
+                                size="sm"
+                                onClick={() => void act(() => api.acceptFriendRequest(request.id))}
+                                aria-label={`Aceitar pedido de ${request.user.name}`}
+                              >
+                                Aceitar
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => void act(() => api.deleteFriendRequest(request.id))}
+                                aria-label={`Recusar pedido de ${request.user.name}`}
+                              >
+                                Recusar
+                              </Button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </section>
+                    <section className="py-7" aria-labelledby="friends-title">
+                      <h2
+                        id="friends-title"
+                        className="mb-3 text-base font-semibold text-ink-primary"
                       >
-                        <Icon name="close" size={14} />
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            )}
-
-            <section aria-labelledby="friends-title">
-              <h2 id="friends-title" className={sectionTitle}>
-                Amigos ({list.friends.length})
-              </h2>
-              {list.friends.length === 0 ? (
-                <p className="px-1 text-sm text-slate-400">Adicione alguém pelo @nome para começar a conversar.</p>
-              ) : (
-                <ul className="space-y-1">
-                  {list.friends.map((f) => {
-                    const count = unread[f.id] ?? 0;
-                    return (
-                      <li key={f.id}>
-                        <button
-                          type="button"
-                          onClick={() => openChat(f.id)}
-                          aria-current={selectedId === f.id ? 'true' : undefined}
-                          className={clsx(
-                            'flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-white/[0.06] focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-400',
-                            selectedId === f.id && 'bg-white/[0.08]',
-                          )}
+                        Amigos{' '}
+                        <span className="ml-1 text-sm font-normal text-ink-muted">
+                          {list.friends.length}
+                        </span>
+                      </h2>
+                      {list.friends.length === 0 ? (
+                        <p className="text-sm leading-6 text-ink-muted">
+                          Quando seu pedido for aceito, o amigo aparece aqui e no painel de
+                          conversas.
+                        </p>
+                      ) : (
+                        <ul className="divide-y divide-line">
+                          {list.friends.map((friend) => (
+                            <li key={friend.id}>
+                              <button
+                                type="button"
+                                onClick={() => openChat(friend.id)}
+                                className="flex min-h-16 w-full items-center gap-3 rounded-md px-2 py-3 text-left hover:bg-surface-hover"
+                              >
+                                <UserAvatar
+                                  userId={friend.id}
+                                  name={friend.name}
+                                  avatarUpdatedAt={friend.avatarUpdatedAt}
+                                />
+                                <span className="min-w-0 flex-1">
+                                  <span className="block truncate text-sm font-medium text-ink-primary">
+                                    {friend.name}
+                                  </span>
+                                  <span className="block truncate text-xs text-ink-muted">
+                                    @{friend.username}
+                                  </span>
+                                </span>
+                                <Icon name="chat" className="text-ink-muted" />
+                                <span className="sr-only">Abrir conversa com {friend.name}</span>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </section>
+                    {list.outgoing.length > 0 && (
+                      <section
+                        className="border-t border-line py-7"
+                        aria-labelledby="outgoing-title"
+                      >
+                        <h2
+                          id="outgoing-title"
+                          className="mb-3 text-base font-semibold text-ink-primary"
                         >
-                          <UserAvatar userId={f.id} name={f.name} avatarUpdatedAt={f.avatarUpdatedAt} size="sm" />
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-sm text-white">{f.name}</span>
-                            <span className="block truncate text-xs text-slate-400">@{f.username}</span>
+                          Pedidos enviados{' '}
+                          <span className="ml-1 text-sm font-normal text-ink-muted">
+                            {list.outgoing.length}
                           </span>
-                          {count > 0 && (
-                            <span className="rounded-full bg-brand-500 px-2 py-0.5 text-xs font-semibold text-white">
-                              {count}
-                              <span className="sr-only"> mensagens novas</span>
-                            </span>
-                          )}
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </section>
-
-            {list.outgoing.length > 0 && (
-              <section aria-labelledby="outgoing-title">
-                <h2 id="outgoing-title" className={sectionTitle}>
-                  Pedidos enviados
-                </h2>
-                <ul className="space-y-1">
-                  {list.outgoing.map((r) => (
-                    <li key={r.id} className="flex items-center gap-3 rounded-lg px-2 py-2">
-                      <UserAvatar userId={r.user.id} name={r.user.name} avatarUpdatedAt={r.user.avatarUpdatedAt} size="sm" />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm text-white">{r.user.name}</p>
-                        <p className="truncate text-xs text-slate-400">Aguardando @{r.user.username}</p>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => void act(() => api.deleteFriendRequest(r.id))}
-                        aria-label={`Cancelar pedido para ${r.user.name}`}
-                      >
-                        Cancelar
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            )}
-          </aside>
-
-          <div
-            className={clsx(
-              'min-h-0 md:rounded-2xl md:border md:border-white/[0.08] md:bg-forest-900/60',
-              !selected && 'hidden md:flex md:items-center md:justify-center',
-            )}
-          >
-            {selected ? (
-              <DirectChat
-                key={selected.id}
-                meId={me.id}
-                friend={selected}
-                incoming={incomingByFriend[selected.id] ?? []}
-                onBack={() => setSelectedId(null)}
-                onRemoveFriend={() =>
-                  void act(async () => {
-                    await api.removeFriend(selected.id);
-                    setSelectedId(null);
-                  })
-                }
-              />
-            ) : (
-              <p className="flex items-center gap-2 text-sm text-slate-400">
-                <Icon name="chat" />
-                Escolha um amigo para conversar.
-              </p>
-            )}
-          </div>
+                        </h2>
+                        <ul className="divide-y divide-line">
+                          {list.outgoing.map((request) => (
+                            <li key={request.id} className="flex items-center gap-3 py-3">
+                              <UserAvatar
+                                userId={request.user.id}
+                                name={request.user.name}
+                                avatarUpdatedAt={request.user.avatarUpdatedAt}
+                                size="sm"
+                              />
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-medium text-ink-primary">
+                                  {request.user.name}
+                                </p>
+                                <p className="truncate text-xs text-ink-muted">
+                                  Aguardando @{request.user.username}
+                                </p>
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => void act(() => api.deleteFriendRequest(request.id))}
+                                aria-label={`Cancelar pedido para ${request.user.name}`}
+                              >
+                                Cancelar
+                              </Button>
+                            </li>
+                          ))}
+                        </ul>
+                      </section>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
-    </main>
+    </AppShell>
   );
 }

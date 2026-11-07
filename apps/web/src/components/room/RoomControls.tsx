@@ -54,7 +54,7 @@ export function RoomControls({
 
   return (
     <div
-      className="flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 px-2 sm:px-4 py-3 border-t border-white/5 bg-forest-950/60 backdrop-blur-xl transition-colors"
+      className="flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 px-2 sm:px-4 py-3 border-t border-line bg-surface-secondary"
       role="toolbar"
       aria-label="Controles da sala"
     >
@@ -84,8 +84,10 @@ export function RoomControls({
         aria-pressed={!isDeafened}
         title={isDeafened ? 'Ativar áudio' : 'Desativar áudio'}
       >
-        <span aria-hidden="true">{isDeafened ? <Icon name="speakerOff" /> : <Icon name="speaker" />}</span>
-        <span className="hidden sm:inline">{isDeafened ? 'Surdo' : 'Áudio'}</span>
+        <span aria-hidden="true">
+          {isDeafened ? <Icon name="speakerOff" /> : <Icon name="speaker" />}
+        </span>
+        <span className="hidden sm:inline">{isDeafened ? 'Sem áudio' : 'Áudio'}</span>
       </Button>
 
       {/* Screen share */}
@@ -128,17 +130,19 @@ export function RoomControls({
           aria-pressed={showChat}
           title={showChat ? 'Fechar chat' : 'Abrir chat'}
         >
-          <span aria-hidden="true"><Icon name="chat" /></span>
+          <span aria-hidden="true">
+            <Icon name="chat" />
+          </span>
           <span className="hidden sm:inline">Chat</span>
           {chatUnread > 0 && !showChat && (
-            <span className="badge bg-amber-500 text-forest-950">
+            <span className="badge bg-accent-solid text-white">
               {chatUnread > 99 ? '99+' : chatUnread}
             </span>
           )}
         </Button>
       )}
 
-      <div className="w-px h-8 bg-white/10 mx-0.5 sm:mx-2" aria-hidden="true" />
+      <div className="w-px h-8 bg-surface-tertiary mx-0.5 sm:mx-2" aria-hidden="true" />
 
       {/* Leave */}
       <Button
@@ -147,7 +151,9 @@ export function RoomControls({
         onClick={onLeave}
         aria-label="Sair da sala"
       >
-        <span aria-hidden="true"><Icon name="phone" /></span>
+        <span aria-hidden="true">
+          <Icon name="phone" />
+        </span>
         <span className="hidden sm:inline">Sair</span>
       </Button>
     </div>

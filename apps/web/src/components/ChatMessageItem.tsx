@@ -28,7 +28,7 @@ export function linkifyAndHighlight(text: string, peers: string[]): string {
   // pelo parser de atributos do HTML.
   escaped = escaped.replace(
     /(https?:\/\/[^\s<]+)/g,
-    '<a href="$1" target="_blank" rel="noopener" class="underline text-moss-400 hover:text-moss-300">$1</a>',
+    '<a href="$1" target="_blank" rel="noopener" class="underline text-accent hover:text-accent">$1</a>',
   );
 
   // Menções: peer escapado tanto no padrão quanto na substituição.
@@ -37,7 +37,7 @@ export function linkifyAndHighlight(text: string, peers: string[]): string {
     const re = new RegExp(`@${escapeRegExp(escapedPeer)}(?![\\w.-])`, 'g');
     escaped = escaped.replace(
       re,
-      `<span class="bg-amber-200 text-amber-900 rounded px-0.5">@${escapedPeer}</span>`,
+      `<span class="bg-accent-subtle text-accent rounded px-0.5">@${escapedPeer}</span>`,
     );
   }
 
@@ -71,6 +71,7 @@ export function ChatMessageItem({
   onDelete,
   roomTicket,
 }: ChatMessageItemProps) {
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(message.content);
 
@@ -84,19 +85,17 @@ export function ChatMessageItem({
   if (message.system) {
     return (
       <div className="px-3 py-1.5 text-center">
-        <span className="text-xs italic text-slate-400">{message.content}</span>
+        <span className="text-xs italic text-ink-muted">{message.content}</span>
       </div>
     );
   }
 
   return (
-    <div className="group px-3 py-2 rounded-lg hover:bg-white/[0.04]" data-testid="chat-message">
-      <div className="flex items-baseline gap-2 text-xs text-slate-400">
-        <span className="font-medium text-moss-200">{authorName}</span>
+    <div className="group px-3 py-2 rounded-lg hover:bg-surface-hover" data-testid="chat-message">
+      <div className="flex items-baseline gap-2 text-xs text-ink-muted">
+        <span className="font-medium text-ink-primary">{authorName}</span>
         {(message.edited || message.editedAt) && !isDeleted && (
-          <span className="italic">
-            (editado)
-          </span>
+          <span className="italic">(editado)</span>
         )}
         {isDeleted && <span className="italic">[apagada]</span>}
       </div>
@@ -108,30 +107,32 @@ export function ChatMessageItem({
             onChange={(e) => setDraft(e.target.value)}
             maxLength={500}
             aria-label="Editar mensagem"
-            className="flex-1 min-h-[40px] rounded bg-white/10 p-2 text-sm text-slate-100 resize-none focus:outline-none focus:ring-1 focus:ring-moss-500"
+            className="flex-1 min-h-[40px] rounded bg-surface-tertiary p-2 text-sm text-ink-primary resize-none focus:outline-none focus:ring-1 focus:ring-accent"
           />
           <button
             onClick={() => {
               onEdit(message.id, draft);
               setEditing(false);
             }}
-            className="text-xs px-2 py-1 bg-brand-700 rounded text-white hover:bg-brand-800"
+            className="text-xs px-2 py-1 bg-accent-solid rounded text-white hover:bg-accent-solid"
           >
             Salvar
           </button>
           <button
             onClick={() => setEditing(false)}
-            className="text-xs px-2 py-1 bg-white/10 rounded text-slate-300 hover:bg-white/15"
+            className="text-xs px-2 py-1 bg-surface-tertiary rounded text-ink-secondary hover:bg-surface-hover"
           >
             Cancelar
           </button>
         </div>
       ) : (
         <div
-          className="mt-1 text-sm text-slate-100 break-words [overflow-wrap:anywhere]"
+          className="mt-1 text-sm text-ink-primary break-words [overflow-wrap:anywhere]"
           data-testid="message-content"
           dangerouslySetInnerHTML={{
-            __html: isDeleted ? '[mensagem apagada]' : linkifyAndHighlight(message.content, currentPeers),
+            __html: isDeleted
+              ? '[mensagem apagada]'
+              : linkifyAndHighlight(message.content, currentPeers),
           }}
         />
       )}
@@ -147,13 +148,18 @@ export function ChatMessageItem({
                 // header (nunca na URL).
                 onClick={(event) => {
                   event.preventDefault();
+                  setDownloadError(null);
                   downloadRoomFile(file.id, file.filename, roomTicket).catch((err: unknown) => {
-                    console.warn(err);
+                    setDownloadError(
+                      err instanceof Error
+                        ? err.message
+                        : 'Não foi possível baixar o arquivo. Tente novamente.',
+                    );
                   });
                 }}
                 target="_blank"
                 rel="noopener"
-                className="text-xs underline text-moss-400 hover:text-moss-300"
+                className="text-xs underline text-accent hover:text-accent"
               >
                 {file.filename} · {formatFileSize(file.size)}
               </a>
@@ -162,14 +168,19 @@ export function ChatMessageItem({
         </ul>
       )}
 
-      <div className="mt-1 flex gap-2 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
+      {downloadError && (
+        <p role="alert" className="mt-2 text-sm text-red-300">
+          {downloadError}
+        </p>
+      )}
+      <div className="mt-1 flex gap-3">
         {canEdit && !editing && (
           <button
             onClick={() => {
               setDraft(message.content);
               setEditing(true);
             }}
-            className="text-xs text-slate-400 hover:text-slate-200"
+            className="text-xs text-ink-muted hover:text-ink-primary"
           >
             Editar
           </button>
@@ -179,7 +190,7 @@ export function ChatMessageItem({
             onClick={() => onDelete(message.id)}
             className="text-xs text-red-300/80 hover:text-red-300"
           >
-            Deletar
+            Apagar
           </button>
         )}
       </div>

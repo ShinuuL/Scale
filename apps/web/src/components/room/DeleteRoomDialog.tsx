@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { api } from '@/lib/api';
 
-const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])';
+const FOCUSABLE =
+  'button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 export interface DeleteRoomDialogProps {
   roomId: string;
@@ -104,7 +105,7 @@ export function DeleteRoomDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-forest-950/80 p-4 backdrop-blur-sm animate-fade-in"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 animate-fade-in"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) cancel();
       }}
@@ -116,7 +117,7 @@ export function DeleteRoomDialog({
         aria-labelledby="delete-room-title"
         aria-describedby="delete-room-desc"
         onKeyDown={handleKeyDown}
-        className="w-full max-w-md space-y-4 rounded-2xl border border-white/10 bg-forest-900 p-6 shadow-2xl shadow-black/40"
+        className="w-full max-w-md space-y-4 rounded-2xl border border-line bg-surface-secondary p-6 shadow-2xl shadow-black/40"
       >
         <div className="flex items-start gap-3">
           <span
@@ -129,14 +130,17 @@ export function DeleteRoomDialog({
             <h2 id="delete-room-title" className="break-words text-base font-semibold text-white">
               Apagar a sala {roomName}?
             </h2>
-            <p id="delete-room-desc" className="mt-1 text-sm text-slate-400">
+            <p id="delete-room-desc" className="mt-1 text-sm text-ink-muted">
               Todos saem da chamada e as mensagens e arquivos são apagados para sempre.
             </p>
           </div>
         </div>
 
         {error && (
-          <p role="alert" className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+          <p
+            role="alert"
+            className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300"
+          >
             {error}
           </p>
         )}
@@ -145,7 +149,12 @@ export function DeleteRoomDialog({
           <Button data-autofocus variant="secondary" onClick={cancel} disabled={deleting}>
             Cancelar
           </Button>
-          <Button variant="danger" onClick={() => void confirm()} disabled={deleting} aria-busy={deleting}>
+          <Button
+            variant="danger"
+            onClick={() => void confirm()}
+            disabled={deleting}
+            aria-busy={deleting}
+          >
             {deleting ? 'Apagando...' : 'Apagar sala'}
           </Button>
         </div>

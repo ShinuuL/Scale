@@ -177,18 +177,18 @@ export function SettingsDialog({ user, onClose, onUserChange }: SettingsDialogPr
         aria-modal="true"
         aria-labelledby="settings-title"
         onKeyDown={handleKeyDown}
-        className="max-h-[calc(100vh-2rem)] w-full max-w-md space-y-5 overflow-y-auto rounded-2xl border border-white/10 bg-forest-900 p-6 shadow-2xl shadow-black/40"
+        className="max-h-[calc(100dvh-2rem)] w-full max-w-md space-y-5 overflow-y-auto rounded-xl border border-line bg-surface-tertiary p-6 shadow-2xl shadow-black/40"
       >
         <div className="flex items-center justify-between gap-3">
-          <h2 id="settings-title" className="flex items-center gap-2 text-base font-semibold text-white">
-            <Icon name="settings" size={18} className="text-slate-400" />
+          <h2 id="settings-title" className="flex items-center gap-2 text-base font-semibold text-ink-primary">
+            <Icon name="settings" size={18} className="text-ink-muted" />
             Configurações
           </h2>
           <button
             type="button"
             onClick={onClose}
             aria-label="Fechar configurações"
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-white/[0.06] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-400"
+            className="flex h-11 w-11 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-white/[0.06] hover:text-ink-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-400"
           >
             <Icon name="close" />
           </button>
@@ -196,7 +196,7 @@ export function SettingsDialog({ user, onClose, onUserChange }: SettingsDialogPr
 
         {user ? (
           <section aria-labelledby="settings-profile" className="space-y-4">
-            <h3 id="settings-profile" className="text-xs font-medium uppercase tracking-wide text-slate-400">
+            <h3 id="settings-profile" className="text-xs font-medium  text-ink-muted">
               Perfil
             </h3>
 
@@ -237,7 +237,7 @@ export function SettingsDialog({ user, onClose, onUserChange }: SettingsDialogPr
                     Remover
                   </Button>
                 )}
-                <p className="w-full text-xs text-slate-400">PNG, JPEG ou WebP, até 32 MB.</p>
+                <p className="w-full text-xs text-ink-muted">PNG, JPEG ou WebP, até 32 MB.</p>
               </div>
             </div>
 
@@ -283,7 +283,7 @@ export function SettingsDialog({ user, onClose, onUserChange }: SettingsDialogPr
             </form>
           </section>
         ) : (
-          <p className="text-sm text-slate-400">Entre com sua conta para alterar nome e foto de perfil.</p>
+          <p className="text-sm text-ink-muted">Entre com sua conta para alterar nome e foto de perfil.</p>
         )}
 
         {(error || saved) && (
@@ -300,7 +300,7 @@ export function SettingsDialog({ user, onClose, onUserChange }: SettingsDialogPr
         )}
 
         <section aria-labelledby="settings-theme" className="space-y-3 border-t border-white/[0.08] pt-4">
-          <h3 id="settings-theme" className="text-xs font-medium uppercase tracking-wide text-slate-400">
+          <h3 id="settings-theme" className="text-xs font-medium  text-ink-muted">
             Tema
           </h3>
           <ThemePicker />

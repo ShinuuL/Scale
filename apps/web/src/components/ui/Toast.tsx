@@ -71,7 +71,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       <div
         aria-live="polite"
         aria-atomic="false"
-        className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none max-w-sm w-full"
+        className="fixed top-20 right-4 z-[100] flex flex-col gap-2 pointer-events-none max-w-sm w-[calc(100%-2rem)]"
       >
         {toasts.map((t) => (
           <ToastItemComponent
@@ -119,7 +119,7 @@ function ToastItemComponent({
       role="status"
       className={clsx(
         'pointer-events-auto flex items-start gap-3 rounded-xl border px-4 py-3',
-        'text-sm font-medium shadow-lg backdrop-blur-md',
+        'text-sm font-medium bg-surface-tertiary',
         'animate-fade-in',
         variantStyles[item.variant],
       )}
@@ -131,7 +131,7 @@ function ToastItemComponent({
       <button
         onClick={onDismiss}
         aria-label="Fechar notificação"
-        className="shrink-0 mt-0.5 text-current opacity-60 hover:opacity-100 transition-opacity"
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-current opacity-80 hover:opacity-100 transition-opacity"
       >
         <span aria-hidden="true">
           <Icon name="close" />

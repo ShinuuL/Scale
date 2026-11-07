@@ -46,12 +46,12 @@ export function ShareTutorial() {
           <button
             key={s.id}
             onClick={() => setActiveStep(s.id)}
-            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all whitespace-nowrap ${
+            className={`flex items-center gap-2 px-3 min-h-11 py-2 rounded-md text-sm font-medium transition-colors whitespace-nowrap ${
               activeStep === s.id
                 ? 'bg-brand-600/20 text-brand-300 border border-brand-500/30'
                 : activeStep > s.id
                   ? 'bg-brand-500/10 text-brand-400 border border-brand-500/20'
-                  : 'text-slate-400 border border-transparent hover:text-slate-300 hover:border-white/10'
+                  : 'text-ink-muted border border-transparent hover:text-ink-secondary hover:border-white/10'
             }`}
             aria-label={s.title}
             aria-current={activeStep === s.id ? 'step' : undefined}
@@ -66,8 +66,8 @@ export function ShareTutorial() {
 
       {/* ── Step 1: Account ──────────────────────────────────── */}
       {activeStep === 1 && (
-        <div className="space-y-4 animate-slide-up">
-          <Card variant="glass">
+        <div className="space-y-4">
+          <Card variant="glass" className="!border-0 !bg-transparent !p-0">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Icon name="key" size={24} />
@@ -78,8 +78,8 @@ export function ShareTutorial() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="glass-subtle p-4 rounded-xl space-y-3">
-                <p className="text-sm text-slate-300 leading-relaxed">
+              <div className="py-4 space-y-3">
+                <p className="text-sm text-ink-secondary leading-relaxed">
                   A conta serve para identificar quem criou a sala e guardar suas salas
                   persistentes. Você precisa apenas de um e-mail e uma senha.
                 </p>
@@ -103,40 +103,40 @@ export function ShareTutorial() {
 
       {/* ── Step 2: Create room ──────────────────────────────── */}
       {activeStep === 2 && (
-        <div className="space-y-4 animate-slide-up">
-          <Card variant="glass">
+        <div className="space-y-4">
+          <Card variant="glass" className="!border-0 !bg-transparent !p-0">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Icon name="mic" size={24} />
                 Crie uma sala e dê um nome
               </CardTitle>
               <CardDescription>
-                Na tela inicial, escreva um nome para a sala e clique em “Criar Sala”.
+                Na tela inicial, escreva um nome para a sala e clique em “Criar sala”.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="glass-subtle p-4 rounded-xl space-y-3">
-                <ol className="space-y-2 text-sm text-slate-300">
+              <div className="py-4 space-y-3">
+                <ol className="space-y-2 text-sm text-ink-secondary">
                   <li className="flex gap-2">
-                    <span className="text-brand-400 font-mono text-xs mt-0.5">1.</span>
+                    <span className="text-brand-400 text-xs mt-0.5">1.</span>
                     <span>Faça login (se ainda não fez)</span>
                   </li>
                   <li className="flex gap-2">
-                    <span className="text-brand-400 font-mono text-xs mt-0.5">2.</span>
+                    <span className="text-brand-400 text-xs mt-0.5">2.</span>
                     <span>Dê um nome para a sala — de 3 a 50 caracteres</span>
                   </li>
                   <li className="flex gap-2">
-                    <span className="text-brand-400 font-mono text-xs mt-0.5">3.</span>
-                    <span>Clique em “Criar Sala” e você entra direto na chamada</span>
+                    <span className="text-brand-400 text-xs mt-0.5">3.</span>
+                    <span>Clique em “Criar sala” e você entra direto na chamada</span>
                   </li>
                 </ol>
               </div>
 
-              <div className="glass-subtle p-3 rounded-xl flex items-start gap-2">
+              <div className="border-t border-line py-4 flex items-start gap-2">
                 <span className="flex-shrink-0"><Icon name="lightbulb" size={18} /></span>
                 <div>
-                  <p className="text-xs text-slate-300 font-medium">Sala temporária ou persistente?</p>
-                  <p className="text-xs text-slate-400">
+                  <p className="text-xs text-ink-secondary font-medium">Sala temporária ou persistente?</p>
+                  <p className="text-xs text-ink-muted">
                     A sala temporária expira sozinha e some depois da chamada. A
                     persistente fica salva na sua lista, aceita envio de arquivos no chat
                     e tem um código de convite próprio.
@@ -155,8 +155,8 @@ export function ShareTutorial() {
 
       {/* ── Step 3: Share the link ───────────────────────────── */}
       {activeStep === 3 && (
-        <div className="space-y-4 animate-slide-up">
-          <Card variant="glass">
+        <div className="space-y-4">
+          <Card variant="glass" className="!border-0 !bg-transparent !p-0">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Icon name="link" size={24} />
@@ -167,8 +167,8 @@ export function ShareTutorial() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="glass-subtle p-4 rounded-xl space-y-3">
-                <p className="text-sm text-slate-300 leading-relaxed">
+              <div className="py-4 space-y-3">
+                <p className="text-sm text-ink-secondary leading-relaxed">
                   Dentro da sala, o card de convite traz o link pronto com o endereço do
                   app e o ID da sala:
                 </p>
@@ -177,7 +177,7 @@ export function ShareTutorial() {
                     readOnly
                     value={shareLink}
                     onFocus={(e) => e.currentTarget.select()}
-                    className="input-base font-mono text-xs flex-1 min-w-0 select-all"
+                    className="input-base text-xs flex-1 min-w-0 select-all"
                     aria-label="Link da sala"
                   />
                   <Button variant="secondary" size="sm" onClick={copyShareLink}>
@@ -190,7 +190,7 @@ export function ShareTutorial() {
                     )}
                   </Button>
                 </div>
-                <p className="text-xs text-slate-400">
+                <p className="text-xs text-ink-muted">
                   Envie por WhatsApp, e-mail ou qualquer mensageiro — o link é público
                   para quem o receber. No exemplo acima, troque{' '}
                   <code className="bg-slate-900/60 px-1 py-0.5 rounded text-brand-300">UUID-da-sala</code>{' '}
@@ -209,8 +209,8 @@ export function ShareTutorial() {
 
       {/* ── Step 4: Permissions (mic + screen) ───────────────── */}
       {activeStep === 4 && (
-        <div className="space-y-4 animate-slide-up">
-          <Card variant="glass">
+        <div className="space-y-4">
+          <Card variant="glass" className="!border-0 !bg-transparent !p-0">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Icon name="mic" size={24} />
@@ -221,16 +221,16 @@ export function ShareTutorial() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="glass-subtle p-4 rounded-xl space-y-2">
+              <div className="py-4 space-y-2">
                 <p className="text-sm font-medium text-slate-200">O que esperar:</p>
-                <ul className="space-y-2 text-sm text-slate-300">
+                <ul className="space-y-2 text-sm text-ink-secondary">
                   <li className="flex gap-2">
                     <span className="text-brand-400">•</span>
-                    <span>Ao entrar na sala, o navegador pede permissão de <strong className="text-white">microfone</strong></span>
+                    <span>Ao entrar na sala, o navegador pede permissão de <strong className="text-ink-primary">microfone</strong></span>
                   </li>
                   <li className="flex gap-2">
                     <span className="text-brand-400">•</span>
-                    <span>Ao clicar em compartilhar, você escolhe <strong className="text-white">tela, janela ou aba</strong> e pode parar quando quiser</span>
+                    <span>Ao clicar em compartilhar, você escolhe <strong className="text-ink-primary">tela, janela ou aba</strong> e pode parar quando quiser</span>
                   </li>
                   <li className="flex gap-2">
                     <span className="text-brand-400">•</span>
@@ -239,11 +239,11 @@ export function ShareTutorial() {
                 </ul>
               </div>
 
-              <div className="glass-subtle p-3 rounded-xl flex items-start gap-2">
+              <div className="border-t border-line py-4 flex items-start gap-2">
                 <span className="flex-shrink-0"><Icon name="lock" size={18} /></span>
                 <div>
-                  <p className="text-xs text-slate-300 font-medium">Precisa de HTTPS</p>
-                  <p className="text-xs text-slate-400">
+                  <p className="text-xs text-ink-secondary font-medium">Precisa de HTTPS</p>
+                  <p className="text-xs text-ink-muted">
                     Fora do localhost, o navegador só libera microfone e tela em páginas
                     HTTPS. O Scale precisa ser acessado por uma URL HTTPS (por exemplo,
                     publicada por um túnel).
@@ -262,8 +262,8 @@ export function ShareTutorial() {
 
       {/* ── Step 5: Join the call ────────────────────────────── */}
       {activeStep === 5 && (
-        <div className="space-y-4 animate-slide-up">
-          <Card variant="glass">
+        <div className="space-y-4">
+          <Card variant="glass" className="!border-0 !bg-transparent !p-0">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Icon name="users" size={24} />
@@ -274,37 +274,37 @@ export function ShareTutorial() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="glass-subtle p-4 rounded-xl">
+              <div className="py-4">
                 <p className="text-sm font-medium text-slate-200 mb-3">Como funciona:</p>
                 <div className="bg-slate-900/80 p-4 rounded-lg text-xs font-mono space-y-1.5">
-                  <p className="text-slate-400">
+                  <p className="text-ink-muted">
                     <span className="text-brand-400">Você</span> cria a sala e entra
                   </p>
-                  <p className="text-slate-400">
+                  <p className="text-ink-muted">
                     <span className="text-brand-400">Você</span> envia o link para os participantes
                   </p>
-                  <p className="text-slate-400">
+                  <p className="text-ink-muted">
                     <span className="text-brand-400">Cada um</span> abre o link e permite o microfone
                   </p>
-                  <p className="text-slate-400">
+                  <p className="text-ink-muted">
                     <span className="text-brand-400">WebRTC</span> conecta todos direto (P2P){' '}
                     <Icon name="arrowRight" /> <span className="text-brand-400">Pronto!</span>
                   </p>
                 </div>
               </div>
 
-              <div className="glass-subtle p-4 rounded-xl space-y-3">
+              <div className="py-4 space-y-3">
                 <p className="text-sm font-medium text-slate-200">Checklist antes da chamada:</p>
                 <ul className="space-y-2">
-                  <li className="flex items-start gap-2 text-sm text-slate-300">
+                  <li className="flex items-start gap-2 text-sm text-ink-secondary">
                     <span className="text-brand-400 mt-0.5"><Icon name="check" /></span>
                     <span>Todos abriram o link da sala</span>
                   </li>
-                  <li className="flex items-start gap-2 text-sm text-slate-300">
+                  <li className="flex items-start gap-2 text-sm text-ink-secondary">
                     <span className="text-brand-400 mt-0.5"><Icon name="check" /></span>
                     <span>Permissão de microfone concedida no navegador</span>
                   </li>
-                  <li className="flex items-start gap-2 text-sm text-slate-300">
+                  <li className="flex items-start gap-2 text-sm text-ink-secondary">
                     <span className="text-brand-400 mt-0.5"><Icon name="check" /></span>
                     <span>Página aberta em HTTPS (ou localhost)</span>
                   </li>
@@ -326,13 +326,13 @@ export function ShareTutorial() {
       <div className="text-center flex flex-wrap gap-2 justify-center">
         <Link
           href="/docs"
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-300 hover:bg-white/10 hover:text-white transition-all"
+          className="inline-flex items-center gap-2 px-4 min-h-11 py-2 rounded-md bg-white/5 border border-white/10 text-sm text-ink-secondary hover:bg-white/10 hover:text-ink-primary transition-colors"
         >
           <Icon name="book" /> Ver documentação completa
         </Link>
         <Link
           href="/"
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-600/20 border border-brand-500/30 text-sm text-brand-300 hover:bg-brand-600/30 transition-all"
+          className="inline-flex items-center gap-2 px-4 min-h-11 py-2 rounded-md bg-brand-600/20 border border-brand-500/30 text-sm text-brand-300 hover:bg-brand-600/30 transition-colors"
         >
           <Icon name="mic" /> Ir para o Scale
         </Link>

@@ -48,9 +48,7 @@ export function collectLiveShares(
  */
 export function resolveFocus(shares: LiveShare[], requested: string | null): LiveShare | null {
   if (shares.length === 0) return null;
-  return (
-    shares.find((s) => s.id === requested) ?? shares.find((s) => !s.isLocal) ?? shares[0]
-  );
+  return shares.find((s) => s.id === requested) ?? shares.find((s) => !s.isLocal) ?? shares[0];
 }
 
 // ─── Áudio ──────────────────────────────────────────────────────
@@ -59,7 +57,15 @@ export function resolveFocus(shares: LiveShare[], requested: string | null): Liv
  * Um `<audio>` por peer remoto, FORA dos tiles: trocar o layout (palco ↔
  * grade, foco) não desmonta o elemento e o som não corta.
  */
-function PeerAudio({ stream, outputDeviceId, onOutputError }: { stream: MediaStream | null; outputDeviceId: string; onOutputError?: () => void }) {
+function PeerAudio({
+  stream,
+  outputDeviceId,
+  onOutputError,
+}: {
+  stream: MediaStream | null;
+  outputDeviceId: string;
+  onOutputError?: () => void;
+}) {
   const audioRef = useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
@@ -97,7 +103,9 @@ function PeerAudio({ stream, outputDeviceId, onOutputError }: { stream: MediaStr
       void setAudioSink(element, '').catch(() => {});
       onOutputError?.();
     });
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, [outputDeviceId, onOutputError]);
 
   return <audio ref={audioRef} autoPlay playsInline />;
@@ -133,9 +141,9 @@ function Avatar({
     <div
       className={clsx(
         'rounded-full flex items-center justify-center font-semibold select-none overflow-hidden',
-        'bg-brand-600/30 text-brand-200 border border-brand-500/30',
-        'ring-offset-2 ring-offset-slate-900 transition-shadow duration-150 motion-reduce:transition-none',
-        speaking ? 'ring-[3px] ring-brand-400' : 'ring-0',
+        'bg-accent-subtle text-accent border border-line',
+        'ring-offset-2 ring-offset-surface-tertiary transition-colors duration-150 motion-reduce:transition-none',
+        speaking ? 'ring-[3px] ring-[var(--status-online)]' : 'ring-0',
         size === 'lg' && 'w-24 h-24 text-3xl',
         size === 'md' && 'w-16 h-16 text-xl',
         size === 'sm' && 'w-10 h-10 text-sm',
@@ -144,7 +152,13 @@ function Avatar({
     >
       {showPhoto ? (
         // eslint-disable-next-line @next/next/no-img-element -- URL blob:/same-origin; next/image nao se aplica (export estatico)
-        <img src={src} alt="" className="h-full w-full object-cover" draggable={false} onError={() => setBroken(true)} />
+        <img
+          src={src}
+          alt=""
+          className="h-full w-full object-cover"
+          draggable={false}
+          onError={() => setBroken(true)}
+        />
       ) : (
         name.charAt(0).toUpperCase()
       )}
@@ -157,7 +171,7 @@ function LiveBadge({ className }: { className?: string }) {
     <span
       className={clsx(
         'inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-bold uppercase tracking-wide',
-        'bg-red-600 text-white',
+        'bg-accent-solid text-white',
         className,
       )}
     >
@@ -175,19 +189,32 @@ interface Member {
 }
 
 /** Cartão de participante do canal de voz (sem vídeo: avatar + nome). */
-function MemberCard({ member, speaking, compact }: { member: Member; speaking: boolean; compact?: boolean }) {
+function MemberCard({
+  member,
+  speaking,
+  compact,
+}: {
+  member: Member;
+  speaking: boolean;
+  compact?: boolean;
+}) {
   const label = member.isLocal ? `${member.name} (você)` : member.name;
   return (
     <div
       role="group"
       aria-label={`${label}, ${member.muted ? 'microfone desligado' : 'microfone ligado'}${speaking ? ', falando' : ''}`}
       className={clsx(
-        'scales relative flex items-center justify-center rounded-xl bg-slate-800/80 border transition-colors duration-150',
-        speaking ? 'border-brand-400/70' : 'border-white/5',
+        'relative flex items-center justify-center rounded-xl bg-surface-tertiary border transition-colors duration-150',
+        speaking ? 'border-[var(--status-online)]' : 'border-line',
         compact ? 'h-full w-full' : 'aspect-video w-full',
       )}
     >
-      <Avatar name={member.name} speaking={speaking} size={compact ? 'sm' : 'lg'} src={member.avatarUrl} />
+      <Avatar
+        name={member.name}
+        speaking={speaking}
+        size={compact ? 'sm' : 'lg'}
+        src={member.avatarUrl}
+      />
       <span className="absolute bottom-2 left-2 max-w-[75%] truncate rounded-md bg-black/60 px-2 py-0.5 text-xs font-medium text-white">
         {label}
       </span>
@@ -241,7 +268,13 @@ export function VideoGrid({
   const name = localName || 'Você';
   const peerArray = Array.from(peers.values());
   const members: Member[] = [
-    { id: LOCAL_ID, name, isLocal: true, muted: isMuted || !localStream, avatarUrl: avatars?.get(LOCAL_ID) },
+    {
+      id: LOCAL_ID,
+      name,
+      isLocal: true,
+      muted: isMuted || !localStream,
+      avatarUrl: avatars?.get(LOCAL_ID),
+    },
     ...peerArray.map((p) => ({
       id: p.peerId,
       name: p.name,
@@ -265,7 +298,12 @@ export function VideoGrid({
   const audioLayer = (
     <div className="hidden" aria-hidden="true">
       {peerArray.map((peer) => (
-        <PeerAudio key={peer.peerId} stream={peer.stream} outputDeviceId={outputDeviceId} onOutputError={onOutputError} />
+        <PeerAudio
+          key={peer.peerId}
+          stream={peer.stream}
+          outputDeviceId={outputDeviceId}
+          onOutputError={onOutputError}
+        />
       ))}
     </div>
   );
@@ -294,7 +332,7 @@ export function VideoGrid({
       <div className="flex h-full min-h-0 flex-col items-center justify-center gap-4 overflow-auto p-4">
         <div
           role="region"
-          aria-label="Participantes do canal de voz"
+          aria-label="Participantes da sala"
           className={clsx(
             'grid w-full gap-3',
             total === 1 && 'max-w-xl grid-cols-1',
@@ -310,7 +348,9 @@ export function VideoGrid({
 
         {total === 1 && inviteLink && (
           <div className="flex flex-col items-center gap-2 text-center">
-            <p className="text-sm text-slate-400">Você está sozinho no canal. Copie o link e convide alguém.</p>
+            <p className="text-sm text-ink-muted">
+              Sua sala está pronta. Convide alguém para conversar ou compartilhar uma tela.
+            </p>
             <Button variant="secondary" size="sm" onClick={handleCopyInvite}>
               {copyState === 'copied' ? (
                 <>
@@ -339,7 +379,15 @@ interface StageProps {
   onStopShare?: () => void;
 }
 
-function Stage({ focused, shares, members, speaking, viewers, onFocusShare, onStopShare }: StageProps) {
+function Stage({
+  focused,
+  shares,
+  members,
+  speaking,
+  viewers,
+  onFocusShare,
+  onStopShare,
+}: StageProps) {
   const stageRef = useRef<HTMLDivElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   // A própria tela fica num cartão por padrão: espelhar a tela que você está
@@ -373,13 +421,13 @@ function Stage({ focused, shares, members, speaking, viewers, onFocusShare, onSt
       >
         {ownCard ? (
           <div className="flex max-w-sm flex-col items-center gap-3 px-6 text-center">
-            <span className="flex h-14 w-14 items-center justify-center rounded-full bg-red-600/15 text-red-400">
+            <span className="flex h-14 w-14 items-center justify-center rounded-full bg-accent-subtle text-accent">
               <Icon name="monitor" size={28} />
             </span>
             <p className="text-base font-semibold text-white">Você está transmitindo sua tela</p>
-            <p className="text-sm text-slate-400">
+            <p className="text-sm text-ink-muted">
               {viewers === 0
-                ? 'Ninguém mais está no canal ainda.'
+                ? 'Ninguém mais entrou na sala ainda.'
                 : `${viewers} ${viewers === 1 ? 'pessoa pode' : 'pessoas podem'} assistir.`}
             </p>
             <div className="flex flex-wrap justify-center gap-2">
@@ -409,7 +457,7 @@ function Stage({ focused, shares, members, speaking, viewers, onFocusShare, onSt
             <button
               type="button"
               onClick={() => setShowOwnPreview(false)}
-              className="rounded-md bg-black/60 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-black/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-400"
+              className="rounded-md bg-black/60 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-black/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
             >
               Ocultar prévia
             </button>
@@ -420,7 +468,7 @@ function Stage({ focused, shares, members, speaking, viewers, onFocusShare, onSt
               onClick={toggleFullscreen}
               aria-label={isFullscreen ? 'Sair da tela cheia' : 'Tela cheia'}
               title={isFullscreen ? 'Sair da tela cheia' : 'Tela cheia'}
-              className="flex h-11 w-11 items-center justify-center rounded-lg bg-black/60 text-white hover:bg-black/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-400"
+              className="flex h-11 w-11 items-center justify-center rounded-lg bg-black/60 text-white hover:bg-black/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
             >
               <Icon name={isFullscreen ? 'minimize' : 'maximize'} size={18} />
             </button>
@@ -439,10 +487,10 @@ function Stage({ focused, shares, members, speaking, viewers, onFocusShare, onSt
               type="button"
               onClick={() => onFocusShare?.(share.id)}
               aria-label={`Assistir transmissão de ${share.isLocal ? 'você' : share.name}`}
-              className="relative h-full w-full overflow-hidden rounded-lg border border-white/10 bg-black hover:border-brand-400/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-400"
+              className="relative h-full w-full overflow-hidden rounded-lg border border-line bg-black hover:border-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
             >
               {share.isLocal ? (
-                <span className="flex h-full items-center justify-center text-slate-400">
+                <span className="flex h-full items-center justify-center text-ink-muted">
                   <Icon name="monitor" size={22} />
                 </span>
               ) : (

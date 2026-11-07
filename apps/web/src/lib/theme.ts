@@ -5,9 +5,9 @@ import { z } from 'zod';
 
 /** Temas de cor (valores em app/globals.css, por `data-palette`). */
 export const PALETTES = [
-  { id: 'jade', label: 'Jade', swatch: '#34d399' },
-  { id: 'grafite', label: 'Grafite', swatch: '#97a3af' },
-  { id: 'safira', label: 'Safira', swatch: '#60a5fa' },
+  { id: 'jade', label: 'Íris', swatch: '#a5aaff' },
+  { id: 'grafite', label: 'Grafite', swatch: '#c0c5e9' },
+  { id: 'safira', label: 'Safira', swatch: '#9ebaff' },
 ] as const;
 
 export type PaletteId = (typeof PALETTES)[number]['id'];
@@ -16,7 +16,7 @@ export const PALETTE_STORAGE_KEY = 'scale:palette';
 const DEFAULT_PALETTE: PaletteId = 'jade';
 const paletteSchema = z.enum(['jade', 'grafite', 'safira']);
 
-/** Jade não leva atributo: é o `:root` puro. */
+/** A chave legada jade preserva a preferência; sua apresentação agora é Íris. */
 export function applyPalette(id: PaletteId): void {
   const root = document.documentElement;
   if (id === DEFAULT_PALETTE) root.removeAttribute('data-palette');

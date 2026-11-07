@@ -1,7 +1,7 @@
 'use client';
 
 import type { InputHTMLAttributes } from 'react';
-import { forwardRef } from 'react';
+import { forwardRef, useId } from 'react';
 import { clsx } from 'clsx';
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
@@ -12,14 +12,15 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
   ({ label, error, helperText, className, id, ...props }, ref) => {
-    const inputId = id || (label ? label.toLowerCase().replace(/\s+/g, '-') : undefined);
+    const generatedId = useId();
+    const inputId = id || generatedId;
 
     return (
       <div className="space-y-1.5">
         {label && (
           <label
             htmlFor={inputId}
-            className="block text-sm font-medium text-slate-300"
+            className="block text-sm font-medium text-ink-secondary"
           >
             {label}
           </label>
@@ -42,7 +43,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           </p>
         )}
         {helperText && !error && (
-          <p id={`${inputId}-helper`} className="text-xs text-slate-400">
+          <p id={`${inputId}-helper`} className="text-xs text-ink-muted">
             {helperText}
           </p>
         )}

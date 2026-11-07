@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
+import { Icon } from '@/components/ui/Icon';
 import { Banner } from '@/components/ui/Banner';
 
 interface InstallPrompt extends Event {
@@ -16,6 +17,24 @@ const actionClass = 'btn-secondary min-h-11 px-4 py-2 text-sm focus-visible:outl
 
 /** Optional conveniences: no permission request or installation prompt on load. */
 export function ApplicationFeatures() {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const triggerRef = useRef<HTMLElement | null>(null);
+  const closeSettings = useCallback(() => {
+    const details = detailsRef.current;
+    if (!details) return;
+    details.open = false;
+    const canFocus = (element: HTMLElement | null): element is HTMLElement => {
+      if (!element?.isConnected || element.closest('[hidden], [inert], dialog:not([open]), :disabled')) return false;
+      for (let node: HTMLElement | null = element; node; node = node.parentElement) {
+        const style = window.getComputedStyle(node);
+        if (style.display === 'none' || style.visibility === 'hidden') return false;
+      }
+      return true;
+    };
+    const candidates = [triggerRef.current, document.querySelector<HTMLElement>('[data-app-settings-trigger]'), details.querySelector<HTMLElement>('summary')];
+    candidates.find(canFocus)?.focus();
+    triggerRef.current = null;
+  }, []);
   const [offline, setOffline] = useState(false);
   const [installPrompt, setInstallPrompt] = useState<InstallPrompt | null>(null);
   const [updateReady, setUpdateReady] = useState(false);
@@ -77,6 +96,16 @@ export function ApplicationFeatures() {
       notificationsRef.current = enabled;
       setNotifications(enabled);
     } catch { /* Storage can be disabled. */ }
+    const openSettings = (event: Event) => {
+      const details = detailsRef.current;
+      if (!details) return;
+      if (details.open) { closeSettings(); return; }
+      const trigger = (event as CustomEvent<{ trigger?: unknown }>).detail?.trigger;
+      triggerRef.current = trigger instanceof HTMLElement ? trigger : document.activeElement instanceof HTMLElement && document.activeElement !== document.body && !details.contains(document.activeElement) ? document.activeElement : null;
+      details.open = true;
+      details.querySelector('summary')?.focus();
+    };
+    window.addEventListener('scale:app-settings', openSettings);
     window.addEventListener('online', syncNetwork);
     window.addEventListener('offline', syncNetwork);
     window.addEventListener('beforeinstallprompt', onInstall);
@@ -93,6 +122,7 @@ export function ApplicationFeatures() {
     }
     return () => {
       disposed = true;
+      window.removeEventListener('scale:app-settings', openSettings);
       window.removeEventListener('online', syncNetwork);
       window.removeEventListener('offline', syncNetwork);
       window.removeEventListener('beforeinstallprompt', onInstall);
@@ -102,7 +132,7 @@ export function ApplicationFeatures() {
       registration?.removeEventListener('updatefound', updateFound);
       installing?.removeEventListener('statechange', workerChanged);
     };
-  }, []);
+  }, [closeSettings]);
 
   async function toggleNotifications() {
     if (busy) return;
@@ -131,9 +161,9 @@ export function ApplicationFeatures() {
 
   return (
     <>
-      {offline && <div className="mx-auto max-w-5xl px-4 py-3"><Banner variant="warning" title="Sem conexão com o servidor" description="Verifique sua rede. Salas, mensagens e arquivos podem ficar indisponíveis." /></div>}
-      <details className="mx-auto max-w-5xl px-4 py-3 text-sm text-slate-300">
-        <summary className="w-fit cursor-pointer rounded-lg py-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-400">Aplicativo e notificações</summary>
+      {offline && <div className="fixed right-4 top-20 z-50 w-[min(420px,calc(100vw-32px))]"><Banner variant="warning" title="Sem conexão com o servidor" description="Verifique sua rede. Salas, mensagens e arquivos podem ficar indisponíveis." /></div>}
+      <details ref={detailsRef} className="pwa-features" onKeyDown={(event) => { if (event.key === 'Escape' && detailsRef.current?.open) { event.preventDefault(); event.stopPropagation(); closeSettings(); } }}>
+        <summary onClick={(event) => { if (detailsRef.current?.open) { event.preventDefault(); closeSettings(); } else triggerRef.current = null; }} className="w-fit cursor-pointer rounded-lg py-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-400"><Icon name="monitor" size={16} /><span>Aplicativo e notificações</span></summary>
         <div className="flex flex-wrap items-center gap-3 py-3">
           {installPrompt && <button type="button" className={actionClass} onClick={() => void install()} disabled={busy}>Instalar Scale</button>}
           {notificationSupported && <button type="button" className={actionClass} onClick={() => void toggleNotifications()} disabled={busy} aria-pressed={notifications}>{notifications ? 'Desativar notificações' : 'Ativar notificações'}</button>}

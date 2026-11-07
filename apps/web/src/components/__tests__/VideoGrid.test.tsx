@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, within } from '@testing-library/react';
 import { VideoGrid, collectLiveShares, resolveFocus, LOCAL_ID } from '@/components/room/VideoGrid';
 import type { PeerConnection } from '@/hooks/useWebRTC';
 
@@ -57,9 +57,11 @@ describe('VideoGrid', () => {
     localName: 'Gabriel',
   };
 
-  it('sem transmissão: cartões do canal de voz, sem palco', () => {
+  it('sem transmissão: região nomeada reúne os participantes da sala, sem palco', () => {
     render(<VideoGrid {...base} peers={new Map([['p1', peer('p1', 'Bia', false)]])} localScreenStream={null} />);
-    expect(screen.getByRole('region', { name: 'Participantes do canal de voz' })).toBeTruthy();
+    const participants = screen.getByRole('region', { name: 'Participantes da sala' });
+    expect(within(participants).getByRole('group', { name: /Gabriel \(você\), microfone ligado/ })).toBeTruthy();
+    expect(within(participants).getByRole('group', { name: /Bia, microfone/ })).toBeTruthy();
     expect(screen.queryByText('Ao vivo')).toBeNull();
   });
 

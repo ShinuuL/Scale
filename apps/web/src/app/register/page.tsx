@@ -2,9 +2,10 @@
 
 import { useState } from 'react';
 import { api } from '@/lib/api';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
+import { Card, CardHeader, CardDescription, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { Logo } from '@/components/ui/Logo';
 import { Icon } from '@/components/ui/Icon';
 import Link from 'next/link';
 import { GithubLoginButton } from '@/components/auth/GithubLogin';
@@ -37,16 +38,17 @@ export default function RegisterPage() {
   };
 
   return (
-    <main id="main-content" className="min-h-screen flex items-center justify-center p-4">
-      <Card variant="glass" className="w-full max-w-md animate-fade-in">
+    <main id="main-content" className="auth-page">
+      <Link href="/" className="auth-brand" aria-label="Scale — voltar às salas"><Logo variant="full" size={36} priority /></Link>
+      <Card variant="glass" className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>Criar Conta</CardTitle>
+          <h1 className="text-[28px] font-semibold tracking-tight">Crie sua conta</h1>
           <CardDescription>
-            Crie uma conta para gerenciar suas salas
+            Um espaço para seus amigos e sua equipe.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+          <form onSubmit={handleSubmit} className="space-y-4">
             <Input
               label="Nome"
               type="text"
@@ -57,7 +59,7 @@ export default function RegisterPage() {
               autoComplete="name"
             />
             <Input
-              label="Email"
+              label="E-mail"
               type="email"
               placeholder="seu@email.com"
               value={email}
@@ -83,7 +85,7 @@ export default function RegisterPage() {
             )}
 
             <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? 'Criando conta...' : 'Criar Conta'}
+              {loading ? 'Criando conta...' : 'Criar conta'}
             </Button>
           </form>
 
@@ -103,7 +105,7 @@ export default function RegisterPage() {
               href="/"
               className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-slate-200 transition-colors"
             >
-              <Icon name="arrowLeft" size={12} /> Voltar ao início
+              <Icon name="arrowLeft" size={12} /> Voltar às salas
             </Link>
           </div>
         </CardContent>

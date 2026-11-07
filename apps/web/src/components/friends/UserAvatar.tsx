@@ -12,13 +12,24 @@ interface UserAvatarProps {
 }
 
 /** Foto do usuario ou, sem ela, a inicial do nome. Decorativo (o nome vem ao lado). */
-export function UserAvatar({ userId, name, avatarUpdatedAt, size = 'md', className }: UserAvatarProps) {
+export function UserAvatar({
+  userId,
+  name,
+  avatarUpdatedAt,
+  size = 'md',
+  className,
+}: UserAvatarProps) {
   const box = size === 'sm' ? 'h-8 w-8 text-xs' : 'h-10 w-10 text-sm';
   const photo = userAvatarUrl(userId, avatarUpdatedAt);
   if (photo) {
     return (
       // eslint-disable-next-line @next/next/no-img-element -- export estatico, sem otimizador de imagem
-      <img src={photo} alt="" aria-hidden="true" className={clsx(box, 'flex-shrink-0 rounded-full object-cover', className)} />
+      <img
+        src={photo}
+        alt=""
+        aria-hidden="true"
+        className={clsx(box, 'flex-shrink-0 rounded-full object-cover', className)}
+      />
     );
   }
   return (
@@ -26,7 +37,7 @@ export function UserAvatar({ userId, name, avatarUpdatedAt, size = 'md', classNa
       aria-hidden="true"
       className={clsx(
         box,
-        'flex flex-shrink-0 items-center justify-center rounded-full bg-brand-600/30 font-semibold text-brand-200',
+        'flex flex-shrink-0 items-center justify-center rounded-full bg-accent-subtle font-semibold text-accent',
         className,
       )}
     >

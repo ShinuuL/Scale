@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-07T15:28:24Z",
+  "title": "Design System: Scale",
+  "extensions": {
+    "shadows": [
+      {
+        "name": "overlay",
+        "value": "0 12px 40px rgb(0 0 0 / .3)",
+        "purpose": "Menu e recursos opcionais sobre a área de trabalho."
+      }
+    ],
+    "motion": [
+      {
+        "name": "motion-fast",
+        "value": "140ms",
+        "purpose": "Feedback de controles."
+      },
+      {
+        "name": "motion-normal",
+        "value": "180ms",
+        "purpose": "Variável motion-normal declarada no CSS; a animação menu-in usa duração de 180ms e easing próprio no Tailwind."
+      },
+      {
+        "name": "ease-standard",
+        "value": "cubic-bezier(.2, 0, 0, 1)",
+        "purpose": "Mudança curta de estado."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "compact-mobile",
+        "value": "640px"
+      },
+      {
+        "name": "context-desktop",
+        "value": "1024px"
+      },
+      {
+        "name": "rooms-support-column",
+        "value": "1200px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "description": "Button React, variant primary, tamanho md. Fonte: components/ui/Button.tsx e globals.css.",
+      "html": "<button class=\"ds-control ds-primary\">Criar sala</button>",
+      "css": ".ds-control{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;border-radius:6px;padding:10px 20px;font:500 14px/20px system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif;cursor:pointer;transition:background-color 150ms cubic-bezier(.4,0,.2,1),color 150ms cubic-bezier(.4,0,.2,1)}.ds-control:disabled{opacity:.5;cursor:not-allowed}.ds-control:focus-visible{outline:2px solid var(--accent,#a5aaff);outline-offset:3px}@media(prefers-reduced-motion:reduce){.ds-control{transition:none}}.ds-primary{background:var(--accent-solid,#6263da);color:#fff;border:1px solid transparent}@media(hover:hover){.ds-primary:hover{background:#5555c2}}.ds-control:focus-visible{box-shadow:0 0 0 2px var(--bg-base,#1c1d23),0 0 0 4px rgb(var(--c-brand-400,165 170 255))}",
+      "refersTo": "button-primary"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "description": "Button React, variant secondary, tamanho md.",
+      "html": "<button class=\"ds-control ds-secondary\">Entrar</button>",
+      "css": ".ds-control{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;border-radius:6px;padding:10px 20px;font:500 14px/20px system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif;cursor:pointer;transition:background-color 150ms cubic-bezier(.4,0,.2,1),color 150ms cubic-bezier(.4,0,.2,1)}.ds-control:disabled{opacity:.5;cursor:not-allowed}.ds-control:focus-visible{outline:2px solid var(--accent,#a5aaff);outline-offset:3px}@media(prefers-reduced-motion:reduce){.ds-control{transition:none}}.ds-secondary{background:var(--bg-tertiary,#25262e);color:var(--text-primary,#f2f3f8);border:1px solid var(--border-strong,#4c5060)}@media(hover:hover){.ds-secondary:hover{background:var(--bg-hover,#2b2d37);color:var(--text-primary,#f2f3f8)}}.ds-control:focus-visible{box-shadow:0 0 0 2px var(--bg-base,#1c1d23),0 0 0 4px rgb(var(--c-brand-400,165 170 255))}",
+      "refersTo": "button-secondary"
+    },
+    {
+      "name": "Room input",
+      "kind": "input",
+      "description": "Input com label persistente e foco de globals.css; sem estado de hover de borda.",
+      "html": "<label class=\"ds-label\">Nome da sala<input class=\"ds-input\" placeholder=\"Ex.: Equipe\" /></label>",
+      "css": ".ds-label{display:grid;gap:6px;color:var(--text-secondary,#b6b9c8);font:500 14px/20px system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif}.ds-input{width:100%;min-height:44px;padding:10px 12px;border:1px solid var(--border-strong,#4c5060);border-radius:6px;background:var(--bg-secondary,#17181e);color:var(--text-primary,#f2f3f8);font:400 14px/20px system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif;caret-color:var(--accent,#a5aaff);transition:border-color 140ms cubic-bezier(.2,0,0,1)}.ds-input::placeholder{color:var(--text-muted,#9298ac)}.ds-input:focus{border-color:var(--accent,#a5aaff);outline:2px solid var(--accent,#a5aaff);outline-offset:2px}@media(prefers-reduced-motion:reduce){.ds-input{transition:none}}",
+      "refersTo": "input"
+    },
+    {
+      "name": "Context navigation",
+      "kind": "nav",
+      "description": "Atalho context-link ativo usado no painel lateral.",
+      "html": "<a class=\"ds-control ds-nav\" href=\"#rooms-list\" data-active=\"true\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\" focusable=\"false\"><path fill=\"currentColor\" d=\"M12.7 5.3a.9.9 0 0 0-1.5-.7L6.6 8.7H4.4A1.4 1.4 0 0 0 3 10.1v3.8a1.4 1.4 0 0 0 1.4 1.4h2.2l4.6 4.1a.9.9 0 0 0 1.5-.7V5.3Z\"/><path d=\"M15.8 9.6a3.4 3.4 0 0 1 0 4.8\"/><path d=\"M18.4 7.2a7 7 0 0 1 0 9.6\"/></svg>Salas disponíveis</a>",
+      "css": ".ds-nav{display:flex;align-items:center;gap:10px;min-height:44px;padding:10px 12px;border-radius:6px;background:var(--bg-tertiary,#25262e);color:var(--text-primary,#f2f3f8);font:400 14px/21px system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif;text-decoration:none}@media(hover:hover){.ds-nav:hover{background:var(--bg-hover,#2b2d37);color:var(--text-primary,#f2f3f8)}}.ds-control:focus-visible{outline:2px solid var(--accent,#a5aaff);outline-offset:3px}"
+    },
+    {
+      "name": "Status badge",
+      "kind": "chip",
+      "description": "Badge React na variante default; texto de exemplo do componente.",
+      "html": "<span class=\"ds-chip\">Persistente</span>",
+      "css": ".ds-chip{display:inline-flex;align-items:center;gap:4px;padding:3px 7px;border-radius:4px;background:#334155;color:var(--text-primary,#f2f3f8);font:500 11px/16px system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif}"
+    },
+    {
+      "name": "Room row",
+      "kind": "custom",
+      "description": "RoomCard sem permissão de exclusão. Exemplo estático, sem dados de uma sala real; entrada e cópia são ações independentes.",
+      "html": "<div class=\"ds-row\"><button class=\"ds-main ds-control\" aria-label=\"Entrar na sala de exemplo\"><span class=\"ds-room-icon\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\" focusable=\"false\"><path fill=\"currentColor\" d=\"M12.7 5.3a.9.9 0 0 0-1.5-.7L6.6 8.7H4.4A1.4 1.4 0 0 0 3 10.1v3.8a1.4 1.4 0 0 0 1.4 1.4h2.2l4.6 4.1a.9.9 0 0 0 1.5-.7V5.3Z\"/><path d=\"M15.8 9.6a3.4 3.4 0 0 1 0 4.8\"/><path d=\"M18.4 7.2a7 7 0 0 1 0 9.6\"/></svg></span><span class=\"ds-room-copy\"><span class=\"ds-room-name\">Sala de exemplo</span><small>0 pessoas na sala · Persistente</small></span></button><div class=\"ds-actions\"><button class=\"ds-icon ds-control\" aria-label=\"Copiar link da sala de exemplo\"><svg width=\"17\" height=\"17\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\" focusable=\"false\"><path d=\"M9.9 13.3a4.5 4.5 0 0 0 6.8.5l2.7-2.7a4.5 4.5 0 0 0-6.4-6.4l-1.5 1.5\"/><path d=\"M14.1 10.7a4.5 4.5 0 0 0-6.8-.5l-2.7 2.7a4.5 4.5 0 0 0 6.4 6.4l1.5-1.5\"/></svg></button><button class=\"ds-icon ds-enter ds-control\" aria-label=\"Abrir sala de exemplo\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\" focusable=\"false\"><path d=\"M4.8 12h14.4\"/><path d=\"M13 5.4 19.6 12 13 18.6\"/></svg></button></div></div>",
+      "css": ".ds-row{display:flex;align-items:center;gap:12px;padding:16px 0;border-bottom:1px solid var(--border,#32343f);font-family:system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif}.ds-main{display:flex;align-items:center;gap:12px;text-align:left;min-width:0;flex:1;min-height:48px;border:0;padding:0;border-radius:6px;background:transparent;color:var(--text-primary,#f2f3f8);cursor:pointer}.ds-room-icon{display:flex;align-items:center;justify-content:center;width:44px;height:44px;flex-shrink:0;background:var(--bg-tertiary,#25262e);color:var(--accent,#a5aaff);border-radius:10px}.ds-room-copy{min-width:0}.ds-room-name{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:600 14px/20px system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif}.ds-row small{display:block;margin-top:4px;color:var(--text-secondary,#b6b9c8);font:400 12px/20px system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif}.ds-actions{display:flex;align-items:center;gap:4px}.ds-icon{width:44px;height:44px;display:flex;align-items:center;justify-content:center;border:0;padding:0;background:transparent;border-radius:6px;color:var(--text-muted,#9298ac);cursor:pointer}@media(hover:hover){.ds-main:hover,.ds-icon:hover{background:var(--bg-hover,#2b2d37);color:var(--text-primary,#f2f3f8)}}@media(max-width:639px){.ds-row{align-items:flex-start;gap:4px;flex-wrap:wrap}.ds-main{flex-basis:calc(100% - 92px)}.ds-enter{display:none}}.ds-control:focus-visible{outline:2px solid var(--accent,#a5aaff);outline-offset:3px}"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "description": "Card React padrão. A classe legada glass renderiza uma superfície opaca, sem blur.",
+      "html": "<div class=\"ds-card\"><h3>Nova sala</h3><p>Dê um nome e mande o convite.</p></div>",
+      "css": ".ds-card{border:1px solid var(--border,#32343f);border-radius:12px;background:var(--bg-tertiary,#25262e);padding:24px;color:var(--text-primary,#f2f3f8);font:400 14px/21px system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif}.ds-card h3{margin:0;font:600 18px/28px system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif}.ds-card p{margin:4px 0 0;color:var(--text-muted,#9298ac);font:400 14px/20px system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Um espaço para se encontrar",
+    "overview": "O Scale tem a organização de um aplicativo de comunicação, com navegação global curta, contexto da tarefa e área principal. A interface atende conversas entre amigos, jogos e reuniões de equipe com a mesma linguagem.\n\nA identidade é grafite frio com azul-violeta derivado do logo existente. A marca aparece no acento, na seleção e no ritmo; a mídia e a conversa ocupam a maior parte do espaço. São características centrais: superfícies foscas, divisórias finas, tipografia nativa legível e ações explícitas.",
+    "keyCharacteristics": [
+      "Superfícies foscas",
+      "Divisórias finas",
+      "Tipografia nativa legível",
+      "Ações explícitas"
+    ],
+    "rules": [
+      {
+        "name": "Acento único",
+        "body": "Verde é reservado a presença e sucesso. A ação usa azul-violeta.",
+        "section": "colors"
+      }
+    ],
+    "dos": [
+      "Usar o PNG existente em `public/logo.png`, sem redesenhar a marca.",
+      "Usar apenas os SVGs de `components/ui/Icon.tsx`, com nomes acessíveis nos botões.",
+      "Preservar room tickets, autenticação, dispositivos e contratos externos.",
+      "Usar transições curtas que esclareçam estado, com reduced motion e hover apenas onde há hover."
+    ],
+    "donts": [
+      "Não copiar cores, fonte, rótulos ou recursos do Discord.",
+      "Não esconder scrollbars, simular servidores/canais, usar emojis de UI ou prometer chamada persistente entre rotas."
+    ]
+  }
+}

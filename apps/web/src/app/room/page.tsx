@@ -15,6 +15,9 @@ import { VideoGrid, LOCAL_ID } from '@/components/room/VideoGrid';
 import { RoomControls } from '@/components/room/RoomControls';
 import { ParticipantList } from '@/components/room/ParticipantList';
 import { DeleteRoomDialog } from '@/components/room/DeleteRoomDialog';
+import { AppShell } from '@/components/layout/AppShell';
+import { LeaveRoomDialog } from '@/components/room/LeaveRoomDialog';
+import { useRoomNavigation } from '@/components/room/useRoomNavigation';
 import { Badge } from '@/components/ui/Badge';
 import { Banner } from '@/components/ui/Banner';
 import { Button } from '@/components/ui/Button';
@@ -83,9 +86,14 @@ function RoomRoute() {
   const roomId = searchParams.get('id')?.trim() ?? '';
   if (!roomId) {
     return (
-      <main id="main-content" className="flex min-h-screen flex-col items-center justify-center gap-4 p-6 text-center">
-        <p className="text-slate-300">Link de sala incompleto: falta o identificador da sala.</p>
-        <Link href="/" className="text-moss-400 underline">
+      <main
+        id="main-content"
+        className="flex min-h-screen flex-col items-center justify-center gap-4 p-6 text-center"
+      >
+        <p className="text-ink-secondary">
+          Link de sala incompleto: falta o identificador da sala.
+        </p>
+        <Link href="/" className="text-accent underline">
           Voltar ao inicio
         </Link>
       </main>
@@ -101,11 +109,8 @@ function RoomPageInner({ roomId }: { roomId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [joined, setJoined] = useState(false);
-  const [showParticipants, setShowParticipants] = useState(true);
-  // Em telas estreitas a lateral vira gaveta sobreposta e começa fechada.
-  useEffect(() => {
-    if (window.matchMedia('(max-width: 767px)').matches) setShowParticipants(false);
-  }, []);
+  const { pendingDestination, requestNavigation, allowNavigation, cancelNavigation } =
+    useRoomNavigation(joined);
   const [isInsecureContext, setIsInsecureContext] = useState(false);
   const [copiedFlag, setCopiedFlag] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -255,11 +260,8 @@ function RoomPageInner({ roomId }: { roomId: string }) {
 
   // Sala protegida por senha exige senha antes do join — a menos que haja
   // inviteToken na URL (guest com link) ou o dono autenticado por JWT.
-  const isRoomOwner =
-    room?.room.ownerId != null && room?.room.ownerId === currentUserId;
-  const requiresPassword = Boolean(
-    room?.room.hasPassword && !inviteToken && !isRoomOwner,
-  );
+  const isRoomOwner = room?.room.ownerId != null && room?.room.ownerId === currentUserId;
+  const requiresPassword = Boolean(room?.room.hasPassword && !inviteToken && !isRoomOwner);
 
   // Join room when connected. `initMedia`/`connectToPeers` são useCallback
   // estáveis do useWebRTC — destruturados aqui para o effect não depender da
@@ -283,69 +285,72 @@ function RoomPageInner({ roomId }: { roomId: string }) {
   const rejoinRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const performJoinRef = useRef<(mode?: 'first' | 'reconnect') => void>(() => undefined);
 
-  const performJoin = useCallback((mode: 'first' | 'reconnect' = 'first'): void => {
-    // `isConnected()` lê o socket vivo: no re-join a reconexão acontece fora do
-    // ciclo de render, então o estado `socket.connected` ainda seria o antigo.
-    if (!socket.isConnected()) return;
-    // Espera a senha ser fornecida (gate abaixo) antes de tentar o join.
-    if (requiresPassword && roomPassword.trim().length === 0) return;
-
-    // Mídia ANTES do join. Sem isso o `room:peer-joined` (emitido pelo backend
-    // antes do ack do join-room) chega ao novato enquanto o prompt de permissão
-    // do microfone ainda está aberto, e o PC dele nasce sem faixa de áudio.
-    // `initMedia` é idempotente (no re-join a stream já está live e o retorno é
-    // imediato) e já é estável (useCallback com []), então não desestabiliza a
-    // identidade do performJoin. Também cobre o caso sem permissão/contexto
-    // inseguro: initMedia resolve rápido e só marca mediaError.
-    void initMedia().then(() => {
+  const performJoin = useCallback(
+    (mode: 'first' | 'reconnect' = 'first'): void => {
+      // `isConnected()` lê o socket vivo: no re-join a reconexão acontece fora do
+      // ciclo de render, então o estado `socket.connected` ainda seria o antigo.
       if (!socket.isConnected()) return;
-      socket
-        .joinRoom(roomId, socket.guestName, inviteToken, roomPassword.trim() || undefined)
-        .then(({ peers: existingPeers, history }) => {
-          setJoined(true);
-          // Limpa um erro anterior: a tela de erro tem precedência no render, e
-          // sem isto um re-join bem-sucedido deixaria a pessoa presa nela.
-          setError(null);
-          if (rejoinRetryRef.current) {
-            clearTimeout(rejoinRetryRef.current);
-            rejoinRetryRef.current = null;
-          }
-          // Seed chat history (persistent rooms: last 200; temporary: FIFO buffer)
-          if (history.length > 0) {
-            chatRef.current.setMessages(history);
-          }
-          // Conecta aos peers que JÁ estavam na sala (existingPeers do ack de
-          // join-room). O novato também inicia offers (mesh bidirecional): não
-          // depende apenas do room:peer-joined enviado pelos antigos — se esse
-          // evento se perder, o mesh ainda se forma. A dedupe interna (peersRef
-          // + regra de socket id menor) evita offers duplicadas/glare com os
-          // offers vindos do outro lado.
-          // NÃO chamamos initMedia aqui de novo: ela já foi resolvida acima.
-          if (existingPeers.length > 0) {
-            void connectToPeers(existingPeers);
-          }
-        })
-        .catch((err: unknown) => {
-          const message =
-            err instanceof Error && err.message ? err.message : 'Falha ao entrar na sala';
-          if (mode === 'first') {
-            setError(message);
-            return;
-          }
-          // Re-join: não ejecta no primeiro erro. Tenta de novo em 2,5s (dá tempo
-          // de o servidor processar o disconnect do peer antigo); se persistir,
-          // aí sim mostra o erro — que um re-join seguinte consegue limpar.
-          if (rejoinRetryRef.current === null) {
-            rejoinRetryRef.current = setTimeout(() => {
+      // Espera a senha ser fornecida (gate abaixo) antes de tentar o join.
+      if (requiresPassword && roomPassword.trim().length === 0) return;
+
+      // Mídia ANTES do join. Sem isso o `room:peer-joined` (emitido pelo backend
+      // antes do ack do join-room) chega ao novato enquanto o prompt de permissão
+      // do microfone ainda está aberto, e o PC dele nasce sem faixa de áudio.
+      // `initMedia` é idempotente (no re-join a stream já está live e o retorno é
+      // imediato) e já é estável (useCallback com []), então não desestabiliza a
+      // identidade do performJoin. Também cobre o caso sem permissão/contexto
+      // inseguro: initMedia resolve rápido e só marca mediaError.
+      void initMedia().then(() => {
+        if (!socket.isConnected()) return;
+        socket
+          .joinRoom(roomId, socket.guestName, inviteToken, roomPassword.trim() || undefined)
+          .then(({ peers: existingPeers, history }) => {
+            setJoined(true);
+            // Limpa um erro anterior: a tela de erro tem precedência no render, e
+            // sem isto um re-join bem-sucedido deixaria a pessoa presa nela.
+            setError(null);
+            if (rejoinRetryRef.current) {
+              clearTimeout(rejoinRetryRef.current);
               rejoinRetryRef.current = null;
-              performJoinRef.current('reconnect');
-            }, 2500);
-            return;
-          }
-          setError(message);
-        });
-    });
-  }, [socket, roomId, initMedia, connectToPeers, inviteToken, requiresPassword, roomPassword]);
+            }
+            // Seed chat history (persistent rooms: last 200; temporary: FIFO buffer)
+            if (history.length > 0) {
+              chatRef.current.setMessages(history);
+            }
+            // Conecta aos peers que JÁ estavam na sala (existingPeers do ack de
+            // join-room). O novato também inicia offers (mesh bidirecional): não
+            // depende apenas do room:peer-joined enviado pelos antigos — se esse
+            // evento se perder, o mesh ainda se forma. A dedupe interna (peersRef
+            // + regra de socket id menor) evita offers duplicadas/glare com os
+            // offers vindos do outro lado.
+            // NÃO chamamos initMedia aqui de novo: ela já foi resolvida acima.
+            if (existingPeers.length > 0) {
+              void connectToPeers(existingPeers);
+            }
+          })
+          .catch((err: unknown) => {
+            const message =
+              err instanceof Error && err.message ? err.message : 'Falha ao entrar na sala';
+            if (mode === 'first') {
+              setError(message);
+              return;
+            }
+            // Re-join: não ejecta no primeiro erro. Tenta de novo em 2,5s (dá tempo
+            // de o servidor processar o disconnect do peer antigo); se persistir,
+            // aí sim mostra o erro — que um re-join seguinte consegue limpar.
+            if (rejoinRetryRef.current === null) {
+              rejoinRetryRef.current = setTimeout(() => {
+                rejoinRetryRef.current = null;
+                performJoinRef.current('reconnect');
+              }, 2500);
+              return;
+            }
+            setError(message);
+          });
+      });
+    },
+    [socket, roomId, initMedia, connectToPeers, inviteToken, requiresPassword, roomPassword],
+  );
 
   useEffect(() => {
     performJoinRef.current = performJoin;
@@ -397,11 +402,15 @@ function RoomPageInner({ roomId }: { roomId: string }) {
   // é acknowledgeado e o antigo `await` travava a navegação para sempre. Agora
   // notifica o servidor em background (o hook tem timeout próprio) e navega
   // imediatamente; o cleanup de mídia é síncrono.
-  const handleLeave = useCallback(() => {
-    socket.leaveRoom(roomId).catch(() => {});
-    webrtc.cleanupMedia();
-    window.location.href = '/';
-  }, [socket, roomId, webrtc]);
+  const handleLeave = useCallback(
+    (destination = '/') => {
+      allowNavigation();
+      socket.leaveRoom(roomId).catch(() => {});
+      webrtc.cleanupMedia();
+      window.location.href = destination;
+    },
+    [socket, roomId, webrtc, allowNavigation],
+  );
 
   // Sala apagada por outra pessoa: limpa a midia e volta para a home com aviso.
   const deletingByMeRef = useRoomDeleted(socket, roomId, webrtc.cleanupMedia);
@@ -418,9 +427,7 @@ function RoomPageInner({ roomId }: { roomId: string }) {
   }, []);
 
   // Room expired status
-  const isExpired = room?.room.expiresAt
-    ? new Date(room.room.expiresAt) < new Date()
-    : false;
+  const isExpired = room?.room.expiresAt ? new Date(room.room.expiresAt) < new Date() : false;
 
   const isFull = false; // Would need to check participant count
 
@@ -451,9 +458,7 @@ function RoomPageInner({ roomId }: { roomId: string }) {
             )}
           </div>
           <h1 className="text-xl font-semibold text-white">{error}</h1>
-          <Button onClick={() => window.location.href = '/'}>
-            Voltar ao Início
-          </Button>
+          <Button onClick={() => (window.location.href = '/')}>Voltar ao Início</Button>
         </div>
       </div>
     );
@@ -469,14 +474,12 @@ function RoomPageInner({ roomId }: { roomId: string }) {
           <h1 className="text-xl font-semibold text-white">
             {isExpired ? 'Esta sala expirou' : 'Sala cheia'}
           </h1>
-          <p className="text-sm text-slate-400">
+          <p className="text-sm text-ink-muted">
             {isExpired
               ? 'Crie uma nova sala para continuar.'
               : 'Tente novamente mais tarde ou entre em outra sala.'}
           </p>
-          <Button onClick={() => window.location.href = '/'}>
-            Criar Nova Sala
-          </Button>
+          <Button onClick={() => (window.location.href = '/')}>Criar Nova Sala</Button>
         </div>
       </div>
     );
@@ -496,13 +499,15 @@ function RoomPageInner({ roomId }: { roomId: string }) {
               setRoomPassword(roomPassword.trim());
             }
           }}
-          className="w-full max-w-md bg-forest-950/60 border border-white/10 rounded-2xl p-6 space-y-4"
+          className="w-full max-w-md bg-surface-secondary border border-line rounded-2xl p-6 space-y-4"
         >
-          <div className="text-4xl"><Icon name="lock" size={36} /></div>
+          <div className="text-4xl">
+            <Icon name="lock" size={36} />
+          </div>
           <h1 className="text-xl font-semibold text-white">Sala protegida por senha</h1>
-          <p className="text-sm text-slate-400">
-            Esta sala exige a senha definida pelo dono para entrar. A senha não é
-            salva no navegador.
+          <p className="text-sm text-ink-muted">
+            Esta sala exige a senha definida pelo dono para entrar. A senha não é salva no
+            navegador.
           </p>
           <input
             type="password"
@@ -512,7 +517,7 @@ function RoomPageInner({ roomId }: { roomId: string }) {
             aria-label="Senha da sala"
             minLength={8}
             required
-            className="w-full rounded bg-white/5 p-2 text-sm text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-moss-500"
+            className="w-full rounded bg-surface-tertiary p-2 text-sm text-ink-primary placeholder:text-ink-muted focus:outline-none focus:ring-1 focus:ring-accent"
           />
           <Button type="submit" size="md" disabled={roomPassword.trim().length < 8}>
             Entrar na sala
@@ -525,48 +530,46 @@ function RoomPageInner({ roomId }: { roomId: string }) {
   // ─── Room UI ─────────────────────────────────────────────────
   const roomName = room?.room.name ?? 'Sala';
   const isPrivate = room?.room.isPrivate ?? false;
-  const inviteLink =
-    isPrivate && inviteToken
-      ? roomUrl(roomId, inviteToken)
-      : roomUrl(roomId);
+  const inviteLink = isPrivate && inviteToken ? roomUrl(roomId, inviteToken) : roomUrl(roomId);
 
   const isOwner = room?.room.ownerId != null && room?.room.ownerId === currentUserId;
   // Nomes para o autocomplete de menções: quem está na sala agora (guestNames)
-  const currentPeers = [
-    displayName,
-    ...Array.from(webrtc.peers.values()).map((p) => p.name),
-  ];
+  const currentPeers = [displayName, ...Array.from(webrtc.peers.values()).map((p) => p.name)];
 
   return (
-    <div className="h-screen flex flex-col">
-      {/* Skip to content */}
-      <a href="#room-controls" className="skip-link">
-        Skip to controls
-      </a>
-
-      {/* Header */}
-      <header className="flex items-center justify-between gap-2 px-2 sm:px-4 py-2 border-b border-white/5 bg-forest-950/80 backdrop-blur-sm z-10">
-        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => window.location.href = '/'}
-            aria-label="Voltar ao início"
-          >
-            <Icon name="arrowLeft" />
-          </Button>
-          <div className="min-w-0">
-            <h1 className="truncate text-sm font-semibold text-white">{roomName}</h1>
-            <p className="text-xs text-slate-400">Sala · {roomId.slice(0, 8)}...</p>
-          </div>
-        </div>
-
-        <div className="flex flex-shrink-0 items-center gap-1.5 sm:gap-2">
+    <AppShell
+      activeSection="room"
+      title={roomName}
+      onNavigate={requestNavigation}
+      contextSidebar={
+        <ParticipantList
+          peers={webrtc.peers}
+          localName={displayName}
+          localMuted={webrtc.isMuted}
+          localScreenSharing={webrtc.isScreenSharing}
+          channelName={roomName}
+          maxParticipants={room?.room.maxParticipants ?? 8}
+          speaking={speaking}
+          onWatch={setFocusedShareId}
+        />
+      }
+      accountSlot={
+        <ProfileMenu
+          onNavigate={requestNavigation}
+          name={displayName}
+          email={accountEmail}
+          isAuthenticated={currentUserId !== null}
+          user={account}
+          onUserChange={(user) => {
+            setAccount(user);
+            setAccountName(user.name);
+          }}
+        />
+      }
+      actions={
+        <div className="flex items-center gap-2">
           <Badge variant={socket.connected ? 'success' : 'error'}>
-            {socket.connected ? 'Conectado' : 'Desconectado'}
-          </Badge>
-          <Badge variant="info" aria-live="polite" className="max-sm:hidden">
-            {Array.from(webrtc.peers.size ? webrtc.peers.keys() : []).length + 1} / {room?.room.maxParticipants ?? 8}
+            {socket.connected ? 'Conectado' : 'Reconectando'}
           </Badge>
           {room?.room.canDelete && (
             <Button
@@ -576,191 +579,182 @@ function RoomPageInner({ roomId }: { roomId: string }) {
               aria-label="Apagar sala"
               title="Apagar sala"
               aria-haspopup="dialog"
-              className="hover:!text-red-400"
             >
               <Icon name="trash" />
             </Button>
           )}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowParticipants(!showParticipants)}
-            aria-label="Mostrar/ocultar participantes"
-            aria-expanded={showParticipants}
-          >
-            <Icon name="users" />
-          </Button>
-          <ProfileMenu
-            name={displayName}
-            email={accountEmail}
-            isAuthenticated={currentUserId !== null}
-            user={account}
-            onUserChange={(u) => {
-              setAccount(u);
-              setAccountName(u.name);
-            }}
-          />
         </div>
-      </header>
+      }
+    >
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <a href="#room-controls" className="skip-link">
+          Ir para os controles da sala
+        </a>
+        {/* Insecure context warning */}
+        {isInsecureContext && (
+          <div className="mx-4 mt-3">
+            <Banner
+              variant="warning"
+              icon={<Icon name="lock" size={18} />}
+              title="Conexão não segura — microfone/tela bloqueados"
+              description="Navegadores bloqueiam microfone e compartilhamento de tela em páginas HTTP fora do localhost. Acesse via HTTPS para falar com áudio, ou ative a flag do Chrome para liberar este endereço. A chamada segue funcionando sem áudio — participantes com HTTPS falam normalmente."
+              action={
+                <Button variant="secondary" size="sm" onClick={handleCopyFlag}>
+                  {copiedFlag ? (
+                    <>
+                      <Icon name="check" /> Flag copiada
+                    </>
+                  ) : (
+                    'Copiar comando flag'
+                  )}
+                </Button>
+              }
+            />
+          </div>
+        )}
 
-      {/* Insecure context warning */}
-      {isInsecureContext && (
-        <div className="mx-4 mt-3">
-          <Banner
-            variant="warning"
-            icon={<Icon name="lock" size={18} />}
-            title="Conexão não segura — microfone/tela bloqueados"
-            description="Navegadores bloqueiam microfone e compartilhamento de tela em páginas HTTP fora do localhost. Acesse via HTTPS para falar com áudio, ou ative a flag do Chrome para liberar este endereço. A chamada segue funcionando sem áudio — participantes com HTTPS falam normalmente."
-            action={
-              <Button variant="secondary" size="sm" onClick={handleCopyFlag}>
-                {copiedFlag ? (
-                  <>
-                    <Icon name="check" /> Flag copiada
-                  </>
-                ) : (
-                  'Copiar comando flag'
-                )}
-              </Button>
-            }
-          />
-        </div>
-      )}
-
-      {/* Banner extra quando initMedia falhou SEM ser contexto inseguro
+        {/* Banner extra quando initMedia falhou SEM ser contexto inseguro
           (permissão negada/indisponível em https) — o banner inseguro acima já
           cobre o caso isInsecureContext. */}
-      {!isInsecureContext && webrtc.mediaError && (
-        <div className="mx-4 mt-3">
-          <Banner
-            variant="warning"
-            icon={<Icon name="mic" size={18} />}
-            title="Microfone indisponível"
-            description="Não foi possível usar o microfone solicitado. Abra Dispositivos para escolher outro ou tentar novamente após conferir a permissão. Você ainda pode ouvir os participantes e compartilhar tela."
-          />
-        </div>
-      )}
-
-      {(webrtc.screenShareError || webrtc.isScreenSharing) && (
-        <div role="status" aria-live="polite" className="mx-4 mt-3 rounded-lg border border-white/10 bg-forest-900 px-4 py-2 text-sm text-forest-100">
-          {webrtc.screenShareError || (webrtc.screenAudioAvailable ? 'Tela com áudio. Use fones para reduzir eco.' : 'Tela sem áudio. A fonte escolhida não forneceu áudio; o microfone continua independente.')}
-        </div>
-      )}
-
-      {/* Main content */}
-      <div className="relative flex-1 flex min-h-0 overflow-hidden">
-        {/* Lateral do canal de voz (à esquerda, como no Discord) */}
-        {showParticipants && (
-          <aside className="flex w-64 flex-shrink-0 flex-col p-3 pr-0 max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:z-30 max-md:pr-3">
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/10 bg-forest-900 shadow-lg shadow-black/30 max-md:shadow-2xl">
-              <ParticipantList
-                peers={webrtc.peers}
-                localName={displayName}
-                localMuted={webrtc.isMuted}
-                localScreenSharing={webrtc.isScreenSharing}
-                channelName={roomName}
-                maxParticipants={room?.room.maxParticipants ?? 8}
-                speaking={speaking}
-                onWatch={setFocusedShareId}
-              />
-            </div>
-          </aside>
+        {!isInsecureContext && webrtc.mediaError && (
+          <div className="mx-4 mt-3">
+            <Banner
+              variant="warning"
+              icon={<Icon name="mic" size={18} />}
+              title="Microfone indisponível"
+              description="Não foi possível usar o microfone solicitado. Abra Dispositivos para escolher outro ou tentar novamente após conferir a permissão. Você ainda pode ouvir os participantes e compartilhar tela."
+            />
+          </div>
         )}
 
-        {/* Palco / grade */}
-        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-          <VideoGrid
-            peers={webrtc.peers}
-            outputDeviceId={webrtc.audioDevices.outputId}
-            onOutputError={webrtc.audioDevices.reportOutputError}
-            localStream={webrtc.localStream}
-            localScreenStream={webrtc.localScreenStream}
+        {(webrtc.screenShareError || webrtc.isScreenSharing) && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="mx-4 mt-3 rounded-lg border border-line bg-surface-secondary px-4 py-2 text-sm text-ink-secondary"
+          >
+            {webrtc.screenShareError ||
+              (webrtc.screenAudioAvailable
+                ? 'Tela com áudio. Use fones para reduzir eco.'
+                : 'Tela sem áudio. A fonte escolhida não forneceu áudio; o microfone continua independente.')}
+          </div>
+        )}
+
+        {/* Main content */}
+        <div className="relative flex-1 flex min-h-0 overflow-hidden">
+          {/* Palco / grade */}
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+            <VideoGrid
+              peers={webrtc.peers}
+              outputDeviceId={webrtc.audioDevices.outputId}
+              onOutputError={webrtc.audioDevices.reportOutputError}
+              localStream={webrtc.localStream}
+              localScreenStream={webrtc.localScreenStream}
+              isMuted={webrtc.isMuted}
+              localName={displayName}
+              inviteLink={inviteLink}
+              speaking={speaking}
+              focusedShareId={focusedShareId}
+              onFocusShare={setFocusedShareId}
+              onStopShare={() => void webrtc.toggleScreenShare()}
+              avatars={callAvatars}
+            />
+          </div>
+
+          {/* Chat panel */}
+          {chatOpen && (
+            <ChatPanel
+              roomId={roomId}
+              socket={socket.socket}
+              chat={chat}
+              currentPeers={currentPeers}
+              open={chatOpen}
+              onClose={() => setChatOpen(false)}
+              isOwner={isOwner}
+              guestName={displayName}
+            />
+          )}
+        </div>
+
+        {/* Controls */}
+        <div id="room-controls">
+          <RoomControls
+            audioDevices={webrtc.audioDevices}
+            isChangingMicrophone={webrtc.isChangingMicrophone}
             isMuted={webrtc.isMuted}
-            localName={displayName}
+            isDeafened={webrtc.isDeafened}
+            isScreenSharing={webrtc.isScreenSharing}
+            controlsDisabled={!socket.connected}
+            onToggleMute={() => {
+              // toggleMute retorna o NOVO estado (boolean) ou null quando não há
+              // stream local — evita ler isMuted stale logo após o toggle.
+              const result = webrtc.toggleMute();
+              if (result === null) {
+                toast(
+                  'Microfone indisponível. Escolha um dispositivo e verifique a permissão.',
+                  'error',
+                );
+              } else {
+                toast(result ? 'Microfone silenciado' : 'Microfone ativado', 'info');
+              }
+            }}
+            onToggleDeafen={() => {
+              const result = webrtc.toggleDeafen();
+              if (result === null) {
+                toast('Nenhum participante na sala para silenciar', 'info');
+              } else {
+                toast(result ? 'Áudio silenciado' : 'Áudio restaurado', 'info');
+              }
+            }}
+            onToggleScreenShare={async () => {
+              const result = await webrtc.toggleScreenShare();
+              if (result === null) {
+                toast('Compartilhamento não iniciado. Consulte o aviso da captura.', 'info');
+              } else {
+                toast(
+                  result
+                    ? 'Compartilhamento de tela iniciado'
+                    : 'Compartilhamento de tela encerrado',
+                  'info',
+                );
+              }
+            }}
+            onLeave={() => {
+              if (requestNavigation('/')) handleLeave();
+            }}
             inviteLink={inviteLink}
-            speaking={speaking}
-            focusedShareId={focusedShareId}
-            onFocusShare={setFocusedShareId}
-            onStopShare={() => void webrtc.toggleScreenShare()}
-            avatars={callAvatars}
+            chatUnread={chat.unread}
+            showChat={chatOpen}
+            onToggleChat={() => setChatOpen((prev) => !prev)}
           />
         </div>
 
-        {/* Chat panel */}
-        {chatOpen && (
-          <ChatPanel
+        {confirmDelete && (
+          <DeleteRoomDialog
             roomId={roomId}
-            socket={socket.socket}
-            chat={chat}
-            currentPeers={currentPeers}
-            open={chatOpen}
-            onClose={() => setChatOpen(false)}
-            isOwner={isOwner}
-            guestName={displayName}
+            roomName={roomName}
+            onCancel={() => setConfirmDelete(false)}
+            onDeleteStart={() => {
+              deletingByMeRef.current = true;
+            }}
+            onDeleteError={() => {
+              deletingByMeRef.current = false;
+            }}
+            onDeleted={() => {
+              allowNavigation();
+              webrtc.cleanupMedia();
+              setFlash('Sala apagada', 'success');
+              window.location.href = '/';
+            }}
+          />
+        )}
+        {pendingDestination && (
+          <LeaveRoomDialog
+            onCancel={cancelNavigation}
+            onLeave={() => handleLeave(pendingDestination)}
           />
         )}
       </div>
-
-      {/* Controls */}
-      <div id="room-controls">
-        <RoomControls
-          audioDevices={webrtc.audioDevices}
-          isChangingMicrophone={webrtc.isChangingMicrophone}
-          isMuted={webrtc.isMuted}
-          isDeafened={webrtc.isDeafened}
-          isScreenSharing={webrtc.isScreenSharing}
-          controlsDisabled={!socket.connected}
-          onToggleMute={() => {
-            // toggleMute retorna o NOVO estado (boolean) ou null quando não há
-            // stream local — evita ler isMuted stale logo após o toggle.
-            const result = webrtc.toggleMute();
-            if (result === null) {
-              toast('Microfone indisponível. Escolha um dispositivo e verifique a permissão.', 'error');
-            } else {
-              toast(result ? 'Microfone silenciado' : 'Microfone ativado', 'info');
-            }
-          }}
-          onToggleDeafen={() => {
-            const result = webrtc.toggleDeafen();
-            if (result === null) {
-              toast('Nenhum participante na sala para silenciar', 'info');
-            } else {
-              toast(result ? 'Áudio silenciado' : 'Áudio restaurado', 'info');
-            }
-          }}
-          onToggleScreenShare={async () => {
-            const result = await webrtc.toggleScreenShare();
-            if (result === null) {
-              toast('Compartilhamento não iniciado. Consulte o aviso da captura.', 'info');
-            } else {
-              toast(result ? 'Compartilhamento de tela iniciado' : 'Compartilhamento de tela encerrado', 'info');
-            }
-          }}
-          onLeave={handleLeave}
-          inviteLink={inviteLink}
-          chatUnread={chat.unread}
-          showChat={chatOpen}
-          onToggleChat={() => setChatOpen((prev) => !prev)}
-        />
-      </div>
-
-      {confirmDelete && (
-        <DeleteRoomDialog
-          roomId={roomId}
-          roomName={roomName}
-          onCancel={() => setConfirmDelete(false)}
-          onDeleteStart={() => {
-            deletingByMeRef.current = true;
-          }}
-          onDeleteError={() => {
-            deletingByMeRef.current = false;
-          }}
-          onDeleted={() => {
-            webrtc.cleanupMedia();
-            setFlash('Sala apagada', 'success');
-            window.location.href = '/';
-          }}
-        />
-      )}
-    </div>
+    </AppShell>
   );
 }
