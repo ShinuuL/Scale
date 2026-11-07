@@ -239,9 +239,10 @@ class ApiClient {
   }
 
   /** Provedores de login externos ligados no servidor (o botao some quando desligado). */
-  async getAuthProviders(): Promise<{ github: boolean }> {
+  async getAuthProviders(): Promise<{ github: boolean; google: boolean }> {
     const data = await this.request<unknown>('/api/auth/providers');
-    return z.object({ github: z.boolean() }).parse(data);
+    // `google` com default: servidor antigo (sem o campo) = desligado.
+    return z.object({ github: z.boolean(), google: z.boolean().default(false) }).parse(data);
   }
 
   async getMe(): Promise<{ user: MeUser }> {

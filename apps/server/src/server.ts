@@ -17,6 +17,7 @@ import { profileRoutes } from './routes/profile.js';
 import { socialRoutes } from './routes/social.js';
 import { callRoutes } from './routes/calls.js';
 import { githubAuthRoutes } from './routes/githubAuth.js';
+import { googleAuthRoutes } from './routes/googleAuth.js';
 import { createSocketServer } from './socket/handler.js';
 import { gcDeletedFiles, gcOrphanUploads } from './lib/uploads.js';
 import { sweepExpiredRooms, retryPendingRoomDeletions, ROOM_SWEEP_INTERVAL_MS } from './lib/roomDeletion.js';
@@ -66,6 +67,7 @@ await server.register(profileRoutes);
 await server.register(socialRoutes);
 await server.register(callRoutes);
 await server.register(githubAuthRoutes);
+await server.register(googleAuthRoutes);
 
 // Health check
 server.get('/health', async () => {

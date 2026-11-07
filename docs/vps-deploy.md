@@ -77,6 +77,25 @@ Editar configuração (admins, TURN...): `nano /opt/scale/.env` e depois `./depl
    ```
 4. Rode `./deploy/deploy.sh`. O botão "Entrar com GitHub" aparece no login.
 
+## Login com Google
+
+1. No Google Cloud Console, em **APIs e serviços > Tela de permissão OAuth**,
+   configure o app (tipo **Externo**, escopos `openid`, `email`, `profile`) e
+   publique-o (em "Teste", só os usuários de teste listados conseguem entrar).
+2. Em **Credenciais > Criar credenciais > ID do cliente OAuth**, tipo
+   **Aplicativo da Web**:
+   - Origem JavaScript autorizada: `https://scale.nexushosts.tech:8443`
+   - URI de redirecionamento: `https://scale.nexushosts.tech:8443/api/auth/google/callback`
+3. No `.env` da VPS (`PUBLIC_URL` é o mesmo do GitHub):
+   ```
+   GOOGLE_CLIENT_ID=<client id>
+   GOOGLE_CLIENT_SECRET=<client secret>
+   ```
+4. Rode `./deploy/deploy.sh`. O botão "Entrar com Google" aparece no login.
+
+Regra de conta igual à do GitHub: o vínculo é pelo `sub` do Google; um e-mail
+já cadastrado por senha **não** é vinculado sozinho (`/login?google=email_em_uso`).
+
 ## Backup e restauração
 
 O script produz **um arquivo conjunto** `backups/backup-AAAAMMDD-HHMMSS-PID.tar.gz`,

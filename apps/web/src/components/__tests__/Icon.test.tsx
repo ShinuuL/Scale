@@ -49,9 +49,10 @@ describe('Icon', () => {
     expect(filled('speaker')).toBe(1);
     // Marca de terceiro: a silhueta oficial e solida (nao e estado "ligado").
     expect(filled('github')).toBe(1);
+    expect(filled('google')).toBe(1);
 
     const rest = Object.keys(ICONS).filter(
-      (name) => name !== 'mic' && name !== 'speaker' && name !== 'github',
+      (name) => name !== 'mic' && name !== 'speaker' && name !== 'github' && name !== 'google',
     ) as IconName[];
     for (const name of rest) {
       expect(filled(name), `${name} não deveria ter forma preenchida`).toBe(0);

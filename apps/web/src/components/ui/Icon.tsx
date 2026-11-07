@@ -34,6 +34,7 @@ export type IconName =
   | 'eye'
   | 'github'
   | 'globe'
+  | 'google'
   | 'image'
   | 'info'
   | 'key'
@@ -242,7 +243,15 @@ export const ICONS: Record<IconName, IconShape[]> = {
       d: 'M10.3 3.5h3.4l.5 2.3 1.6.9 2.2-.8 1.7 2.9-1.8 1.6v1.8l1.8 1.6-1.7 2.9-2.2-.8-1.6.9-.5 2.3h-3.4l-.5-2.3-1.6-.9-2.2.8-1.7-2.9 1.8-1.6v-1.8L4.3 8.8 6 5.9l2.2.8 1.6-.9.5-2.3Z',
     },
   ],
-  // Marca do GitHub (silhueta solida): unico icone de marca, usado so no botao
+  // Marca do Google ("G" monocromatico, silhueta solida, CC0 Simple Icons):
+  // icone de marca usado so no botao "Entrar com Google".
+  google: [
+    {
+      d: 'M12.48 10.92v3.28h7.84c-.24 1.84-.85 3.19-1.79 4.13-1.15 1.15-2.93 2.4-6.05 2.4-4.83 0-8.6-3.89-8.6-8.72s3.77-8.72 8.6-8.72c2.6 0 4.51 1.03 5.91 2.35l2.31-2.31C18.75 1.44 16.13 0 12.48 0 5.87 0 .31 5.39.31 12s5.56 12 12.17 12c3.57 0 6.27-1.17 8.37-3.36 2.16-2.16 2.84-5.21 2.84-7.67 0-.76-.05-1.47-.17-2.05h-11.04Z',
+      filled: true,
+    },
+  ],
+  // Marca do GitHub (silhueta solida): icone de marca usado so no botao
   // "Entrar com GitHub", onde a marca identifica o provedor.
   github: [
     {

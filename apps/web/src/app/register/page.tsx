@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Icon } from '@/components/ui/Icon';
 import Link from 'next/link';
-import { GithubLoginButton } from '@/components/auth/GithubLogin';
+import { OAuthLoginButtons } from '@/components/auth/OAuthLogin';
 
 type UsernameState =
   | { kind: 'idle' }
@@ -175,7 +175,7 @@ export default function RegisterPage() {
             </Button>
           </form>
 
-          <GithubLoginButton label="Criar conta com GitHub" />
+          <OAuthLoginButtons mode="register" />
 
           <div className="mt-4 text-center">
             <Link

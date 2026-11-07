@@ -317,6 +317,17 @@ export function resetGithubOAuthRateLimit(ip: string): void {
   reset(githubOAuthStore, ip);
 }
 
+// Login com Google: mesmo limite do GitHub (inicio + callback contam), por IP.
+const googleOAuthStore = createBucket('googleOAuth');
+
+export function isGoogleOAuthRateLimited(ip: string): RateLimitResult {
+  return ipBucket(googleOAuthStore, ip, GITHUB_OAUTH_WINDOW_MS, GITHUB_OAUTH_MAX);
+}
+
+export function resetGoogleOAuthRateLimit(ip: string): void {
+  reset(googleOAuthStore, ip);
+}
+
 // Upload de arquivos: 30 / min por IP. Cada upload grava bytes no disco e no
 // SQLite; o balde fica ANTES de bufferizar o multipart.
 const UPLOAD_WINDOW_MS = 60_000;

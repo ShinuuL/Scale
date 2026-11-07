@@ -146,6 +146,17 @@ docker compose up --build -d
 - Balde `githubOAuth`: 20 / 10 min por IP; criação também conta no `register`.
 - Erros voltam como `/login?github=<cancelado|falhou|email_em_uso|sem_email|limite|desligado>`.
 
+### Login com Google (OAuth/OIDC)
+- Opcional: liga com `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` e `PUBLIC_URL`
+  (callback `<PUBLIC_URL>/api/auth/google/callback`). `GET /api/auth/providers`
+  devolve `{ github, google }`.
+- Mesmo desenho do GitHub: `state` em cookie HttpOnly `SameSite=Lax`
+  (`__Host-` em produção), uso único, 10 min; escopos `openid email profile`;
+  access token descartado; balde `googleOAuth` 20 / 10 min por IP.
+- Conta: vínculo pelo `sub` (tabela `GoogleAccount`); e-mail já cadastrado sem
+  vínculo **não** é vinculado sozinho; conta nova só com `email_verified`.
+- Erros: `/login?google=<cancelado|falhou|email_em_uso|sem_email|limite|desligado>`.
+
 ### Convidado (guestId)
 - O servidor emite um `guestId` (UUID v4) no cookie `scale_guest` — HttpOnly,
   SameSite=Strict, Secure em produção, 180 dias, assinado (HMAC,

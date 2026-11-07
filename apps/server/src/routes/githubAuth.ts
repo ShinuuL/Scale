@@ -1,7 +1,7 @@
 /**
  * Login/cadastro com GitHub.
  *
- *   GET /api/auth/providers         -> { github: boolean }  (o frontend mostra o botao)
+ *   GET /api/auth/providers         -> { github, google }  (o frontend mostra os botoes)
  *   GET /api/auth/github            -> 302 para o GitHub (com `state` anti-CSRF)
  *   GET /api/auth/github/callback   -> valida `state`, le a identidade e entra
  *
@@ -33,6 +33,7 @@ import {
   fetchGithubIdentity,
   getGithubConfig,
 } from '../lib/github.js';
+import { getGoogleConfig } from '../lib/google.js';
 
 const STATE_TTL_SECONDS = 10 * 60;
 const SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
@@ -99,7 +100,10 @@ function setSessionCookie(reply: FastifyReply, user: { id: string; email: string
 }
 
 export async function githubAuthRoutes(fastify: FastifyInstance): Promise<void> {
-  fastify.get('/api/auth/providers', async () => ({ github: getGithubConfig() !== null }));
+  fastify.get('/api/auth/providers', async () => ({
+    github: getGithubConfig() !== null,
+    google: getGoogleConfig() !== null,
+  }));
 
   fastify.get('/api/auth/github', async (request: FastifyRequest, reply: FastifyReply) => {
     const config = getGithubConfig();

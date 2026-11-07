@@ -93,7 +93,7 @@ describe('login com GitHub', () => {
 
   it('providers indica github ligado', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/auth/providers' });
-    expect(res.json()).toEqual({ github: true });
+    expect(res.json()).toEqual({ github: true, google: false });
   });
 
   it('inicio redireciona ao GitHub com state, escopos e redirect_uri sem barra dupla', async () => {
@@ -201,7 +201,7 @@ describe('login com GitHub', () => {
   it('recurso desligado sem configuracao', async () => {
     delete process.env.GITHUB_CLIENT_SECRET;
     const providers = await app.inject({ method: 'GET', url: '/api/auth/providers' });
-    expect(providers.json()).toEqual({ github: false });
+    expect(providers.json()).toEqual({ github: false, google: false });
     const res = await app.inject({ method: 'GET', url: '/api/auth/github' });
     expect(res.headers.location).toBe('/login?github=desligado');
     process.env.GITHUB_CLIENT_SECRET = 'csecret';

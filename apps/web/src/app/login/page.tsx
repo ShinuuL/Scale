@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Icon } from '@/components/ui/Icon';
 import Link from 'next/link';
-import { GithubLoginButton, readGithubError } from '@/components/auth/GithubLogin';
+import { OAuthLoginButtons, readOAuthError } from '@/components/auth/OAuthLogin';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -15,11 +15,11 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Erro do login com GitHub (/login?github=<codigo>). Em efeito, nao no
+  // Erro do login externo (/login?github=<codigo> ou ?google=<codigo>). Em efeito, nao no
   // estado inicial: a pagina e pre-renderizada sem query (export estatico).
   useEffect(() => {
-    const githubError = readGithubError();
-    if (githubError) setError(githubError);
+    const oauthError = readOAuthError();
+    if (oauthError) setError(oauthError);
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -86,7 +86,7 @@ export default function LoginPage() {
             </Button>
           </form>
 
-          <GithubLoginButton />
+          <OAuthLoginButtons />
 
           <div className="mt-4 text-center">
             <Link
