@@ -98,7 +98,7 @@ export function hardenWebContents(contents: WebContents): void {
   }
 }
 
-/** Handlers de permissao da sessao: so 'media' (audio) e 'display-capture' da origin configurada. */
+/** Handlers de permissao da sessao: so 'media' (audio), 'display-capture' e 'speaker-selection' da origin configurada. */
 export function installPermissionHandlers(ses: Session): void {
   ses.setPermissionRequestHandler((_contents, permission, callback, details) => {
     const mediaTypes = 'mediaTypes' in details ? (details.mediaTypes ?? []) : undefined;

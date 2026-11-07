@@ -24,9 +24,13 @@ import { Icon } from '@/components/ui/Icon';
 import { ProfileMenu } from '@/components/ui/ProfileMenu';
 import { api, avatarUrl, type MeUser } from '@/lib/api';
 import { copyText } from '@/lib/clipboard';
+import { subscribeAudioDeviceChange } from '@/lib/audioDevices';
 import { roomUrl } from '@/lib/roomLink';
 import { roomInviteHeaders } from '@/lib/roomAccess';
 import { setFlash } from '@/lib/flash';
+
+/** Id interno do medidor que detecta fala com o microfone desligado. */
+const MUTED_PROBE_ID = 'local-muted-probe';
 
 /**
  * Sala privada sem credencial (nem dono, nem convite valido no header) vem
@@ -184,9 +188,25 @@ function RoomPageInner({ roomId }: { roomId: string }) {
   // Transmissão escolhida para o palco (null = foco automático: a de outra
   // pessoa vence a sua). Lateral e faixa de miniaturas escrevem aqui.
   const [focusedShareId, setFocusedShareId] = useState<string | null>(null);
-  // Anel verde de "falando" na lateral e nos cartões. Local mudo não conta.
+  // Mudo, a faixa enviada fica desligada (só silêncio). Para avisar "Você
+  // está mudo" quando a pessoa fala assim mesmo, mede uma CÓPIA ligada da
+  // faixa — ela nunca é enviada a ninguém e é parada ao desmutar.
+  const [mutedProbe, setMutedProbe] = useState<MediaStream | null>(null);
+  useEffect(() => {
+    const track = webrtc.isMuted ? webrtc.localStream?.getAudioTracks()[0] : undefined;
+    if (!track || track.readyState !== 'live') {
+      setMutedProbe(null);
+      return;
+    }
+    const copy = track.clone();
+    copy.enabled = true;
+    setMutedProbe(new MediaStream([copy]));
+    return () => copy.stop();
+  }, [webrtc.isMuted, webrtc.localStream]);
+  // Halo e barrinhas de "falando" na lateral e nos cartões. Local mudo não conta.
   const speaking = useSpeaking([
     { id: LOCAL_ID, stream: webrtc.isMuted ? null : webrtc.localStream },
+    { id: MUTED_PROBE_ID, stream: mutedProbe },
     ...Array.from(webrtc.peers.values()).map((p) => ({ id: p.peerId, stream: p.stream })),
   ]);
 
@@ -245,7 +265,20 @@ function RoomPageInner({ roomId }: { roomId: string }) {
   // estáveis do useWebRTC — destruturados aqui para o effect não depender da
   // identidade do objeto `webrtc` (memoizado, mas muda quando peers/mídia
   // mudam, o que causaria re-execução/loop antes do join).
-  const { initMedia, connectToPeers } = webrtc;
+  const { initMedia, connectToPeers, switchMicrophone } = webrtc;
+
+  // Troca de microfone ao vivo (escolhido nas configurações).
+  useEffect(
+    () =>
+      subscribeAudioDeviceChange(({ kind, deviceId }) => {
+        // Antes de entrar não liga o microfone: o initMedia já usa o salvo.
+        if (kind !== 'input' || !joined) return;
+        void switchMicrophone(deviceId).then((ok) => {
+          if (!ok) toast('Não foi possível trocar o microfone', 'error');
+        });
+      }),
+    [switchMicrophone, toast, joined],
+  );
 
   /**
    * Entra na sala e forma a malha. Usado no primeiro join E no reconnect:
@@ -676,6 +709,8 @@ function RoomPageInner({ roomId }: { roomId: string }) {
       <div id="room-controls">
         <RoomControls
           isMuted={webrtc.isMuted}
+          isSpeaking={speaking.has(LOCAL_ID)}
+          talkingWhileMuted={webrtc.isMuted && speaking.has(MUTED_PROBE_ID)}
           isDeafened={webrtc.isDeafened}
           isScreenSharing={webrtc.isScreenSharing}
           controlsDisabled={!socket.connected || Boolean(webrtc.mediaError)}

@@ -17,6 +17,16 @@ describe('isPermissionAllowed', () => {
     );
   });
 
+  it('permite escolher a saida de audio so na origin configurada', () => {
+    expect(isPermissionAllowed({ permission: 'speaker-selection', requestingUrl: PAGE, allowedOrigin: ORIGIN })).toBe(
+      true,
+    );
+    expect(
+      isPermissionAllowed({ permission: 'speaker-selection', requestingUrl: 'https://example.com/', allowedOrigin: ORIGIN }),
+    ).toBe(false);
+    expect(isPermissionAllowed({ permission: 'speaker-selection', requestingUrl: PAGE, allowedOrigin: null })).toBe(false);
+  });
+
   it('nega camera', () => {
     expect(
       isPermissionAllowed({ permission: 'media', requestingUrl: PAGE, allowedOrigin: ORIGIN, mediaTypes: ['video'] }),

@@ -2,6 +2,7 @@
 
 import { clsx } from 'clsx';
 import { Icon } from '@/components/ui/Icon';
+import { SpeakingBars } from '@/components/room/SpeakingBars';
 import type { PeerConnection } from '@/hooks/useWebRTC';
 import { LOCAL_ID } from '@/components/room/VideoGrid';
 
@@ -85,7 +86,9 @@ export function ParticipantList({
                 className={clsx(
                   'flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold',
                   'bg-brand-600/30 text-brand-200 transition-shadow duration-150 motion-reduce:transition-none',
-                  isSpeaking ? 'ring-2 ring-brand-400 ring-offset-2 ring-offset-forest-900' : '',
+                  isSpeaking
+                    ? 'ring-2 ring-brand-400 ring-offset-2 ring-offset-forest-900 animate-speak-pulse motion-reduce:animate-none'
+                    : '',
                 )}
               >
                 {p.name.charAt(0).toUpperCase()}
@@ -95,6 +98,7 @@ export function ParticipantList({
                 {p.isLocal && <span className="text-slate-500"> (você)</span>}
                 {isSpeaking && <span className="sr-only">, falando</span>}
               </span>
+              {isSpeaking && !p.isMuted && <SpeakingBars active size="sm" />}
               {p.isLive &&
                 (onWatch && !p.isLocal ? (
                   <button

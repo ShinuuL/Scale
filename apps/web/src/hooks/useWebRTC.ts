@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import type { UseSocketReturn, PeerInfo } from './useSocket';
+import { getSavedDeviceId } from '@/lib/audioDevices';
 
 export interface PeerConnection {
   peerId: string;
@@ -41,6 +42,12 @@ export interface UseWebRTCHReturn {
    * `null` quando bloqueado (contexto inseguro / getDisplayMedia indisponível).
    */
   toggleScreenShare: () => Promise<boolean | null>;
+  /**
+   * Troca o microfone ao vivo ('' = padrão do sistema): replaceTrack em todos
+   * os peers, sem renegociar, preservando o mudo. Falhou = mantém a faixa
+   * antiga e devolve false.
+   */
+  switchMicrophone: (deviceId: string) => Promise<boolean>;
   initMedia: () => Promise<void>;
   cleanupMedia: () => void;
   /**
@@ -587,8 +594,11 @@ export function useWebRTC(
       return;
     }
     try {
+      // Microfone salvo nas configurações: `ideal` (não `exact`) para que um
+      // aparelho que sumiu caia no padrão em vez de falhar. '' = padrão.
+      const savedMic = getSavedDeviceId('input');
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: AUDIO_CONSTRAINTS,
+        audio: savedMic ? { ...AUDIO_CONSTRAINTS, deviceId: { ideal: savedMic } } : AUDIO_CONSTRAINTS,
         video: false,
       });
       localStreamRef.current = stream;
@@ -636,6 +646,62 @@ export function useWebRTC(
       setIsMuted(true);
       setAudioMuted(true);
     }
+  }, []);
+
+  // ─── Troca de microfone ao vivo ───────────────────────────────
+  const switchMicrophone = useCallback(async (deviceId: string): Promise<boolean> => {
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) return false;
+    const oldStream = localStreamRef.current;
+    const oldTrack = oldStream?.getAudioTracks()[0];
+    let newStream: MediaStream;
+    try {
+      newStream = await navigator.mediaDevices.getUserMedia({
+        audio: deviceId ? { ...AUDIO_CONSTRAINTS, deviceId: { ideal: deviceId } } : AUDIO_CONSTRAINTS,
+        video: false,
+      });
+    } catch (err) {
+      console.warn('[WebRTC] switchMicrophone falhou, mantendo a faixa antiga:', err);
+      return false;
+    }
+    const newTrack = newStream.getAudioTracks()[0];
+    if (!newTrack) {
+      newStream.getTracks().forEach((t) => t.stop());
+      return false;
+    }
+    // Preserva o mudo: a faixa antiga é a fonte do estado (enabled = !isMuted).
+    // Sem faixa antiga (entrou sem microfone), a nova nasce ligada.
+    newTrack.enabled = oldTrack ? oldTrack.enabled : true;
+
+    try {
+      const replacements: Promise<void>[] = [];
+      peersRef.current.forEach((peer) => {
+        const transceiver = findAudioTransceiver(peer.connection);
+        if (transceiver) replacements.push(transceiver.sender.replaceTrack(newTrack));
+      });
+      await Promise.all(replacements);
+    } catch (err) {
+      console.warn('[WebRTC] switchMicrophone: replaceTrack falhou:', err);
+      // Reverte os peers para a faixa antiga e descarta a nova.
+      if (oldTrack) {
+        peersRef.current.forEach((peer) => {
+          const transceiver = findAudioTransceiver(peer.connection);
+          if (transceiver) void transceiver.sender.replaceTrack(oldTrack).catch(() => {});
+        });
+      }
+      newStream.getTracks().forEach((t) => t.stop());
+      return false;
+    }
+
+    oldStream?.getTracks().forEach((t) => t.stop());
+    localStreamRef.current = newStream;
+    // MediaStream NOVO: quem mede nível depende da identidade para recriar.
+    setLocalStream(newStream);
+    if (!oldTrack) {
+      setIsMuted(false);
+      setAudioMuted(false);
+      setMediaError(null);
+    }
+    return true;
   }, []);
 
   // ─── Cleanup ──────────────────────────────────────────────────
@@ -1067,6 +1133,7 @@ export function useWebRTC(
       toggleMute,
       toggleDeafen,
       toggleScreenShare,
+      switchMicrophone,
       initMedia,
       cleanupMedia,
       connectToPeers,
@@ -1083,6 +1150,7 @@ export function useWebRTC(
       toggleMute,
       toggleDeafen,
       toggleScreenShare,
+      switchMicrophone,
       initMedia,
       cleanupMedia,
       connectToPeers,

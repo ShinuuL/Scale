@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AVATAR_FILE_ACCEPT, MAX_AVATAR_SIZE_BYTES, USER_NAME_MAX, USERNAME_MAX, usernameSchema } from '@scale/shared';
+import { AudioSettings } from '@/components/ui/AudioSettings';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { Input } from '@/components/ui/Input';
@@ -12,7 +13,7 @@ import { api, avatarUrl, type MeUser } from '@/lib/api';
 const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 export interface SettingsDialogProps {
-  /** Conta logada; null = convidado (so o tema aparece). */
+  /** Conta logada; null = convidado (so audio e tema aparecem). */
   user: MeUser | null;
   onClose: () => void;
   /** Perfil salvo no servidor (nome ou foto). */
@@ -298,6 +299,8 @@ export function SettingsDialog({ user, onClose, onUserChange }: SettingsDialogPr
             {error ?? saved}
           </p>
         )}
+
+        <AudioSettings />
 
         <section aria-labelledby="settings-theme" className="space-y-3 border-t border-white/[0.08] pt-4">
           <h3 id="settings-theme" className="text-xs font-medium uppercase tracking-wide text-slate-400">

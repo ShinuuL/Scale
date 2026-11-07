@@ -4,7 +4,9 @@ import { useRef, useEffect, useState, useCallback } from 'react';
 import { clsx } from 'clsx';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
+import { SpeakingBars } from '@/components/room/SpeakingBars';
 import { copyText } from '@/lib/clipboard';
+import { applySavedSink, subscribeAudioDeviceChange } from '@/lib/audioDevices';
 import type { PeerConnection } from '@/hooks/useWebRTC';
 
 /** Id da transmissão/participante local (os remotos usam o peerId). */
@@ -87,6 +89,16 @@ function PeerAudio({ stream }: { stream: MediaStream | null }) {
     return cleanup;
   }, [stream]);
 
+  // Saída escolhida nas configurações; troca ao vivo pelo evento.
+  useEffect(() => {
+    const audioEl = audioRef.current;
+    if (!audioEl) return;
+    void applySavedSink(audioEl);
+    return subscribeAudioDeviceChange((detail) => {
+      if (detail.kind === 'output') void applySavedSink(audioEl);
+    });
+  }, []);
+
   return <audio ref={audioRef} autoPlay playsInline />;
 }
 
@@ -122,7 +134,8 @@ function Avatar({
         'rounded-full flex items-center justify-center font-semibold select-none overflow-hidden',
         'bg-brand-600/30 text-brand-200 border border-brand-500/30',
         'ring-offset-2 ring-offset-slate-900 transition-shadow duration-150 motion-reduce:transition-none',
-        speaking ? 'ring-[3px] ring-brand-400' : 'ring-0',
+        // Falando: anel + halo que pulsa (motion-reduce: só o anel parado).
+        speaking ? 'ring-[3px] ring-brand-400 animate-speak-pulse motion-reduce:animate-none' : 'ring-0',
         size === 'lg' && 'w-24 h-24 text-3xl',
         size === 'md' && 'w-16 h-16 text-xl',
         size === 'sm' && 'w-10 h-10 text-sm',
@@ -175,8 +188,9 @@ function MemberCard({ member, speaking, compact }: { member: Member; speaking: b
       )}
     >
       <Avatar name={member.name} speaking={speaking} size={compact ? 'sm' : 'lg'} src={member.avatarUrl} />
-      <span className="absolute bottom-2 left-2 max-w-[75%] truncate rounded-md bg-black/60 px-2 py-0.5 text-xs font-medium text-white">
-        {label}
+      <span className="absolute bottom-2 left-2 flex max-w-[75%] items-center gap-1.5 rounded-md bg-black/60 px-2 py-0.5 text-xs font-medium text-white">
+        {speaking && <SpeakingBars active size="sm" />}
+        <span className="truncate">{label}</span>
       </span>
       {member.muted && (
         <span className="absolute bottom-2 right-2 rounded-md bg-black/60 p-1 text-red-300">

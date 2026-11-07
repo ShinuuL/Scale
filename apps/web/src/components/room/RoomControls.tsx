@@ -2,10 +2,16 @@
 
 import { useState } from 'react';
 import { Button } from '@/components/ui/Button';
+import { clsx } from 'clsx';
 import { Icon } from '@/components/ui/Icon';
+import { SpeakingBars } from '@/components/room/SpeakingBars';
 
 interface RoomControlsProps {
   isMuted: boolean;
+  /** A sua voz está sendo captada agora (acende o botão do microfone). */
+  isSpeaking?: boolean;
+  /** Você está falando com o microfone desligado (mostra o aviso "Você está mudo"). */
+  talkingWhileMuted?: boolean;
   isDeafened: boolean;
   isScreenSharing: boolean;
   /** Desabilita os controles de mídia (socket desconectado ou mediaError). O botão Sair continua ativo. */
@@ -25,6 +31,8 @@ interface RoomControlsProps {
 
 export function RoomControls({
   isMuted,
+  isSpeaking = false,
+  talkingWhileMuted = false,
   isDeafened,
   isScreenSharing,
   controlsDisabled = false,
@@ -52,19 +60,36 @@ export function RoomControls({
       role="toolbar"
       aria-label="Controles da sala"
     >
-      {/* Mute */}
-      <Button
-        className="max-sm:px-3.5"
-        variant={isMuted ? 'danger' : 'secondary'}
-        onClick={onToggleMute}
-        disabled={controlsDisabled}
-        aria-label={isMuted ? 'Ativar microfone' : 'Desativar microfone'}
-        aria-pressed={!isMuted}
-        title={isMuted ? 'Ativar microfone' : 'Desativar microfone'}
-      >
-        <span aria-hidden="true">{isMuted ? <Icon name="micOff" /> : <Icon name="mic" />}</span>
-        <span className="hidden sm:inline">{isMuted ? 'Mudo' : 'Mic'}</span>
-      </Button>
+      {/* Mute (acende enquanto a sua voz é captada; avisa se fala mudo) */}
+      <div className="relative">
+        {talkingWhileMuted && (
+          <span
+            role="status"
+            className="absolute bottom-full left-1/2 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md bg-red-600 px-2 py-1 text-xs font-semibold text-white shadow-lg animate-fade-in-fast"
+          >
+            Você está mudo
+          </span>
+        )}
+        <Button
+          className={clsx(
+            'max-sm:px-3.5',
+            isSpeaking && !isMuted && 'ring-2 ring-brand-400 animate-speak-pulse motion-reduce:animate-none',
+          )}
+          variant={isMuted ? 'danger' : 'secondary'}
+          onClick={onToggleMute}
+          disabled={controlsDisabled}
+          aria-label={isMuted ? 'Ativar microfone' : 'Desativar microfone'}
+          aria-pressed={!isMuted}
+          title={isMuted ? 'Ativar microfone' : 'Desativar microfone'}
+        >
+          <span aria-hidden="true">{isMuted ? <Icon name="micOff" /> : <Icon name="mic" />}</span>
+          {isSpeaking && !isMuted ? (
+            <SpeakingBars active size="sm" className="hidden sm:inline-flex" />
+          ) : (
+            <span className="hidden sm:inline">{isMuted ? 'Mudo' : 'Mic'}</span>
+          )}
+        </Button>
+      </div>
 
       {/* Deafen */}
       <Button

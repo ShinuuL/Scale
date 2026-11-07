@@ -2,10 +2,15 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-/** Volume RMS (0..1) acima do qual a pessoa conta como "falando". */
-const SPEAKING_THRESHOLD = 0.035;
+/**
+ * Volume RMS (0..1) acima do qual a pessoa conta como "falando". Com
+ * noiseSuppression + autoGainControl do Chrome, fala normal fica entre ~0,01
+ * e ~0,08; o limiar antigo (0,035) perdia voz baixa e o indicador nunca
+ * acendia. 0,012 ainda fica acima do ruído que sobra depois da supressão.
+ */
+export const SPEAKING_THRESHOLD = 0.012;
 /** Quanto o indicador segura depois do último pico — evita piscar entre sílabas. */
-const SPEAKING_HOLD_MS = 350;
+const SPEAKING_HOLD_MS = 400;
 const SAMPLE_INTERVAL_MS = 100;
 
 export interface SpeakingSource {
@@ -14,7 +19,7 @@ export interface SpeakingSource {
 }
 
 /**
- * Ids de quem está falando agora (anel verde do canal de voz). Um único
+ * Ids de quem está falando agora (halo e barrinhas do canal de voz). Um único
  * AudioContext para todas as streams; o analisador só LÊ a faixa (não toca
  * nada — a reprodução continua nos `<audio>`). Só re-renderiza quando o
  * conjunto muda.
@@ -37,21 +42,26 @@ export function useSpeaking(sources: SpeakingSource[]): Set<string> {
     }
 
     const ctx = new AudioContext();
-    const buffer = new Float32Array(512);
+    const buffer = new Float32Array(1024);
     const meters = withAudio.map((s) => {
       const source = ctx.createMediaStreamSource(s.stream as MediaStream);
       const analyser = ctx.createAnalyser();
-      analyser.fftSize = 512;
+      analyser.fftSize = 1024;
       source.connect(analyser);
       return { id: s.id, analyser, lastPeak: 0 };
     });
 
-    // Sem gesto do usuário o contexto nasce suspenso; tenta retomar no 1º gesto.
-    const resume = () => void ctx.resume().catch(() => {});
+    // Sem gesto do usuário o contexto nasce suspenso (e o analisador lê só
+    // zeros). Tenta retomar agora e a cada gesto/foco até conseguir.
+    const resume = () => {
+      if (ctx.state === 'suspended') void ctx.resume().catch(() => {});
+    };
     resume();
-    window.addEventListener('pointerdown', resume, true);
+    const gestures = ['pointerdown', 'keydown', 'focus'] as const;
+    gestures.forEach((g) => window.addEventListener(g, resume, true));
 
     const timer = window.setInterval(() => {
+      if (ctx.state !== 'running') return;
       const now = Date.now();
       const next = new Set<string>();
       for (const m of meters) {
@@ -68,7 +78,7 @@ export function useSpeaking(sources: SpeakingSource[]): Set<string> {
 
     return () => {
       window.clearInterval(timer);
-      window.removeEventListener('pointerdown', resume, true);
+      gestures.forEach((g) => window.removeEventListener(g, resume, true));
       void ctx.close().catch(() => {});
     };
   }, [key]);
