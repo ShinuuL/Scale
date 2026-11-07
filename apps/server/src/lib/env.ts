@@ -1,6 +1,14 @@
 import { z } from 'zod';
 
-const envSchema = z.object({
+/**
+ * Minimo do JWT_SECRET em producao. Quem conhece este segredo forja sessao de
+ * qualquer usuario, vira admin (o e-mail vem do token) e emite room tickets
+ * (derivados dele). O valor de exemplo do .env.example fica abaixo do minimo, de
+ * proposito: copiar o arquivo sem trocar o segredo derruba o start.
+ */
+export const JWT_SECRET_MIN_LENGTH_PRODUCTION = 32;
+
+const baseEnvSchema = z.object({
   JWT_SECRET: z.string().min(8, 'JWT_SECRET must be at least 8 characters'),
   DATABASE_URL: z.string().default('file:/app/data/data.db'),
   ALLOWED_ORIGINS: z.string().default('http://localhost:3000'),
@@ -19,6 +27,16 @@ const envSchema = z.object({
     .transform((v) => v === 'true')
     .default('false'),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+});
+
+const envSchema = baseEnvSchema.superRefine((env, ctx) => {
+  if (env.NODE_ENV !== 'production') return;
+  if (env.JWT_SECRET.trim().length >= JWT_SECRET_MIN_LENGTH_PRODUCTION) return;
+  ctx.addIssue({
+    code: z.ZodIssueCode.custom,
+    path: ['JWT_SECRET'],
+    message: `JWT_SECRET curto ou de exemplo (minimo ${JWT_SECRET_MIN_LENGTH_PRODUCTION} caracteres) — obrigatorio em producao`,
+  });
 });
 
 export type Env = z.infer<typeof envSchema>;

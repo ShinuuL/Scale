@@ -117,6 +117,7 @@ export default function FriendsPage() {
     onFriendsChanged: refresh,
     onDirectMessage: (m) => {
       if (!me) return;
+      if (m.senderId !== me.id) window.dispatchEvent(new CustomEvent('scale:notification', { detail: { tag: 'direct-message' } }));
       const friendId = m.senderId === me.id ? m.recipientId : m.senderId;
       setIncomingByFriend((prev) => ({ ...prev, [friendId]: [...(prev[friendId] ?? []), m] }));
       if (m.senderId !== me.id && friendId !== selectedId) {

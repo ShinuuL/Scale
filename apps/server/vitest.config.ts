@@ -1,19 +1,25 @@
 import { defineConfig } from 'vitest/config';
-import { TEST_DATABASE_URL } from './src/__tests__/testDatabase.js';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+
+// Nunca usar data.db de desenvolvimento: cada execucao tem seu banco descartavel.
+const testDirectory = mkdtempSync(path.join(tmpdir(), 'scale-server-test-'));
+const testDatabaseUrl = `file:${path.join(testDirectory, 'data.db')}`;
+process.env.SCALE_TEST_DIRECTORY = testDirectory;
+process.env.SCALE_TEST_DATABASE_URL = testDatabaseUrl;
 
 export default defineConfig({
   test: {
     globals: true,
+    globalSetup: ['./src/__tests__/helpers/databaseSetup.ts'],
     environment: 'node',
-    // Banco proprio dos testes (prisma/test.db), separado do banco de dev
-    // (prisma/data.db): as suites fazem deleteMany global e apagavam as
-    // contas locais. O globalSetup cria/sincroniza o test.db a cada rodada.
-    // Caminho absoluto: um "file:./x.db" relativo e resolvido a partir de
-    // onde o cliente Prisma foi gerado, que pode nao ser esta pasta.
+    // Cada invocacao cria esquema novo em diretorio temporario; nunca usa
+    // DATABASE_URL/data.db de desenvolvimento ou volumes Docker.
     env: {
-      DATABASE_URL: TEST_DATABASE_URL,
+      DATABASE_URL: testDatabaseUrl,
+      NODE_ENV: 'test',
     },
-    globalSetup: ['./src/__tests__/globalSetup.ts'],
     // Os arquivos de teste compartilham o mesmo SQLite local e vários fazem
     // deleteMany global (rooms/messages/files) no beforeAll. Em paralelo, esse
     // wipe cruza com salas criadas pela suíte socket/chat e gera flakiness

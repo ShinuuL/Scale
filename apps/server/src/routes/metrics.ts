@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { prisma } from '../lib/prisma.js';
-import { getChatMetricsSnapshot, getChatMetricsText, getUptimeSeconds } from '../lib/metrics.js';
+import { getChatMetricsSnapshot, getChatMetricsText, getUptimeSeconds, getResourceMetrics, getResourceMetricsText } from '../lib/metrics.js';
 import { isSystemAdmin } from '../lib/env.js';
 import { getRoomPeersSnapshot } from '../socket/handler.js';
 
@@ -19,7 +19,7 @@ export async function metricsRoutes(fastify: FastifyInstance): Promise<void> {
 
   // GET /api/metrics — observabilidade. EXIGE admin (requireMetricsAdmin): o
   // app pode ser publicado na internet (tunel trycloudflare) e este payload
-  // expoe a contagem de peers por sala. memory/version nao saem (fingerprint).
+  // expoe recursos internos apenas para admin, sem versao ou caminhos do host.
   // JSON por padrao; Prometheus text quando Accept: text/plain ou ?format=prometheus.
   fastify.get<{ Querystring: { format?: string } }>(
     '/api/metrics',
@@ -37,6 +37,9 @@ export async function metricsRoutes(fastify: FastifyInstance): Promise<void> {
         }),
       ]);
 
+      const resources = await getResourceMetrics();
+      const storedFiles = await prisma.$queryRaw<Array<{ total: bigint | number | null }>>`SELECT SUM("size") AS total FROM "ChatFile"`;
+      const storedFileBytes = Number(storedFiles[0]?.total ?? 0);
       const byRoom = getRoomPeersSnapshot();
       let withPeers = 0;
       let peerTotal = 0;
@@ -63,6 +66,8 @@ export async function metricsRoutes(fastify: FastifyInstance): Promise<void> {
           `scale_rooms_active ${activeRooms}`,
           `scale_peers_total ${peerTotal}`,
           getChatMetricsText(),
+          getResourceMetricsText(resources),
+          `scale_chat_files_stored_bytes ${storedFileBytes}`,
         ].join('\n');
         return reply
           .header('Content-Type', 'text/plain; version=0.0.4')
@@ -71,6 +76,8 @@ export async function metricsRoutes(fastify: FastifyInstance): Promise<void> {
 
       return {
         uptimeSeconds: getUptimeSeconds(),
+        resources,
+        storedFileBytes: storedFileBytes,
         rooms: {
           total: totalRooms,
           active: activeRooms,

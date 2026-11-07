@@ -486,7 +486,8 @@ describe('GUEST_COOKIE_SECRET', () => {
   });
 
   it('producao sem segredo (ou curto) falha; com >= 32 caracteres usa o valor; dev deriva do JWT_SECRET', () => {
-    process.env.JWT_SECRET = 'test-secret-for-unit-tests';
+    // Producao exige JWT_SECRET >= 32 caracteres — lib/env.ts.
+    process.env.JWT_SECRET = 'j'.repeat(32);
     process.env.NODE_ENV = 'production';
     resetEnv();
     delete process.env.GUEST_COOKIE_SECRET;
@@ -496,6 +497,7 @@ describe('GUEST_COOKIE_SECRET', () => {
     process.env.GUEST_COOKIE_SECRET = 'z'.repeat(32);
     expect(getGuestCookieSecret()).toBe('z'.repeat(32));
 
+    process.env.JWT_SECRET = 'test-secret-for-unit-tests';
     process.env.NODE_ENV = 'development';
     resetEnv();
     delete process.env.GUEST_COOKIE_SECRET;
