@@ -1,7 +1,7 @@
 import { originOf } from './serverUrl';
 
 /** Permissoes que o Scale usa: microfone ('media' so audio) e captura de tela. */
-export const ALLOWED_PERMISSIONS: ReadonlySet<string> = new Set(['media', 'display-capture']);
+export const ALLOWED_PERMISSIONS: ReadonlySet<string> = new Set(['media', 'display-capture', 'speaker-selection', 'notifications']);
 
 export interface PermissionRequest {
   permission: string;
@@ -16,12 +16,16 @@ export interface PermissionRequest {
    * proprio (setDisplayMediaRequestHandler), que tambem confere a origin.
    */
   mediaTypes?: readonly string[];
+  isMainFrame?: boolean;
+  notificationConsent?: boolean;
 }
 
 export function isPermissionAllowed(req: PermissionRequest): boolean {
   if (req.allowedOrigin === null) return false;
   if (!ALLOWED_PERMISSIONS.has(req.permission)) return false;
   if (originOf(req.requestingUrl) !== req.allowedOrigin) return false;
+  if (req.permission === 'notifications') return req.isMainFrame === true && req.notificationConsent === true;
+  if (req.permission === 'speaker-selection') return req.isMainFrame === true;
   if (req.permission === 'media') {
     const types = req.mediaTypes ?? [];
     return types.every((t) => t === 'audio');

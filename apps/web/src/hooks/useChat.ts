@@ -145,6 +145,7 @@ export function useChat(roomId: string, socket: Socket | null): ChatApi {
 
     const onMention = () => {
       playMentionSound();
+      window.dispatchEvent(new CustomEvent('scale:notification', { detail: { tag: `room:${roomId}` } }));
     };
 
     const onSystem = (payload: { text: string }) => {

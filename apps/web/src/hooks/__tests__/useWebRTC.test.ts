@@ -126,14 +126,16 @@ class MockRTCPeerConnection {
         trackKind === 'video' ? 'video' : 'audio',
         init,
       );
+      if (typeof kind !== 'string') transceiver.sender.track = kind;
       this.transceivers.push(transceiver);
       return transceiver;
     },
   );
-  getTransceivers = vi.fn((): RTCRtpTransceiver[] => [...this.transceivers]);
+  getTransceivers = vi.fn((): RTCRtpTransceiver[] => this.transceivers as unknown as RTCRtpTransceiver[]);
   addTrack = vi.fn();
   close = vi.fn();
   restartIce = vi.fn();
+  setConfiguration = vi.fn();
   createOffer = vi.fn(
     async () => ({ type: 'offer', sdp: 'local-offer-sdp' }) as RTCSessionDescriptionInit,
   );
@@ -205,27 +207,29 @@ let getUserMediaMock: ReturnType<typeof vi.fn>;
 
 function createHookMock(myId: string) {
   const handlers = new Map<EventName, Array<(payload: unknown) => void>>();
-  const register = (event: EventName) => (cb: (payload: unknown) => void) => {
-    handlers.set(event, [...(handlers.get(event) ?? []), cb]);
+  type Payload<K extends keyof UseSocketReturn> = UseSocketReturn[K] extends (cb: (data: infer P) => void) => unknown ? P : never;
+  const register = <T,>(event: EventName) => (cb: (payload: T) => void) => {
+    handlers.set(event, [...(handlers.get(event) ?? []), cb as (payload: unknown) => void]);
     return () => {};
   };
 
   const hook: UseSocketReturn = {
     socket: { id: myId } as unknown as Socket,
     connected: true,
+    isConnected: vi.fn(() => true),
     joinRoom: vi.fn().mockResolvedValue({ success: true, peers: [], history: [] }),
     leaveRoom: vi.fn().mockResolvedValue(undefined),
     emitOffer: vi.fn().mockResolvedValue(undefined),
     emitAnswer: vi.fn().mockResolvedValue(undefined),
     emitIceCandidate: vi.fn().mockResolvedValue(undefined),
-    onPeerJoined: vi.fn(register('peerJoined')),
-    onPeerLeft: vi.fn(register('peerLeft')),
-    onSignalOffer: vi.fn(register('signalOffer')),
-    onSignalAnswer: vi.fn(register('signalAnswer')),
-    onSignalIceCandidate: vi.fn(register('signalIceCandidate')),
+    onPeerJoined: vi.fn(register<Payload<'onPeerJoined'>>('peerJoined')),
+    onPeerLeft: vi.fn(register<Payload<'onPeerLeft'>>('peerLeft')),
+    onSignalOffer: vi.fn(register<Payload<'onSignalOffer'>>('signalOffer')),
+    onSignalAnswer: vi.fn(register<Payload<'onSignalAnswer'>>('signalAnswer')),
+    onSignalIceCandidate: vi.fn(register<Payload<'onSignalIceCandidate'>>('signalIceCandidate')),
     emitScreenShareState: vi.fn().mockResolvedValue(undefined),
-    onScreenShareState: vi.fn(register('screenShareState')),
-    onReconnect: vi.fn(register('reconnect')),
+    onScreenShareState: vi.fn(register<Payload<'onScreenShareState'>>('screenShareState')),
+    onReconnect: vi.fn(register<void>('reconnect')),
     onRoomDeleted: vi.fn(() => () => {}),
     guestName: 'Test',
     setGuestName: vi.fn(),
@@ -267,7 +271,281 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
+});
+
+describe('dispositivos e ciclo de vida da captura', () => {
+  it('troca microfone mantendo mute e sender de voz; falha preserva a captura anterior', async () => {
+    const { hook, emit } = createHookMock('me-100');
+    const first = createMockTrack('audio');
+    const second = createMockTrack('audio');
+    getUserMediaMock.mockResolvedValueOnce(new MockMediaStream([first]))
+      .mockResolvedValueOnce(new MockMediaStream([second]))
+      .mockRejectedValueOnce(new DOMException('Negado', 'NotAllowedError'));
+    const { result } = renderHook(() => useWebRTC(hook, ROOM_ID));
+    await act(async () => { await result.current.initMedia(); });
+    await emit('signalOffer', { fromPeerId: 'me-050', name: 'Ana', isRegistered: false, offer: { type: 'offer' } });
+    act(() => { result.current.toggleMute(); });
+    await act(async () => { await result.current.audioDevices.selectInput('usb'); });
+    expect(getUserMediaMock).toHaveBeenLastCalledWith({ audio: expect.objectContaining({ deviceId: { exact: 'usb' } }), video: false });
+    expect(first.stop).toHaveBeenCalledOnce();
+    expect(second.enabled).toBe(false);
+    expect(result.current.isMuted).toBe(true);
+    expect(pcInstances[0].transceivers).toHaveLength(1);
+    expect(pcInstances[0].transceivers[0].sender.track).toBe(second);
+    await act(async () => { await result.current.audioDevices.selectInput('bad-device'); });
+    expect(result.current.localStream?.getAudioTracks()).toEqual([second]);
+    expect(second.stop).not.toHaveBeenCalled();
+    expect(result.current.audioDevices.microphoneId).toBe('usb');
+    expect(result.current.audioDevices.error).toContain('Não foi possível');
+  });
+
+  it('microfone removido tenta padrão sem desmutar; captura pendente é parada após cleanup', async () => {
+    const { hook } = createHookMock('me-100');
+    const first = createMockTrack('audio');
+    const fallback = createMockTrack('audio');
+    getUserMediaMock.mockResolvedValueOnce(new MockMediaStream([first])).mockResolvedValueOnce(new MockMediaStream([fallback]));
+    const { result } = renderHook(() => useWebRTC(hook, ROOM_ID));
+    await act(async () => { await result.current.initMedia(); });
+    act(() => { result.current.toggleMute(); });
+    await act(async () => { first.onended?.(new Event('ended')); });
+    expect(fallback.enabled).toBe(false);
+    expect(result.current.localStream?.getAudioTracks()).toEqual([fallback]);
+    let resolveCapture: (stream: MockMediaStream) => void = () => {};
+    const late = createMockTrack('audio');
+    getUserMediaMock.mockReturnValueOnce(new Promise<MockMediaStream>((resolve) => { resolveCapture = resolve; }));
+    let pending: Promise<void> = Promise.resolve();
+    act(() => { pending = result.current.audioDevices.selectInput('late'); });
+    act(() => { result.current.cleanupMedia(); });
+    await act(async () => { resolveCapture(new MockMediaStream([late])); await pending; });
+    expect(late.stop).toHaveBeenCalledOnce();
+    expect(result.current.localStream).toBeNull();
+  });
+
+  it('replaceTrack rejeitado reverte peers já trocados e preserva captura anterior', async () => {
+    const { hook, emit } = createHookMock('me-100');
+    const original = createMockTrack('audio');
+    const rejected = createMockTrack('audio');
+    getUserMediaMock.mockResolvedValueOnce(new MockMediaStream([original])).mockResolvedValueOnce(new MockMediaStream([rejected]));
+    const { result } = renderHook(() => useWebRTC(hook, ROOM_ID));
+    await act(async () => { await result.current.initMedia(); });
+    for (const peerId of ['me-040', 'me-050']) await emit('signalOffer', { fromPeerId: peerId, name: 'Ana', isRegistered: false, offer: { type: 'offer' } });
+    pcInstances[1].transceivers[0].sender.replaceTrack.mockRejectedValueOnce(new DOMException('Requer renegociação', 'InvalidModificationError'));
+    await act(async () => { await result.current.audioDevices.selectInput('usb'); });
+    expect(result.current.localStream?.getAudioTracks()).toEqual([original]);
+    expect(original.stop).not.toHaveBeenCalled();
+    expect(rejected.stop).toHaveBeenCalledOnce();
+    for (const pc of pcInstances) expect(pc.transceivers[0].sender.track).toBe(original);
+    expect(result.current.audioDevices.error).toContain('Não foi possível');
+  });
+
+  it('falha inicial de microfone mantém mute ao recuperar permissão', async () => {
+    const { hook } = createHookMock('me-100');
+    const mic = createMockTrack('audio');
+    getUserMediaMock.mockRejectedValueOnce(new DOMException('Negado', 'NotAllowedError')).mockResolvedValueOnce(new MockMediaStream([mic]));
+    const { result } = renderHook(() => useWebRTC(hook, ROOM_ID));
+    await act(async () => { await result.current.initMedia(); });
+    expect(result.current.isMuted).toBe(true);
+    await act(async () => { await result.current.audioDevices.selectInput(''); });
+    expect(mic.enabled).toBe(false);
+    expect(result.current.isMuted).toBe(true);
+    expect(result.current.mediaError).toBeNull();
+  });
+
+  it('inicialização simultânea compartilha um único pedido de permissão', async () => {
+    const { hook } = createHookMock('me-100');
+    getUserMediaMock.mockResolvedValue(new MockMediaStream([createMockTrack('audio')]));
+    const { result } = renderHook(() => useWebRTC(hook, ROOM_ID));
+    await act(async () => { await Promise.all([result.current.initMedia(), result.current.initMedia()]); });
+    expect(getUserMediaMock).toHaveBeenCalledOnce();
+  });
+});
+
+describe('tela com áudio independente', () => {
+  const acceptOffer = (emit: ReturnType<typeof createHookMock>['emit']) => emit('signalOffer', {
+    fromPeerId: 'me-050', name: 'Ana', isRegistered: false, offer: { type: 'offer' },
+  });
+
+  it('envia vídeo e loopback separados, mute só afeta mic e parada limpa ambos sem perder voz', async () => {
+    const { hook, emit } = createHookMock('me-100');
+    const mic = createMockTrack('audio');
+    const video = createMockTrack('video');
+    const loopback = createMockTrack('audio');
+    getUserMediaMock.mockResolvedValue(new MockMediaStream([mic]));
+    vi.mocked(navigator.mediaDevices.getDisplayMedia).mockResolvedValue(new MockMediaStream([video, loopback]) as unknown as MediaStream);
+    const { result } = renderHook(() => useWebRTC(hook, ROOM_ID));
+    await act(async () => { await result.current.initMedia(); });
+    await acceptOffer(emit);
+    await act(async () => { expect(await result.current.toggleScreenShare()).toBe(true); });
+    const pc = pcInstances[0];
+    expect(pc.transceivers).toHaveLength(3);
+    expect(pc.transceivers.map((t) => t.sender.track)).toEqual([mic, video, loopback]);
+    expect(navigator.mediaDevices.getDisplayMedia).toHaveBeenCalledWith(expect.objectContaining({ audio: true, selfBrowserSurface: 'exclude' }));
+    act(() => { result.current.toggleMute(); });
+    expect(mic.enabled).toBe(false);
+    expect(loopback.enabled).toBe(true);
+    await act(async () => { await result.current.toggleScreenShare(); });
+    expect(video.stop).toHaveBeenCalledOnce();
+    expect(loopback.stop).toHaveBeenCalledOnce();
+    expect(pc.transceivers.map((t) => t.sender.track)).toEqual([mic, null, null]);
+    expect(result.current.isMuted).toBe(true);
+    expect(result.current.isScreenSharing).toBe(false);
+  });
+
+  it('reusa senders ao compartilhar novamente e remove só loopback quando áudio termina', async () => {
+    const { hook, emit } = createHookMock('me-100');
+    const first = new MockMediaStream([createMockTrack('video'), createMockTrack('audio')]);
+    const nextAudio = createMockTrack('audio');
+    const nextVideo = createMockTrack('video');
+    vi.mocked(navigator.mediaDevices.getDisplayMedia).mockResolvedValueOnce(first as unknown as MediaStream)
+      .mockResolvedValueOnce(new MockMediaStream([nextVideo, nextAudio]) as unknown as MediaStream);
+    const { result } = renderHook(() => useWebRTC(hook, ROOM_ID));
+    await acceptOffer(emit);
+    await act(async () => { await result.current.toggleScreenShare(); await result.current.toggleScreenShare(); await result.current.toggleScreenShare(); });
+    expect(pcInstances[0].transceivers).toHaveLength(3);
+    await act(async () => { nextAudio.onended?.(new Event('ended')); });
+    expect(result.current.screenAudioAvailable).toBe(false);
+    expect(result.current.isScreenSharing).toBe(true);
+    expect(pcInstances[0].transceivers.map((t) => t.sender.track)).toEqual([null, nextVideo, null]);
+    await act(async () => { nextVideo.onended?.(new Event('ended')); });
+    expect(result.current.isScreenSharing).toBe(false);
+  });
+
+  it('peer novo recebe tela ativa como offerer e answerer; mic tardio não substitui loopback', async () => {
+    const { hook, emit } = createHookMock('me-100');
+    const loopback = createMockTrack('audio');
+    const video = createMockTrack('video');
+    const mic = createMockTrack('audio');
+    vi.mocked(navigator.mediaDevices.getDisplayMedia).mockResolvedValue(new MockMediaStream([video, loopback]) as unknown as MediaStream);
+    getUserMediaMock.mockResolvedValue(new MockMediaStream([mic]));
+    const { result } = renderHook(() => useWebRTC(hook, ROOM_ID));
+    await act(async () => { await result.current.toggleScreenShare(); });
+    await emit('peerJoined', { peerId: 'me-200', name: 'Bia', isRegistered: false });
+    await acceptOffer(emit);
+    await act(async () => { await result.current.initMedia(); });
+    for (const pc of pcInstances) expect(pc.transceivers.map((t) => t.sender.track)).toEqual([mic, video, loopback]);
+    expect(hook.emitScreenShareState).toHaveBeenCalledWith(ROOM_ID, 'me-200', true);
+    expect(hook.emitScreenShareState).toHaveBeenCalledWith(ROOM_ID, 'me-050', true);
+  });
+
+  it('falha na troca de tela informa erro e permite parar e tentar novamente', async () => {
+    const { hook, emit } = createHookMock('me-100');
+    vi.mocked(navigator.mediaDevices.getDisplayMedia).mockImplementation(async () => new MockMediaStream([createMockTrack('video')]) as unknown as MediaStream);
+    const { result } = renderHook(() => useWebRTC(hook, ROOM_ID));
+    await acceptOffer(emit);
+    await act(async () => { await result.current.toggleScreenShare(); await result.current.toggleScreenShare(); });
+    const videoTransceiver = pcInstances[0].transceivers[1];
+    videoTransceiver.sender.replaceTrack.mockRejectedValueOnce(new DOMException('Requer negociação', 'InvalidModificationError'));
+    await act(async () => { await result.current.toggleScreenShare(); });
+    expect(result.current.screenShareError).toContain('não aceitou');
+    expect(videoTransceiver.direction).toBe('recvonly');
+    await act(async () => { await result.current.toggleScreenShare(); await result.current.toggleScreenShare(); });
+    expect(videoTransceiver.direction).toBe('sendonly');
+    expect(videoTransceiver.sender.track?.kind).toBe('video');
+    expect(result.current.screenShareError).toBeNull();
+  });
+
+  it('fila alteração de tela durante offer pendente e negocia após a answer', async () => {
+    const { hook, emit } = createHookMock('me-100');
+    vi.mocked(navigator.mediaDevices.getDisplayMedia).mockResolvedValue(new MockMediaStream([createMockTrack('video')]) as unknown as MediaStream);
+    const { result } = renderHook(() => useWebRTC(hook, ROOM_ID));
+    await emit('peerJoined', { peerId: 'me-200', name: 'Bia', isRegistered: false });
+    await act(async () => { await result.current.toggleScreenShare(); });
+    expect(hook.emitOffer).toHaveBeenCalledTimes(1);
+    await emit('signalAnswer', { fromPeerId: 'me-200', answer: { type: 'answer' } });
+    expect(hook.emitOffer).toHaveBeenCalledTimes(2);
+    expect(result.current.screenAudioAvailable).toBe(false);
+  });
+
+  it('agrega voz e loopback sem vídeo/duplicação; deafen vale para ambos e ended remove só a faixa encerrada', async () => {
+    const { hook, emit } = createHookMock('me-100');
+    const { result } = renderHook(() => useWebRTC(hook, ROOM_ID));
+    await acceptOffer(emit);
+    const mic = createMockTrack('audio');
+    const loopback = createMockTrack('audio');
+    const video = createMockTrack('video');
+    const screen = new MockMediaStream([video, loopback]);
+    await act(async () => {
+      pcInstances[0].ontrack?.({ track: mic, streams: [] } as unknown as RTCTrackEvent);
+      pcInstances[0].ontrack?.({ track: video, streams: [screen] } as unknown as RTCTrackEvent);
+      result.current.toggleDeafen();
+      pcInstances[0].ontrack?.({ track: loopback, streams: [screen] } as unknown as RTCTrackEvent);
+      pcInstances[0].ontrack?.({ track: loopback, streams: [screen] } as unknown as RTCTrackEvent);
+    });
+    let peer = result.current.peers.get('me-050');
+    expect(peer?.stream?.getAudioTracks()).toEqual([mic, loopback]);
+    expect(peer?.stream?.getVideoTracks()).toHaveLength(0);
+    expect(peer?.screenStream?.getTracks()).toEqual([video]);
+    expect(mic.enabled).toBe(false);
+    expect(loopback.enabled).toBe(false);
+    // Uma pausa/removal na captura pode apenas silenciar o receiver; não o
+    // removemos no mute, pois replaceTrack pode voltar sem novo ontrack.
+    act(() => { loopback.onmute?.(new Event('mute')); loopback.onunmute?.(new Event('unmute')); });
+    expect(result.current.peers.get('me-050')?.stream?.getAudioTracks()).toHaveLength(2);
+    act(() => { loopback.onended?.(new Event('ended')); });
+    peer = result.current.peers.get('me-050');
+    expect(peer?.stream?.getAudioTracks()).toEqual([mic]);
+  });
+
+  it('cancelamento não anuncia tela iniciada e cleanup encerra picker que resolve tarde', async () => {
+    const { hook } = createHookMock('me-100');
+    vi.mocked(navigator.mediaDevices.getDisplayMedia).mockRejectedValueOnce(new DOMException('Cancelado', 'NotAllowedError'));
+    const { result } = renderHook(() => useWebRTC(hook, ROOM_ID));
+    await act(async () => { expect(await result.current.toggleScreenShare()).toBeNull(); });
+    expect(result.current.screenShareError).toContain('cancelado');
+    expect(result.current.isScreenSharing).toBe(false);
+    let resolvePicker: (stream: MediaStream) => void = () => {};
+    vi.mocked(navigator.mediaDevices.getDisplayMedia).mockReturnValueOnce(new Promise((resolve) => { resolvePicker = resolve; }));
+    let pending: Promise<boolean | null> = Promise.resolve(null);
+    act(() => { pending = result.current.toggleScreenShare(); });
+    act(() => { result.current.cleanupMedia(); });
+    const video = createMockTrack('video');
+    await act(async () => { resolvePicker(new MockMediaStream([video]) as unknown as MediaStream); await pending; });
+    expect(video.stop).toHaveBeenCalledOnce();
+    expect(result.current.localScreenStream).toBeNull();
+  });
+});
+
+describe('TURN após ticket e retomada', () => {
+  it('aguarda ticket e não refaz fetch por mudanças de conexão do socket', async () => {
+    const { hook } = createHookMock('me-100');
+    const fetchMock = vi.mocked(fetch);
+    const { rerender } = renderHook(({ socketHook, ticket }: { socketHook: UseSocketReturn; ticket: string | null }) => useWebRTC(socketHook, ROOM_ID, ticket), {
+      initialProps: { socketHook: hook, ticket: null as string | null },
+    });
+    await act(async () => { window.dispatchEvent(new Event('scale:resume')); });
+    await act(async () => { rerender({ socketHook: { ...hook, connected: false }, ticket: null }); });
+    await act(async () => { rerender({ socketHook: { ...hook, connected: true }, ticket: null }); });
+    expect(fetchMock).not.toHaveBeenCalled();
+    await act(async () => { rerender({ socketHook: hook, ticket: 'room-ticket' }); });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    await act(async () => { rerender({ socketHook: { ...hook, connected: false }, ticket: 'room-ticket' }); });
+    await act(async () => { rerender({ socketHook: { ...hook, connected: true }, ticket: 'room-ticket' }); });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it('envia participação no header, atualiza PCs e renova antes da expiração e no resume', async () => {
+    vi.useFakeTimers();
+    const { hook, emit } = createHookMock('me-100');
+    let credential = 0;
+    const fetchMock = vi.mocked(fetch).mockImplementation(async () => ({ ok: true, json: async () => ({
+      iceServers: [{ urls: 'turn:relay.example', username: `user-${++credential}`, credential: 'ephemeral' }],
+      expiresAt: new Date(Date.now() + 3600000).toISOString(),
+    }) } as Response));
+    const { rerender } = renderHook(({ ticket }: { ticket: string | null }) => useWebRTC(hook, ROOM_ID, ticket), { initialProps: { ticket: null as string | null } });
+    await emit('signalOffer', { fromPeerId: 'me-050', name: 'Ana', isRegistered: false, offer: { type: 'offer' } });
+    await act(async () => { rerender({ ticket: 'room-ticket' }); });
+    expect(fetchMock).toHaveBeenLastCalledWith(`/api/turn/credentials?roomId=${ROOM_ID}`, expect.objectContaining({ headers: { 'X-Room-Ticket': 'room-ticket' } }));
+    expect(pcInstances[0].setConfiguration).toHaveBeenCalled();
+    const before = fetchMock.mock.calls.length;
+    await act(async () => { await vi.advanceTimersByTimeAsync(3540000); });
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(before);
+    const calls = fetchMock.mock.calls.length;
+    await act(async () => { window.dispatchEvent(new Event('scale:resume')); });
+    expect(fetchMock).toHaveBeenCalledTimes(calls + 1);
+    expect(pcInstances[0].restartIce).toHaveBeenCalledTimes(3);
+  });
 });
 
 describe('shouldInitiate (regra determinística de quem inicia offer)', () => {
@@ -349,7 +627,7 @@ describe('glare / perfect negotiation no signal:offer (Bloqueio critic #4)', () 
     pc.localDescription = { type: 'offer', sdp: 'our-screen-offer' } as unknown as RTCSessionDescription;
     pc.setRemoteDescription.mockClear();
     pc.createAnswer.mockClear();
-    hook.emitAnswer.mockClear();
+    vi.mocked(hook.emitAnswer).mockClear();
 
     // 3) Offer colidente do peer → impolite ignora e mantém a nossa
     await emit('signalOffer', {
@@ -473,7 +751,7 @@ describe('transceiver de áudio e corrida initMedia x signaling', () => {
     expect(hook.emitAnswer).toHaveBeenCalledTimes(1);
     const pc = pcInstances[0];
     pc.createOffer.mockClear();
-    hook.emitOffer.mockClear();
+    vi.mocked(hook.emitOffer).mockClear();
     const transceiver = audioTransceiver(pc);
     expect(transceiver.sender.track).toBeNull(); // ainda não há mídia
 
@@ -663,7 +941,7 @@ describe('ontrack: áudio e tela em streams separadas', () => {
     });
 
     const peer = result.current.peers.get('me-050');
-    expect(peer?.stream).toBe(remoteAudioStream as unknown as MediaStream);
+    expect(peer?.stream?.getAudioTracks()).toEqual(remoteAudioStream.getAudioTracks());
     expect(peer?.screenStream).toBeNull();
   });
 
@@ -695,8 +973,8 @@ describe('ontrack: áudio e tela em streams separadas', () => {
     });
 
     const peer = result.current.peers.get('me-050');
-    expect(peer?.screenStream).toBe(remoteScreenStream as unknown as MediaStream);
-    expect(peer?.stream).toBe(remoteAudioStream as unknown as MediaStream);
+    expect(peer?.screenStream?.getVideoTracks()).toEqual(remoteScreenStream.getVideoTracks());
+    expect(peer?.stream?.getAudioTracks()).toEqual(remoteAudioStream.getAudioTracks());
     expect(peer?.stream?.getAudioTracks()).toHaveLength(1);
   });
 

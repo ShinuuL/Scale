@@ -2,11 +2,13 @@ import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
 import './globals.css';
 import { PALETTE_BOOT_SRC } from '@/lib/theme';
+import { ApplicationFeatures } from '@/components/pwa/ApplicationFeatures';
 
 export const metadata: Metadata = {
   title: 'Scale — P2P Video Calls',
   description: 'Scale — escamas de dragão, videochamadas P2P mesh powered by WebRTC',
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'),
+  manifest: '/manifest.webmanifest',
   icons: {
     icon: [
       { url: '/favicon.ico' },
@@ -38,6 +40,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <div id="app-root">
           {children}
         </div>
+        <ApplicationFeatures />
       </body>
     </html>
   );

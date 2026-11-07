@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { tryResourceLock } from './resourceLimits.js';
 import { prisma } from './prisma.js';
 
 // Allowlist de MIME: fonte unica em @scale/shared (ALLOWED_MIME_RE).
@@ -79,32 +80,78 @@ export async function removeRoomUploads(roomId: string): Promise<void> {
 }
 
 /**
- * Bytes usados pela sala (vivos + apagados ha menos de 7 dias). SQL cru porque
+ * Bytes ainda referenciados pela sala, inclusive apagados aguardando GC/unlink.
+ * A quota so e liberada apos remocao fisica/ENOENT. SQL cru porque
  * `size` e Int de 32 bits no Prisma: com a cota de 2 GB a SOMA passa de 2^31 e
  * o `aggregate` estouraria. O SQLite soma em 64 bits e devolve BigInt.
  */
 export async function getQuotaUsage(roomId: string): Promise<number> {
-  const sevenDaysAgo = new Date(Date.now() - 7*24*60*60*1000);
   const rows = await prisma.$queryRaw<Array<{ total: bigint | number | null }>>`
     SELECT SUM("size") AS total FROM "ChatFile"
-    WHERE "roomId" = ${roomId} AND ("deletedAt" IS NULL OR "deletedAt" > ${sevenDaysAgo})`;
+    WHERE "roomId" = ${roomId}`;
   return Number(rows[0]?.total ?? 0);
 }
 
+/** Lotes pequenos, cursor estavel e yield por I/O: falha de unlink preserva a linha. */
 export async function gcDeletedFiles(): Promise<{ deletedCount: number }> {
   const cutoff = new Date(Date.now() - 7*24*60*60*1000);
-  const expired = await prisma.chatFile.findMany({ where: { deletedAt: { lt: cutoff } } });
   let deletedCount = 0;
-  for (const f of expired) {
-    try {
-      const abs = path.resolve(process.cwd(), f.path);
-      if (abs.startsWith(UPLOADS_ROOT)) await fs.unlink(abs).catch(() => {});
-    } catch {
-      // best-effort: arquivo pode já não existir no disco
+  let cursor: string | undefined;
+  for (;;) {
+    const expired = await prisma.chatFile.findMany({
+      where: { deletedAt: { lt: cutoff }, ...(cursor ? { id: { gt: cursor } } : {}) },
+      take: 100, orderBy: { id: 'asc' },
+    });
+    if (!expired.length) break;
+    for (const f of expired) {
+      cursor = f.id;
+      const release = tryResourceLock(`room:${f.roomId}`);
+      if (!release) continue;
+      try {
+        const abs = path.resolve(process.cwd(), f.path);
+        const root = path.resolve(UPLOADS_ROOT, f.roomId);
+        if (!root.startsWith(UPLOADS_ROOT + path.sep) || !abs.startsWith(root + path.sep)) continue;
+        try { await fs.unlink(abs); } catch (err) {
+          if ((err as NodeJS.ErrnoException).code !== 'ENOENT') continue;
+        }
+        await prisma.chatFile.delete({ where: { id: f.id } });
+        deletedCount++;
+      } finally { release(); }
     }
-    await prisma.chatFile.delete({ where: { id: f.id } }).catch(()=>{});
-    deletedCount++;
   }
-  if (deletedCount) console.log(`[gc] removed ${deletedCount} expired chat files`);
   return { deletedCount };
+}
+
+/** Upload interrompido/compensacao com unlink falho: remove orfaos apos 7 dias.
+ * Iteradores de diretorio evitam materializar uma arvore inteira em memoria.
+ */
+export async function gcOrphanUploads(): Promise<void> {
+  let root;
+  try { root = await fs.opendir(UPLOADS_ROOT); } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
+    throw err;
+  }
+  const cutoff = Date.now() - 7*24*60*60*1000;
+  for await (const dir of root) {
+    if (!dir.isDirectory() || !/^[a-zA-Z0-9-]+$/.test(dir.name)) continue;
+    const release = tryResourceLock(dir.name === 'avatars' ? 'avatar:gc' : `room:${dir.name}`);
+    if (!release) continue;
+    try {
+      for await (const entry of await fs.opendir(path.join(UPLOADS_ROOT, dir.name))) {
+        if (!entry.isFile()) continue;
+        const abs = path.join(UPLOADS_ROOT, dir.name, entry.name);
+        let mtime;
+        try { mtime = (await fs.stat(abs)).mtimeMs; } catch (err) {
+          if ((err as NodeJS.ErrnoException).code === 'ENOENT') continue;
+          throw err;
+        }
+        if (mtime >= cutoff) continue;
+        const rel = path.relative(process.cwd(), abs);
+        const referenced = dir.name === 'avatars'
+          ? await prisma.user.findFirst({ where: { avatarPath: rel }, select: { id: true } })
+          : await prisma.chatFile.findFirst({ where: { path: rel }, select: { id: true } });
+        if (!referenced) await fs.unlink(abs).catch(() => {});
+      }
+    } finally { release(); }
+  }
 }

@@ -1,3 +1,7 @@
+import { monitorEventLoopDelay } from 'node:perf_hooks';
+import { statfs } from 'node:fs/promises';
+import { UPLOADS_ROOT } from './uploads.js';
+
 const startedAt = Date.now();
 
 export interface MemoryUsage {
@@ -83,5 +87,47 @@ export function getChatMetricsText(): string {
     `scale_chat_deletes_total ${chatDeletes}`,
     `scale_chat_files_bytes_total ${chatFilesBytes}`,
     `scale_chat_quota_exceeded_total ${chatQuotaExceeded}`,
+  ].join('\n');
+}
+// Histograma agregado, sem caminhos/identidades. Timer interno nao segura processo.
+const loopDelay = monitorEventLoopDelay({ resolution: 20 });
+loopDelay.enable();
+const loopReset = setInterval(() => { loopDelay.reset(); }, 60_000);
+loopReset.unref();
+
+export async function getResourceMetrics() {
+  const cpu = process.cpuUsage();
+  let disk: { totalBytes: number; availableBytes: number } | null = null;
+  try {
+    const stat = await statfs(UPLOADS_ROOT);
+    disk = { totalBytes: stat.blocks * stat.bsize, availableBytes: stat.bavail * stat.bsize };
+  } catch { /* Uploads pode nao existir em instalacao nova; nao simular zero. */ }
+  return {
+    memory: getMemoryUsage(),
+    cpu: { userSeconds: cpu.user / 1e6, systemSeconds: cpu.system / 1e6 },
+    eventLoop: {
+      meanMs: Number.isFinite(loopDelay.mean) ? loopDelay.mean / 1e6 : 0,
+      p99Ms: loopDelay.percentile(99) / 1e6,
+      maxMs: loopDelay.max / 1e6,
+    },
+    disk,
+  };
+}
+
+export function getResourceMetricsText(resources: Awaited<ReturnType<typeof getResourceMetrics>>): string {
+  return [
+    `scale_process_resident_memory_bytes ${resources.memory.rss}`,
+    `scale_process_heap_used_bytes ${resources.memory.heapUsed}`,
+    `scale_process_heap_total_bytes ${resources.memory.heapTotal}`,
+    `scale_process_external_memory_bytes ${resources.memory.external}`,
+    `scale_process_cpu_user_seconds_total ${resources.cpu.userSeconds}`,
+    `scale_process_cpu_system_seconds_total ${resources.cpu.systemSeconds}`,
+    `scale_event_loop_delay_mean_seconds ${resources.eventLoop.meanMs / 1000}`,
+    `scale_event_loop_delay_p99_seconds ${resources.eventLoop.p99Ms / 1000}`,
+    `scale_event_loop_delay_max_seconds ${resources.eventLoop.maxMs / 1000}`,
+    ...(resources.disk ? [
+      `scale_uploads_filesystem_size_bytes ${resources.disk.totalBytes}`,
+      `scale_uploads_filesystem_available_bytes ${resources.disk.availableBytes}`,
+    ] : []),
   ].join('\n');
 }

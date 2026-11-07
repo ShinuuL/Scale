@@ -17,6 +17,21 @@ describe('isPermissionAllowed', () => {
     );
   });
 
+  it('notifications require consent and the configured top-level frame', () => {
+    const request = { permission: 'notifications', requestingUrl: PAGE, allowedOrigin: ORIGIN };
+    expect(isPermissionAllowed(request)).toBe(false);
+    expect(isPermissionAllowed({ ...request, notificationConsent: true })).toBe(false);
+    expect(isPermissionAllowed({ ...request, isMainFrame: true })).toBe(false);
+    expect(isPermissionAllowed({ ...request, isMainFrame: true, notificationConsent: true })).toBe(true);
+    expect(isPermissionAllowed({ ...request, isMainFrame: true, notificationConsent: true, requestingUrl: 'https://evil.com/' })).toBe(false);
+  });
+
+  it('speaker selection requires the configured top-level frame', () => {
+    const request = { permission: 'speaker-selection', requestingUrl: PAGE, allowedOrigin: ORIGIN };
+    expect(isPermissionAllowed(request)).toBe(false);
+    expect(isPermissionAllowed({ ...request, isMainFrame: true })).toBe(true);
+  });
+
   it('nega camera', () => {
     expect(
       isPermissionAllowed({ permission: 'media', requestingUrl: PAGE, allowedOrigin: ORIGIN, mediaTypes: ['video'] }),
