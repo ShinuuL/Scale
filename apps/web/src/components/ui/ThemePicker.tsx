@@ -31,7 +31,7 @@ export function ThemePicker({ className }: { className?: string }) {
               group?.querySelector<HTMLButtonElement>(`[data-palette-id="${next.id}"]`)?.focus();
             }}
             data-palette-id={p.id}
-            className="flex h-11 w-9 items-center justify-center rounded-md hover:bg-white/5"
+            className="flex h-11 w-11 items-center justify-center rounded-md hover:bg-white/5"
           >
             <span
               aria-hidden="true"

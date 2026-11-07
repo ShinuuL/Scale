@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { ProfileMenu } from '@/components/ui/ProfileMenu';
 import { PALETTE_STORAGE_KEY } from '@/lib/theme';
@@ -114,5 +114,29 @@ describe('ProfileMenu sem nome de convidado', () => {
     render(<ProfileMenu name="Convidado" isAuthenticated={false} />);
     fireEvent.click(screen.getByRole('button', { name: 'Perfil de Convidado' }));
     expect(screen.getByText('Sem conta conectada')).toBeTruthy();
+  });
+});
+
+
+describe('ProfileMenu navigation guard', () => {
+  it.each([{ authed: true, label: 'Amigos', href: '/friends' }, { authed: false, label: 'Entrar', href: '/login' }, { authed: false, label: 'Criar conta', href: '/register' }])('confirms navigation to $href before leaving a call', ({ authed, label, href }) => {
+    const guard = vi.fn().mockReturnValue(false);
+    render(<ProfileMenu name="Ana" isAuthenticated={authed} onNavigate={guard} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Perfil de Ana' }));
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true });
+    fireEvent(screen.getByRole('menuitem', { name: label }), click);
+    expect(guard).toHaveBeenCalledWith(href);
+    expect(click.defaultPrevented).toBe(true);
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  });
+  it('does not ask to leave when opening a destination in a new tab', () => {
+    const guard = vi.fn();
+    render(<ProfileMenu name="Ana" isAuthenticated onNavigate={guard} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Perfil de Ana' }));
+    const link = screen.getByRole('menuitem', { name: 'Amigos' });
+    // Native listener prevents jsdom navigation after React has seen the modifier.
+    document.addEventListener('click', (event) => event.preventDefault(), { once: true });
+    fireEvent.click(link, { ctrlKey: true });
+    expect(guard).not.toHaveBeenCalled();
   });
 });

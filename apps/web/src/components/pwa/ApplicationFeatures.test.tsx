@@ -68,4 +68,42 @@ describe('optional application features', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Instalar Scale' }));
     await waitFor(() => expect(screen.getByText('Use o menu do navegador para instalar o Scale.')).toBeInTheDocument());
   });
+  it('returns focus to the visible header trigger after Escape', () => {
+    render(<><button data-app-settings-trigger onClick={(event) => window.dispatchEvent(new CustomEvent('scale:app-settings', { detail: { trigger: event.currentTarget } }))}>Abrir recursos do aplicativo</button><ApplicationFeatures /></>);
+    const trigger = screen.getByRole('button', { name: 'Abrir recursos do aplicativo' });
+    const summary = screen.getByText('Aplicativo e notificações').closest('summary')!;
+    // Pointer clicks need not focus buttons on every browser: the event carries the trigger explicitly.
+    fireEvent.click(trigger);
+    expect(document.activeElement).toBe(summary);
+    expect(summary.parentElement).toHaveAttribute('open');
+    fireEvent.keyDown(summary, { key: 'Escape' });
+    expect(summary.parentElement).not.toHaveAttribute('open');
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('uses the header trigger when the original drawer trigger has unmounted', () => {
+    render(<><button data-app-settings-trigger>Recursos no cabeçalho</button><ApplicationFeatures /></>);
+    const drawer = document.createElement('dialog');
+    drawer.open = true;
+    const drawerTrigger = document.createElement('button');
+    drawer.appendChild(drawerTrigger);
+    document.body.appendChild(drawer);
+    act(() => window.dispatchEvent(new CustomEvent('scale:app-settings', { detail: { trigger: drawerTrigger } })));
+    drawer.remove();
+    const summary = screen.getByText('Aplicativo e notificações').closest('summary')!;
+    fireEvent.keyDown(summary, { key: 'Escape' });
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Recursos no cabeçalho' }));
+  });
+
+  it('retains focus on the native summary when no shell trigger exists', () => {
+    render(<ApplicationFeatures />);
+    const summary = screen.getByText('Aplicativo e notificações').closest('summary')!;
+    summary.focus();
+    fireEvent.click(summary);
+    expect(summary.parentElement).toHaveAttribute('open');
+    fireEvent.keyDown(summary, { key: 'Escape' });
+    expect(summary.parentElement).not.toHaveAttribute('open');
+    expect(document.activeElement).toBe(summary);
+  });
+
 });

@@ -19,7 +19,12 @@ export function UserAvatar({ userId, name, avatarUpdatedAt, size = 'md', classNa
   if (photo) {
     return (
       // eslint-disable-next-line @next/next/no-img-element -- export estatico, sem otimizador de imagem
-      <img src={photo} alt="" aria-hidden="true" className={clsx(box, 'flex-shrink-0 rounded-full object-cover', className)} />
+      <img
+        src={photo}
+        alt=""
+        aria-hidden="true"
+        className={clsx(box, 'flex-shrink-0 rounded-full object-cover', className)}
+      />
     );
   }
   return (
@@ -27,7 +32,7 @@ export function UserAvatar({ userId, name, avatarUpdatedAt, size = 'md', classNa
       aria-hidden="true"
       className={clsx(
         box,
-        'flex flex-shrink-0 items-center justify-center rounded-full bg-brand-600/30 font-semibold text-brand-200',
+        'flex flex-shrink-0 items-center justify-center rounded-full bg-accent-subtle font-semibold text-accent',
         className,
       )}
     >

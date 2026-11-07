@@ -15,20 +15,20 @@ describe('temas de cor', () => {
     document.documentElement.removeAttribute('data-palette');
   });
 
-  it('troca o tema, grava a escolha e Jade volta ao :root puro', () => {
+  it('troca o tema, grava a escolha e Íris volta ao :root puro', () => {
     render(<ThemePicker />);
     fireEvent.click(screen.getByRole('radio', { name: 'Tema Safira' }));
     expect(document.documentElement.getAttribute('data-palette')).toBe('safira');
     expect(window.localStorage.getItem(PALETTE_STORAGE_KEY)).toBe('safira');
     expect(screen.getByRole('radio', { name: 'Tema Safira' }).getAttribute('aria-checked')).toBe('true');
 
-    fireEvent.click(screen.getByRole('radio', { name: 'Tema Jade' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Tema Íris' }));
     expect(document.documentElement.hasAttribute('data-palette')).toBe(false);
   });
 
   it('setas do teclado percorrem os temas', () => {
     render(<ThemePicker />);
-    fireEvent.keyDown(screen.getByRole('radio', { name: 'Tema Jade' }), { key: 'ArrowRight' });
+    fireEvent.keyDown(screen.getByRole('radio', { name: 'Tema Íris' }), { key: 'ArrowRight' });
     expect(document.documentElement.getAttribute('data-palette')).toBe('grafite');
   });
 

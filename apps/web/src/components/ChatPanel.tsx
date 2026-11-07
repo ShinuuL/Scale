@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import type { Socket } from 'socket.io-client';
 import type { ChatApi, ChatMessage } from '@/hooks/useChat';
 import { CHAT_FILE_ACCEPT, CHAT_MESSAGE_MAX, MAX_FILES_PER_MESSAGE } from '@scale/shared';
@@ -78,6 +79,8 @@ export function ChatPanel({
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   // Motivo visível de arquivo recusado ou upload que falhou — antes os dois
   // casos sumiam em silêncio (filtro mudo + `.catch(() => {})`).
+  const [uploading, setUploading] = useState(false);
+  const mobileDialogRef = useRef<HTMLDialogElement>(null);
   const [fileError, setFileError] = useState<string | null>(null);
 
   const listRef = useRef<HTMLDivElement>(null);
@@ -94,6 +97,21 @@ export function ChatPanel({
     const el = listRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [open, chat]);
+
+  useEffect(() => {
+    if (!open || isDesktop) return;
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const dialog = mobileDialogRef.current;
+    if (dialog && !dialog.open) {
+      if (typeof dialog.showModal === 'function') dialog.showModal();
+      else dialog.setAttribute('open', '');
+    }
+    inputRef.current?.focus();
+    return () => {
+      dialog?.close?.();
+      previous?.focus();
+    };
+  }, [open, isDesktop]);
 
   const handleInputChange = useCallback(
     (value: string) => {
@@ -121,6 +139,7 @@ export function ChatPanel({
   }, []);
 
   const send = useCallback(() => {
+    if (uploading) return;
     const parsed = chatMessageClientSchema.safeParse(input);
     const hasFiles = selectedFiles.length > 0;
     if ((!parsed.success || input.trim().length === 0) && !hasFiles) return;
@@ -128,18 +147,29 @@ export function ChatPanel({
     const mentions = extractMentions(input, currentPeers);
     if (selectedFiles.length > 0) {
       setFileError(null);
-      void chat.uploadFiles(selectedFiles, input, guestName).catch((err: unknown) => {
-        setFileError(err instanceof Error ? err.message : 'Falha no envio do arquivo');
-      });
+      setUploading(true);
+      void chat
+        .uploadFiles(selectedFiles, input, guestName)
+        .then(() => {
+          setInput('');
+          setSelectedFiles([]);
+        })
+        .catch((err: unknown) => {
+          setFileError(
+            err instanceof Error
+              ? err.message
+              : 'Não foi possível enviar o arquivo. Tente novamente.',
+          );
+        })
+        .finally(() => setUploading(false));
     } else {
       chat.sendMessage(input, mentions);
+      setInput('');
     }
-    setInput('');
-    setSelectedFiles([]);
     setShowMention(false);
     setFiltered([]);
     setActiveOption(-1);
-  }, [input, selectedFiles, currentPeers, chat, guestName]);
+  }, [input, selectedFiles, currentPeers, chat, guestName, uploading]);
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -168,7 +198,7 @@ export function ChatPanel({
         }
       }
 
-      if (event.key === 'Enter' && !event.shiftKey) {
+      if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
         event.preventDefault();
         send();
       }
@@ -199,26 +229,27 @@ export function ChatPanel({
   if (!open) return null;
 
   const charOverflow = input.length > CHAT_MESSAGE_MAX;
-  const canSend = (input.trim().length > 0 || selectedFiles.length > 0) && !charOverflow;
+  const canSend =
+    !uploading && (input.trim().length > 0 || selectedFiles.length > 0) && !charOverflow;
 
   const panelContent = (
     <aside
-      className="flex flex-col bg-forest-900/90 border-l border-white/5 h-full overflow-hidden"
+      className="flex h-full min-h-0 flex-col overflow-hidden border-l border-line bg-surface-secondary"
       aria-label="Chat"
       data-testid="chat-panel"
     >
       {/* Header */}
-      <header className="flex items-center justify-between gap-2 px-3 py-2 border-b border-white/5 flex-shrink-0">
+      <header className="flex items-center justify-between gap-2 px-3 py-2 border-b border-line flex-shrink-0">
         <h2 className="text-sm font-semibold text-white">Chat</h2>
         {chat.unread > 0 && (
-          <span className="badge bg-amber-500 text-forest-950" data-testid="unread-badge">
+          <span className="badge bg-accent-solid text-white" data-testid="unread-badge">
             {chat.unread > 99 ? '99+' : chat.unread}
           </span>
         )}
         <button
           onClick={onClose}
           aria-label="Fechar chat"
-          className="ml-auto text-slate-400 hover:text-white leading-none"
+          className="ml-auto flex h-10 w-10 items-center justify-center rounded-md text-ink-secondary hover:bg-surface-hover hover:text-ink-primary"
         >
           <Icon name="close" />
         </button>
@@ -229,7 +260,7 @@ export function ChatPanel({
         <button
           onClick={() => void chat.loadMore()}
           disabled={chat.isLoadingHistory}
-          className="text-xs text-moss-400 hover:text-moss-300 text-left px-3 py-1.5 border-b border-white/5 disabled:opacity-50"
+          className="text-xs text-accent hover:text-accent text-left px-3 py-1.5 border-b border-line disabled:opacity-50"
         >
           {chat.isLoadingHistory ? 'Carregando...' : 'Carregar mais'}
         </button>
@@ -259,11 +290,17 @@ export function ChatPanel({
         ))}
       </div>
 
+      {uploading && (
+        <p role="status" className="border-t border-line px-3 py-2 text-sm text-ink-secondary">
+          Enviando arquivos… Aguarde a conclusão.
+        </p>
+      )}
+
       {fileError && (
         <p
           role="alert"
           data-testid="file-error"
-          className="px-3 py-1.5 text-xs text-red-300 border-t border-white/5 flex-shrink-0"
+          className="px-3 py-1.5 text-xs text-red-300 border-t border-line flex-shrink-0"
         >
           {fileError}
         </p>
@@ -271,20 +308,22 @@ export function ChatPanel({
 
       {/* Chips de arquivos */}
       {selectedFiles.length > 0 && (
-        <div className="flex flex-wrap gap-1 px-3 py-1.5 border-t border-white/5 flex-shrink-0">
+        <div className="flex flex-wrap gap-1 px-3 py-1.5 border-t border-line flex-shrink-0">
           {selectedFiles.map((file, index) => (
             <span
               key={`${file.name}-${index}`}
-              className="text-xs bg-white/10 px-2 py-1 rounded flex items-center gap-1.5 text-slate-300"
+              className="text-xs bg-surface-tertiary px-2 py-1 rounded flex items-center gap-1.5 text-ink-secondary"
               data-testid="file-chip"
             >
-              <span aria-hidden="true"><Icon name={mimeIconName(file.type)} size={14} /></span>
+              <span aria-hidden="true">
+                <Icon name={mimeIconName(file.type)} size={14} />
+              </span>
               <span className="max-w-[140px] truncate">{file.name}</span>
-              <span className="text-slate-400">{formatFileSize(file.size)}</span>
+              <span className="text-ink-muted">{formatFileSize(file.size)}</span>
               <button
                 onClick={() => removeFile(index)}
                 aria-label={`Remover arquivo ${file.name}`}
-                className="text-slate-400 hover:text-white"
+                className="text-ink-muted hover:text-white"
               >
                 <Icon name="close" size={14} />
               </button>
@@ -299,7 +338,7 @@ export function ChatPanel({
           id="chat-mention-options"
           role="listbox"
           aria-label="Participantes para mencionar"
-          className="mx-3 mb-1 border border-white/10 rounded bg-forest-950 shadow-xl overflow-hidden flex-shrink-0 max-h-40 overflow-y-auto"
+          className="mx-3 mb-1 border border-line rounded bg-surface-secondary shadow-xl overflow-hidden flex-shrink-0 max-h-40 overflow-y-auto"
         >
           {filtered.map((name, index) => (
             <li
@@ -308,7 +347,9 @@ export function ChatPanel({
               role="option"
               aria-selected={index === activeOption}
               className={`px-2 py-1.5 text-xs cursor-pointer ${
-                index === activeOption ? 'bg-brand-700 text-white' : 'text-slate-200 hover:bg-white/10'
+                index === activeOption
+                  ? 'bg-accent-solid text-white'
+                  : 'text-ink-primary hover:bg-surface-tertiary'
               }`}
               onMouseEnter={() => setActiveOption(index)}
               onClick={() => selectOption(name)}
@@ -320,7 +361,7 @@ export function ChatPanel({
       )}
 
       {/* Input */}
-      <div className="p-3 border-t border-white/5 flex flex-col gap-2 flex-shrink-0">
+      <div className="p-3 border-t border-line flex flex-col gap-2 flex-shrink-0">
         {/* `aria-expanded` so e valido em `role="combobox"`: o autocomplete de
             mencoes e exatamente esse padrao (combobox + listbox de opcoes). */}
         <textarea
@@ -340,22 +381,27 @@ export function ChatPanel({
           }
           rows={2}
           maxLength={600}
-          className="min-h-[40px] max-h-24 rounded bg-white/5 p-2 text-sm text-slate-100 placeholder:text-slate-400 resize-none focus:outline-none focus:ring-1 focus:ring-moss-500"
+          className="input-base max-h-24 min-h-11 resize-none"
+          disabled={uploading}
         />
         <div className="flex items-center justify-between gap-2">
           <span
             data-testid="char-counter"
-            className={`text-xs ${charOverflow ? 'text-red-400 font-medium' : 'text-slate-400'}`}
+            className={`text-xs ${charOverflow ? 'text-red-400 font-medium' : 'text-ink-muted'}`}
           >
             {input.length}/{CHAT_MESSAGE_MAX}
           </span>
           <div className="flex items-center gap-2">
-            <label className="text-xs px-2 py-1.5 bg-white/10 rounded cursor-pointer text-slate-300 hover:bg-white/15">
-              <span aria-hidden="true"><Icon name="paperclip" size={14} /></span> Anexar
+            <label className="relative flex min-h-10 cursor-pointer items-center gap-2 rounded-md border border-line px-3 text-sm text-ink-secondary hover:bg-surface-hover focus-within:ring-2 focus-within:ring-accent">
+              <span aria-hidden="true">
+                <Icon name="paperclip" size={14} />
+              </span>{' '}
+              Anexar
               <input
                 type="file"
                 multiple
-                hidden
+                className="sr-only"
+                disabled={uploading}
                 onChange={(e) => {
                   handleFiles(e.target.files);
                   e.target.value = '';
@@ -366,7 +412,8 @@ export function ChatPanel({
             <button
               onClick={send}
               disabled={!canSend}
-              className="text-xs px-3 py-1.5 bg-brand-700 text-white rounded hover:bg-brand-800 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="btn-primary min-h-10 text-sm"
+              aria-busy={uploading}
             >
               Enviar
             </button>
@@ -377,20 +424,25 @@ export function ChatPanel({
   );
 
   if (isDesktop) {
-    return <div className="w-80 flex-shrink-0 h-full transition-all">{panelContent}</div>;
+    return <div className="h-full w-80 flex-shrink-0 xl:w-[340px]">{panelContent}</div>;
   }
 
-  // Mobile: drawer por cima do conteúdo
-  return (
-    <div className="fixed inset-0 z-40 bg-black/50 flex justify-end" role="presentation">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="Chat"
-        className="w-full max-w-sm h-full"
-      >
-        {panelContent}
-      </div>
-    </div>
+  return createPortal(
+    <dialog
+      ref={mobileDialogRef}
+      aria-label="Chat da sala"
+      aria-modal="true"
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+      className="fixed inset-0 m-0 ml-auto h-[100dvh] max-h-none w-full max-w-sm border-0 bg-surface-secondary p-0 text-ink-primary backdrop:bg-black/70"
+    >
+      {panelContent}
+    </dialog>,
+    document.body,
   );
 }

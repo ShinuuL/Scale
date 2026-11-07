@@ -20,6 +20,8 @@ interface ProfileMenuProps {
   /** Perfil alterado nas Configurações. */
   onUserChange?: (user: MeUser) => void;
   className?: string;
+  /** A página de chamada pode impedir navegação até confirmar a saída. */
+  onNavigate?: (href: string) => boolean;
 }
 
 const ITEM_SELECTOR = '[role="menuitem"]';
@@ -50,7 +52,7 @@ function Avatar({ name, photo, size }: { name: string; photo: string | null; siz
  * as Configurações (perfil e tema) e ações de conta. Fecha com Esc, clique fora ou ao escolher; o foco volta ao
  * gatilho. Setas, Home e End percorrem os itens.
  */
-export function ProfileMenu({ name, email, isAuthenticated, user, onUserChange, className }: ProfileMenuProps) {
+export function ProfileMenu({ name, email, isAuthenticated, user, onUserChange, className, onNavigate }: ProfileMenuProps) {
   const [open, setOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -117,8 +119,14 @@ export function ProfileMenu({ name, email, isAuthenticated, user, onUserChange, 
     }
   };
 
+  const navigate = (event: React.MouseEvent<HTMLAnchorElement>, href: string) => {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    if (onNavigate && !onNavigate(href)) event.preventDefault();
+    close(false);
+  };
+
   const itemClass =
-    'flex min-h-[40px] w-full items-center gap-3 rounded-lg px-2.5 text-left text-sm text-slate-200 outline-none transition-colors hover:bg-white/[0.06] focus-visible:bg-white/[0.08] focus-visible:ring-2 focus-visible:ring-brand-400/60';
+    'flex min-h-[44px] w-full items-center gap-3 rounded-lg px-2.5 text-left text-sm text-ink-primary outline-none transition-colors hover:bg-white/[0.06] focus-visible:bg-white/[0.08] focus-visible:ring-2 focus-visible:ring-brand-400/60';
 
   return (
     <div ref={rootRef} className={clsx('relative', className)}>
@@ -133,8 +141,8 @@ export function ProfileMenu({ name, email, isAuthenticated, user, onUserChange, 
         onClick={() => setOpen((v) => !v)}
         onKeyDown={onTriggerKeyDown}
         className={clsx(
-          'flex min-h-[40px] items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] py-1 pl-1 pr-1 sm:pr-3',
-          'text-sm text-slate-200 transition-colors hover:border-white/20 hover:bg-white/[0.06]',
+          'flex min-h-[44px] items-center gap-2 rounded-lg border border-transparent bg-transparent py-1 pl-1 pr-1 sm:pr-3',
+          'text-sm text-ink-primary transition-colors hover:border-white/20 hover:bg-white/[0.06]',
           'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-400',
           open && 'border-white/20 bg-white/[0.06]',
         )}
@@ -151,16 +159,16 @@ export function ProfileMenu({ name, email, isAuthenticated, user, onUserChange, 
           aria-label="Menu do perfil"
           onKeyDown={onMenuKeyDown}
           className={clsx(
-            'absolute right-0 top-full z-50 mt-2 w-72 max-w-[calc(100vw-2rem)] origin-top-right',
-            'rounded-xl border border-white/10 bg-forest-900 p-1.5 shadow-2xl shadow-black/40',
+            'fixed right-4 top-[72px] z-50 w-72 max-w-[calc(100vw-2rem)] origin-top-right',
+            'rounded-xl border border-white/10 bg-forest-900 p-1.5 shadow-[0_12px_40px_rgb(0_0_0/0.3)]',
             'animate-menu-in motion-reduce:animate-fade-in-fast',
           )}
         >
           <div className="flex items-center gap-3 px-2.5 py-2.5">
             <Avatar name={name} photo={photo} size="md" />
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-white">{name}</p>
-              <p className="truncate text-xs text-slate-400">
+              <p className="truncate text-sm font-semibold text-ink-primary">{name}</p>
+              <p className="truncate text-xs text-ink-muted">
                 {isAuthenticated ? email || 'Conta conectada' : name === 'Convidado' ? 'Sem conta conectada' : 'Convidado'}
               </p>
             </div>
@@ -170,8 +178,8 @@ export function ProfileMenu({ name, email, isAuthenticated, user, onUserChange, 
 
           <div className="py-1">
             {isAuthenticated && (
-              <Link href="/friends" role="menuitem" tabIndex={-1} className={itemClass} onClick={() => close(false)}>
-                <Icon name="users" size={16} className="text-slate-400" />
+              <Link href="/friends" role="menuitem" tabIndex={-1} className={itemClass} onClick={(event) => navigate(event, '/friends')}>
+                <Icon name="users" size={16} className="text-ink-muted" />
                 Amigos
               </Link>
             )}
@@ -185,7 +193,7 @@ export function ProfileMenu({ name, email, isAuthenticated, user, onUserChange, 
               }}
               className={itemClass}
             >
-              <Icon name="settings" size={16} className="text-slate-400" />
+              <Icon name="settings" size={16} className="text-ink-muted" />
               Configurações
             </button>
           </div>
@@ -194,12 +202,12 @@ export function ProfileMenu({ name, email, isAuthenticated, user, onUserChange, 
             <>
               <div className="my-1 border-t border-white/[0.08]" role="separator" />
               <div className="py-1">
-                <Link href="/login" role="menuitem" tabIndex={-1} className={itemClass} onClick={() => close(false)}>
-                  <Icon name="key" size={16} className="text-slate-400" />
+                <Link href="/login" role="menuitem" tabIndex={-1} className={itemClass} onClick={(event) => navigate(event, '/login')}>
+                  <Icon name="key" size={16} className="text-ink-muted" />
                   Entrar
                 </Link>
-                <Link href="/register" role="menuitem" tabIndex={-1} className={itemClass} onClick={() => close(false)}>
-                  <Icon name="users" size={16} className="text-slate-400" />
+                <Link href="/register" role="menuitem" tabIndex={-1} className={itemClass} onClick={(event) => navigate(event, '/register')}>
+                  <Icon name="users" size={16} className="text-ink-muted" />
                   Criar conta
                 </Link>
               </div>

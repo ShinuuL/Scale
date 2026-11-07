@@ -5,7 +5,9 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import type { Metrics } from '@/lib/validation';
 import { Badge } from '@/components/ui/Badge';
-import { Logo } from '@/components/ui/Logo';
+import { AppShell } from '@/components/layout/AppShell';
+import { HelpSidebar } from '@/components/layout/HelpSidebar';
+import { Skeleton } from '@/components/ui/Skeleton';
 
 const REFRESH_MS = 10_000;
 
@@ -35,14 +37,14 @@ const accentText = {
 
 function MetricCard({ label, value, hint, accent }: MetricCardProps) {
   return (
-    <div className="glass rounded-2xl p-6 flex flex-col gap-2">
-      <span className="text-xs font-medium uppercase tracking-wider text-slate-400">
+    <div className="border-b border-line py-5 flex flex-col gap-2">
+      <span className="text-sm font-medium text-ink-secondary">
         {label}
       </span>
-      <span className={`text-4xl font-bold tabular-nums ${accentText[accent]}`}>
+      <span className={`text-[28px] font-semibold tabular-nums ${accentText[accent]}`}>
         {value}
       </span>
-      <span className="text-xs text-slate-400">{hint}</span>
+      <span className="text-xs text-ink-muted">{hint}</span>
     </div>
   );
 }
@@ -101,50 +103,12 @@ export default function MetricsPage() {
     : [];
 
   return (
-    <main id="main-content" className="min-h-screen relative overflow-hidden">
-      {/* Background */}
-      <div className="pointer-events-none absolute top-0 left-1/2 -translate-x-1/2 w-[900px] h-[450px] bg-brand-600/10 blur-[140px] rounded-full" />
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-brand-600/10 via-transparent to-transparent" />
-
-      <div className="relative max-w-5xl mx-auto px-4 py-12 space-y-8">
-        {/* Header */}
-        <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div className="space-y-2">
-            <div className="inline-flex items-center gap-2 bg-brand-500/10 text-brand-300 text-xs font-medium px-3 py-1.5 rounded-full border border-brand-500/20">
-              <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
-              Observabilidade
-            </div>
-            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">
-              <span className="bg-gradient-to-r from-white via-white to-slate-400 bg-clip-text text-transparent">
-                Métricas do{' '}
-              </span>
-              <span className="bg-gradient-to-r from-brand-400 to-brand-600 bg-clip-text text-transparent">
-                sistema
-              </span>
-            </h1>
-            <p className="text-slate-400 text-sm">
-              {metrics
-                ? 'Atualizado a cada 10s'
-                : needsAuth
-                  ? 'Acesso restrito'
-                  : 'Carregando métricas...'}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            {needsAuth ? (
-              <Badge variant="info">Requer login</Badge>
-            ) : (
-              <Badge variant={error ? 'error' : 'success'}>
-                {error ? 'Offline' : loading ? 'Conectando…' : 'Online'}
-              </Badge>
-            )}
-            <Link
-              href="/"
-              className="text-sm font-medium text-brand-400 hover:text-brand-300 transition-colors"
-            >
-              ← Voltar
-            </Link>
-          </div>
+    <AppShell activeSection="help" title="Métricas do sistema" contextSidebar={<HelpSidebar active="metrics" />}>
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-8 sm:px-8">
+      <div className="mx-auto max-w-5xl space-y-8">
+        <header className="flex flex-wrap items-start justify-between gap-4">
+          <div><h2 className="text-[28px] font-semibold leading-9 tracking-tight">Métricas do sistema</h2><p className="mt-2 text-sm text-ink-secondary">{metrics ? 'Atualizado a cada 10 segundos.' : loading ? 'Carregando métricas...' : 'Acesso restrito ao servidor.'}</p></div>
+          <Badge variant={needsAuth ? 'info' : error ? 'error' : loading ? 'default' : 'success'}>{needsAuth ? 'Requer login' : error ? 'Indisponível' : loading ? 'Conectando...' : 'Conectado'}</Badge>
         </header>
 
         {error && (
@@ -164,6 +128,8 @@ export default function MetricsPage() {
           </div>
         )}
 
+        {loading && <div role="status" aria-label="Carregando métricas" className="grid gap-4 sm:grid-cols-3"><Skeleton /><Skeleton /><Skeleton /></div>}
+        {metrics && <>
         {/* Cards row 1 */}
         <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <MetricCard
@@ -200,11 +166,11 @@ export default function MetricsPage() {
 
         {/* Room breakdown */}
         <section>
-          <h2 className="text-sm font-semibold text-slate-200 mb-3">
+          <h2 className="text-sm font-semibold text-ink-primary mb-3">
             Peers por sala
           </h2>
           {roomBreaks.length === 0 ? (
-            <div className="glass rounded-2xl p-6 text-sm text-slate-400">
+            <div className="glass rounded-2xl p-6 text-sm text-ink-muted">
               Nenhum peer conectado no momento.
             </div>
           ) : (
@@ -215,15 +181,15 @@ export default function MetricsPage() {
                   className="glass-subtle p-4 rounded-xl flex items-center justify-between gap-3"
                 >
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-slate-200 truncate">
+                    <p className="text-sm font-medium text-ink-primary truncate">
                       Sala {index + 1}
                     </p>
-                    <p className="text-xs text-slate-400">
+                    <p className="text-xs text-ink-muted">
                       Sala de videochamada
                     </p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-sm font-semibold text-slate-200 tabular-nums">
+                    <span className="text-sm font-semibold text-ink-primary tabular-nums">
                       {count}
                     </span>
                     <Badge variant="info">
@@ -236,14 +202,9 @@ export default function MetricsPage() {
           )}
         </section>
 
-        {/* Footer */}
-        <footer className="text-xs text-slate-400 text-center pt-4">
-          <span className="inline-flex items-center gap-1.5 align-middle">
-            <Logo variant="mark" size={16} /> Scale
-          </span>
-          {' · '}P2P Video Calls · escamas de dragão · mesh 2–8 participantes
-        </footer>
+        </>}
       </div>
-    </main>
+      </div>
+    </AppShell>
   );
 }

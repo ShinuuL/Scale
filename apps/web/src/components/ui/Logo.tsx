@@ -11,7 +11,7 @@ export interface LogoProps {
   alt?: string;
 }
 
-const GLOW_CLASS = 'drop-shadow-[0_0_8px_rgba(139,92,246,0.38)]';
+const GLOW_CLASS = '';
 
 /**
  * Logo do Scale — PNG escamado (apps/web/public/logo.png) é a fonte da
@@ -23,11 +23,11 @@ export function Logo({
   variant = 'mark',
   className,
   priority = false,
-  alt = 'Scale logo',
+  alt = 'Scale',
 }: LogoProps) {
   if (variant === 'wordmark') {
     return (
-      <span className={clsx('text-base font-bold tracking-tight text-white', className)}>
+      <span className={clsx('text-base font-bold tracking-tight text-ink-primary', className)}>
         Scale
       </span>
     );
@@ -48,7 +48,7 @@ export function Logo({
           priority={priority}
           className={GLOW_CLASS}
         />
-        <span className="text-base font-bold tracking-tight text-white">Scale</span>
+        <span className="text-base font-bold tracking-tight text-ink-primary">Scale</span>
       </span>
     );
   }
