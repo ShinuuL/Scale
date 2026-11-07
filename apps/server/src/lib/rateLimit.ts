@@ -345,6 +345,20 @@ export function resetProfileUpdateRateLimit(userId: string): void {
   reset(profileStore, userId);
 }
 
+// Ligacoes: 15 / 5 min por USUARIO. Cada uma cria uma sala e faz o celular
+// do amigo tocar; o teto barra o "trote" em sequencia.
+const CALL_WINDOW_MS = 5 * 60_000;
+const CALL_MAX = 15;
+const callStore = createBucket('call');
+
+export function isCallRateLimited(userId: string): RateLimitResult {
+  return take(callStore, userId, CALL_WINDOW_MS, CALL_MAX);
+}
+
+export function resetCallRateLimit(userId: string): void {
+  reset(callStore, userId);
+}
+
 // Pedidos de amizade: 30 / hora por USUARIO. Freia a varredura de @nomes
 // (o pedido revela se o nome existe).
 const FRIEND_REQUEST_WINDOW_MS = 60 * 60_000;

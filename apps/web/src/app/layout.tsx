@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
 import './globals.css';
 import { PALETTE_BOOT_SRC } from '@/lib/theme';
+import { CallCenter } from '@/components/calls/CallCenter';
 
 export const metadata: Metadata = {
   title: 'Scale — P2P Video Calls',
@@ -38,6 +39,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <div id="app-root">
           {children}
         </div>
+        {/* Chamadas entre amigos: tela tocando e "Chamando…" em qualquer pagina. */}
+        <CallCenter />
       </body>
     </html>
   );

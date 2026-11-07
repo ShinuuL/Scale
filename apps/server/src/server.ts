@@ -15,6 +15,7 @@ import { messagesRoutes } from './routes/messages.js';
 import { filesRoutes } from './routes/files.js';
 import { profileRoutes } from './routes/profile.js';
 import { socialRoutes } from './routes/social.js';
+import { callRoutes } from './routes/calls.js';
 import { githubAuthRoutes } from './routes/githubAuth.js';
 import { createSocketServer } from './socket/handler.js';
 import { gcDeletedFiles } from './lib/uploads.js';
@@ -63,6 +64,7 @@ await server.register(messagesRoutes);
 await server.register(filesRoutes);
 await server.register(profileRoutes);
 await server.register(socialRoutes);
+await server.register(callRoutes);
 await server.register(githubAuthRoutes);
 
 // Health check

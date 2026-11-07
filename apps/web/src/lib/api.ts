@@ -1,6 +1,16 @@
 import { z } from 'zod';
 import type { CreateRoomInput, RoomResponse, RoomListItem, AuthResponse, LoginInput, RegisterInput, Metrics } from './validation';
-import { directMessageSchema, dmSendSchema, friendsListSchema, type DirectMessage, type FriendsList } from '@scale/shared';
+import {
+  acceptCallResponseSchema,
+  activeCallsSchema,
+  directMessageSchema,
+  dmSendSchema,
+  friendsListSchema,
+  startCallResponseSchema,
+  type ActiveCalls,
+  type DirectMessage,
+  type FriendsList,
+} from '@scale/shared';
 import { createRoomSchema, authResponseSchema, roomResponseSchema, roomListItemSchema, metricsSchema } from './validation';
 
 // Caminhos SEMPRE relativos (`/api/...`): em producao o Caddy serve o frontend
@@ -184,6 +194,37 @@ class ApiClient {
       body: JSON.stringify(input),
     });
     return authResponseSchema.parse(data);
+  }
+
+  // ─── Ligacoes ───────────────────────────────────────────────
+  /** Liga para um amigo: cria a sala privada e faz a tela dele tocar. */
+  async startCall(friendId: string): Promise<{ callId: string; roomId: string; expiresAt: string }> {
+    const data = await this.request<unknown>('/api/calls', {
+      method: 'POST',
+      body: JSON.stringify({ friendId }),
+    });
+    return startCallResponseSchema.parse(data);
+  }
+
+  /** Chamadas tocando agora (recebidas e feitas por esta conta). */
+  async getActiveCalls(): Promise<ActiveCalls> {
+    return activeCallsSchema.parse(await this.request<unknown>('/api/calls'));
+  }
+
+  async acceptCall(callId: string): Promise<{ roomId: string; inviteToken: string }> {
+    const data = await this.request<unknown>(`/api/calls/${encodeURIComponent(callId)}/accept`, {
+      method: 'POST',
+      body: '{}',
+    });
+    return acceptCallResponseSchema.parse(data);
+  }
+
+  async declineCall(callId: string): Promise<void> {
+    await this.request(`/api/calls/${encodeURIComponent(callId)}/decline`, { method: 'POST', body: '{}' });
+  }
+
+  async cancelCall(callId: string): Promise<void> {
+    await this.request(`/api/calls/${encodeURIComponent(callId)}/cancel`, { method: 'POST', body: '{}' });
   }
 
   /** O @nome esta livre? (o servidor normaliza: "@Fulano" vira "fulano"). */
