@@ -11,7 +11,7 @@ trap 'echo "ERRO na linha $LINENO. Veja: ${COMPOSE[*]} logs --tail 100" >&2' ERR
 
 # Carrega so para validar (nao imprime valores).
 set -a; source .env; set +a
-for v in SCALE_DOMAIN ACMEDNS_USERNAME ACMEDNS_PASSWORD ACMEDNS_SUBDOMAIN JWT_SECRET GUEST_COOKIE_SECRET ALLOWED_ORIGINS; do
+for v in SCALE_DOMAIN TURN_SECRET TURN_EXTERNAL_IP ACMEDNS_USERNAME ACMEDNS_PASSWORD ACMEDNS_SUBDOMAIN JWT_SECRET GUEST_COOKIE_SECRET ALLOWED_ORIGINS; do
   [[ -n "${!v:-}" ]] || { echo "Variavel $v vazia no .env." >&2; exit 1; }
 done
 (( ${#JWT_SECRET} >= 32 && ${#GUEST_COOKIE_SECRET} >= 32 )) \
