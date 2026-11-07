@@ -17,8 +17,8 @@ import { profileRoutes } from './routes/profile.js';
 import { socialRoutes } from './routes/social.js';
 import { githubAuthRoutes } from './routes/githubAuth.js';
 import { createSocketServer } from './socket/handler.js';
-import { gcDeletedFiles } from './lib/uploads.js';
-import { sweepExpiredRooms, ROOM_SWEEP_INTERVAL_MS } from './lib/roomDeletion.js';
+import { gcDeletedFiles, gcOrphanUploads } from './lib/uploads.js';
+import { sweepExpiredRooms, retryPendingRoomDeletions, ROOM_SWEEP_INTERVAL_MS } from './lib/roomDeletion.js';
 import { MAX_FILE_SIZE_BYTES, MAX_FILES_PER_MESSAGE } from '@scale/shared';
 import { resolveTrustProxy } from './lib/clientIp.js';
 import { buildLoggerOptions } from './lib/logger.js';
@@ -81,9 +81,17 @@ const io = createSocketServer(httpServer);
 (server as unknown as Record<string, unknown>).io = io;
 
 // GC diário de arquivos deletados há >7d (libera quota; logs em uploads.ts)
-const gcTimer = setInterval(() => {
-  gcDeletedFiles().catch((err) => server.log.error(err));
-}, 24 * 60 * 60 * 1000);
+let gcRunning = false;
+const runGc = async (): Promise<void> => {
+  if (gcRunning) return;
+  gcRunning = true;
+  try {
+    await retryPendingRoomDeletions(io, server.log);
+    await gcDeletedFiles();
+    await gcOrphanUploads();
+  } catch (err) { server.log.error(err); } finally { gcRunning = false; }
+};
+const gcTimer = setInterval(() => { void runGc(); }, 24 * 60 * 60 * 1000);
 gcTimer.unref();
 
 // Varredura de salas temporarias vencidas (lib/roomDeletion.ts): roda no
@@ -106,6 +114,7 @@ const start = async (): Promise<void> => {
     await server.listen({ port, host: '0.0.0.0' });
     server.log.info(`Server running on port ${port}`);
     runRoomSweep();
+    void runGc();
     server.log.info('Socket.io server attached');
   } catch (err) {
     server.log.error(err);

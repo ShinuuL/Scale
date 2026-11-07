@@ -1,0 +1,7 @@
+:root { color-scheme: dark; font-family: system-ui, sans-serif; background: #071412; color: #eef7f3; }
+body { margin: 0; min-height: 100svh; display: grid; place-items: center; }
+main { max-width: 38rem; padding: 2rem; }
+h1 { font-size: 1.75rem; line-height: 1.2; }
+p { color: #bccfc6; line-height: 1.65; }
+a { display: inline-block; margin-top: 1rem; padding: .8rem 1.2rem; border-radius: .75rem; background: #a7f3d0; color: #071412; font-weight: 600; text-underline-offset: .2em; }
+a:focus-visible { outline: 3px solid #eef7f3; outline-offset: 4px; }

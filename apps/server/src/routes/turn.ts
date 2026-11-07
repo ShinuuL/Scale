@@ -1,3 +1,7 @@
+import { createHmac } from 'node:crypto';
+import { z } from 'zod';
+import { prisma } from '../lib/prisma.js';
+import { roomParticipant } from '../lib/roomAccess.js';
 import type { FastifyInstance } from 'fastify';
 import { getEnv } from '../lib/env.js';
 import { isTurnRateLimited } from '../lib/rateLimit.js';
@@ -8,17 +12,9 @@ const STUN_SERVERS: RTCIceServer[] = [
 ];
 
 export async function turnRoutes(fastify: FastifyInstance): Promise<void> {
-  // GET /api/turn/credentials
-  //
-  // Exige login: o endpoint entrega credenciais de relay (TURN) do coturn, que
-  // sao um recurso pago/limitado da instancia. Anonimo atras do tunel nao pode
-  // drenar esse recurso. Hoje ENABLE_TURN=false por padrao, entao na pratica o
-  // convidado sem sessao passa a usar APENAS STUN (nao ha regressao funcional:
-  // sem TURN ligado, o endpoint ja devolvia so STUN). Quando o TURN for ligado,
-  // a sessao passa a ser o gate para receber a credencial.
-  fastify.get(
+  // Sessao mantem compatibilidade; convidados precisam ticket de uma sala ativa.
+  fastify.get<{ Querystring: { roomId?: string } }>(
     '/api/turn/credentials',
-    { preHandler: [fastify.authenticate as never] },
     async (request, reply) => {
       // Balde por IP antes de montar a resposta: sem ele, um cliente logado
       // poderia inundar o endpoint. O IP vem de lib/clientIp.ts (nao do header
@@ -31,6 +27,12 @@ export async function turnRoutes(fastify: FastifyInstance): Promise<void> {
           .send({ error: 'Too many requests. Try again later.' });
       }
 
+      if (!request.userId) {
+        const roomId = z.string().uuid().safeParse(request.query.roomId);
+        const room = roomId.success ? await prisma.room.findUnique({ where: { id: roomId.data } }) : null;
+        if (!room || !roomParticipant(request, room)) return reply.code(401).send({ error: 'Authentication required' });
+      }
+      reply.header('Cache-Control', 'no-store');
       const env = getEnv();
 
       if (!env.ENABLE_TURN) {
@@ -45,8 +47,15 @@ export async function turnRoutes(fastify: FastifyInstance): Promise<void> {
       // In production, generate temporary TURN credentials via a provider API
       // (e.g., Twilio, Metered, etc.) and return them here.
       const turnUrl = process.env.TURN_URL;
-      const turnUsername = process.env.TURN_USERNAME;
-      const turnCredential = process.env.TURN_CREDENTIAL;
+      // Coturn REST API (use-auth-secret): opcional, secreto fica so no servidor.
+      // Provedores com credencial estatica continuam usando o contrato anterior.
+      const sharedSecret = process.env.TURN_AUTH_SECRET;
+      const turnUsername = sharedSecret
+        ? `${Math.floor(Date.now() / 1000) + 3600}:${crypto.randomUUID()}`
+        : process.env.TURN_USERNAME;
+      const turnCredential = sharedSecret && turnUsername
+        ? createHmac('sha1', sharedSecret).update(turnUsername).digest('base64')
+        : process.env.TURN_CREDENTIAL;
 
       if (!turnUrl || !turnUsername || !turnCredential) {
         // Fallback to STUN only if TURN not configured
@@ -68,6 +77,8 @@ export async function turnRoutes(fastify: FastifyInstance): Promise<void> {
           },
         ],
         turnEnabled: true,
+        ttlSeconds: sharedSecret ? 3600 : null,
+        expiresAt: sharedSecret ? new Date(Number(turnUsername.split(':')[0]) * 1000).toISOString() : null,
       });
     },
   );
