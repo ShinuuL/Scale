@@ -2,14 +2,16 @@
 
 import { useState } from 'react';
 import { Button } from '@/components/ui/Button';
+import { clsx } from 'clsx';
 import { Icon } from '@/components/ui/Icon';
-import { AudioDeviceSettings } from './AudioDeviceSettings';
-import type { AudioDevicesState } from '@/hooks/useAudioDevices';
+import { SpeakingBars } from '@/components/room/SpeakingBars';
 
 interface RoomControlsProps {
-  audioDevices?: AudioDevicesState;
-  isChangingMicrophone?: boolean;
   isMuted: boolean;
+  /** A sua voz está sendo captada agora (acende o botão do microfone). */
+  isSpeaking?: boolean;
+  /** Você está falando com o microfone desligado (mostra o aviso "Você está mudo"). */
+  talkingWhileMuted?: boolean;
   isDeafened: boolean;
   isScreenSharing: boolean;
   /** Desabilita os controles de mídia (socket desconectado ou mediaError). O botão Sair continua ativo. */
@@ -25,12 +27,14 @@ interface RoomControlsProps {
   showChat?: boolean;
   /** Toggle chat panel open/close. */
   onToggleChat?: () => void;
+  /** Abre a lista de amigos para chamar alguem para a sala (so conta logada). */
+  onInviteFriend?: () => void;
 }
 
 export function RoomControls({
-  audioDevices,
-  isChangingMicrophone = false,
   isMuted,
+  isSpeaking = false,
+  talkingWhileMuted = false,
   isDeafened,
   isScreenSharing,
   controlsDisabled = false,
@@ -42,6 +46,7 @@ export function RoomControls({
   chatUnread = 0,
   showChat = false,
   onToggleChat,
+  onInviteFriend,
 }: RoomControlsProps) {
   const [copied, setCopied] = useState(false);
 
@@ -58,21 +63,36 @@ export function RoomControls({
       role="toolbar"
       aria-label="Controles da sala"
     >
-      {/* Mute */}
-      <Button
-        className="max-sm:px-3.5"
-        variant={isMuted ? 'danger' : 'secondary'}
-        onClick={onToggleMute}
-        disabled={controlsDisabled}
-        aria-label={isMuted ? 'Ativar microfone' : 'Desativar microfone'}
-        aria-pressed={!isMuted}
-        title={isMuted ? 'Ativar microfone' : 'Desativar microfone'}
-      >
-        <span aria-hidden="true">{isMuted ? <Icon name="micOff" /> : <Icon name="mic" />}</span>
-        <span className="hidden sm:inline">{isMuted ? 'Mudo' : 'Mic'}</span>
-      </Button>
-
-      {audioDevices && <AudioDeviceSettings devices={audioDevices} busy={isChangingMicrophone} />}
+      {/* Mute (acende enquanto a sua voz é captada; avisa se fala mudo) */}
+      <div className="relative">
+        {talkingWhileMuted && (
+          <span
+            role="status"
+            className="absolute bottom-full left-1/2 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md bg-red-600 px-2 py-1 text-xs font-semibold text-white shadow-lg animate-fade-in-fast"
+          >
+            Você está mudo
+          </span>
+        )}
+        <Button
+          className={clsx(
+            'max-sm:px-3.5',
+            isSpeaking && !isMuted && 'ring-2 ring-brand-400 animate-speak-pulse motion-reduce:animate-none',
+          )}
+          variant={isMuted ? 'danger' : 'secondary'}
+          onClick={onToggleMute}
+          disabled={controlsDisabled}
+          aria-label={isMuted ? 'Ativar microfone' : 'Desativar microfone'}
+          aria-pressed={!isMuted}
+          title={isMuted ? 'Ativar microfone' : 'Desativar microfone'}
+        >
+          <span aria-hidden="true">{isMuted ? <Icon name="micOff" /> : <Icon name="mic" />}</span>
+          {isSpeaking && !isMuted ? (
+            <SpeakingBars active size="sm" className="hidden sm:inline-flex" />
+          ) : (
+            <span className="hidden sm:inline">{isMuted ? 'Mudo' : 'Mic'}</span>
+          )}
+        </Button>
+      </div>
 
       {/* Deafen */}
       <Button
@@ -117,6 +137,20 @@ export function RoomControls({
         >
           <span aria-hidden="true">{copied ? <Icon name="check" /> : <Icon name="link" />}</span>
           <span className="hidden sm:inline">{copied ? 'Copiado' : 'Link'}</span>
+        </Button>
+      )}
+
+      {/* Chamar amigo para a sala */}
+      {onInviteFriend && (
+        <Button
+          className="max-sm:px-3.5"
+          variant="ghost"
+          onClick={onInviteFriend}
+          aria-label="Chamar amigo para a chamada"
+          title="Chamar amigo para a chamada"
+        >
+          <span aria-hidden="true"><Icon name="users" /></span>
+          <span className="hidden sm:inline">Chamar</span>
         </Button>
       )}
 

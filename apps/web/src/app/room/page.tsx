@@ -13,6 +13,7 @@ import { usePeerAvatars } from '@/hooks/usePeerAvatars';
 import { ChatPanel } from '@/components/ChatPanel';
 import { VideoGrid, LOCAL_ID } from '@/components/room/VideoGrid';
 import { RoomControls } from '@/components/room/RoomControls';
+import { InviteFriendsDialog } from '@/components/calls/InviteFriendsDialog';
 import { ParticipantList } from '@/components/room/ParticipantList';
 import { DeleteRoomDialog } from '@/components/room/DeleteRoomDialog';
 import { AppShell } from '@/components/layout/AppShell';
@@ -27,9 +28,13 @@ import { Icon } from '@/components/ui/Icon';
 import { ProfileMenu } from '@/components/ui/ProfileMenu';
 import { api, avatarUrl, type MeUser } from '@/lib/api';
 import { copyText } from '@/lib/clipboard';
+import { subscribeAudioDeviceChange } from '@/lib/audioDevices';
 import { roomUrl } from '@/lib/roomLink';
 import { roomInviteHeaders } from '@/lib/roomAccess';
 import { setFlash } from '@/lib/flash';
+
+/** Id interno do medidor que detecta fala com o microfone desligado. */
+const MUTED_PROBE_ID = 'local-muted-probe';
 
 /**
  * Sala privada sem credencial (nem dono, nem convite valido no header) vem
@@ -134,6 +139,8 @@ function RoomPageInner({ roomId }: { roomId: string }) {
   chatRef.current = chat;
 
   const [chatOpen, setChatOpen] = useState(false);
+  // Lista de amigos para chamar alguem para esta sala (so conta logada).
+  const [inviteFriendsOpen, setInviteFriendsOpen] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   // Nome do cadastro quando logado; senão o Guest-xxxx do socket. O backend já
   // identifica o usuário pelo cookie no handshake — este é o nome LOCAL (tile
@@ -209,9 +216,25 @@ function RoomPageInner({ roomId }: { roomId: string }) {
   // Transmissão escolhida para o palco (null = foco automático: a de outra
   // pessoa vence a sua). Lateral e faixa de miniaturas escrevem aqui.
   const [focusedShareId, setFocusedShareId] = useState<string | null>(null);
-  // Anel verde de "falando" na lateral e nos cartões. Local mudo não conta.
+  // Mudo, a faixa enviada fica desligada (só silêncio). Para avisar "Você
+  // está mudo" quando a pessoa fala assim mesmo, mede uma CÓPIA ligada da
+  // faixa — ela nunca é enviada a ninguém e é parada ao desmutar.
+  const [mutedProbe, setMutedProbe] = useState<MediaStream | null>(null);
+  useEffect(() => {
+    const track = webrtc.isMuted ? webrtc.localStream?.getAudioTracks()[0] : undefined;
+    if (!track || track.readyState !== 'live') {
+      setMutedProbe(null);
+      return;
+    }
+    const copy = track.clone();
+    copy.enabled = true;
+    setMutedProbe(new MediaStream([copy]));
+    return () => copy.stop();
+  }, [webrtc.isMuted, webrtc.localStream]);
+  // Halo e barrinhas de "falando" na lateral e nos cartões. Local mudo não conta.
   const speaking = useSpeaking([
     { id: LOCAL_ID, stream: webrtc.isMuted ? null : webrtc.localStream },
+    { id: MUTED_PROBE_ID, stream: mutedProbe },
     ...Array.from(webrtc.peers.values()).map((p) => ({ id: p.peerId, stream: p.stream })),
   ]);
 
@@ -267,7 +290,20 @@ function RoomPageInner({ roomId }: { roomId: string }) {
   // estáveis do useWebRTC — destruturados aqui para o effect não depender da
   // identidade do objeto `webrtc` (memoizado, mas muda quando peers/mídia
   // mudam, o que causaria re-execução/loop antes do join).
-  const { initMedia, connectToPeers } = webrtc;
+  const { initMedia, connectToPeers, switchMicrophone } = webrtc;
+
+  // Troca de microfone ao vivo (escolhido nas configurações).
+  useEffect(
+    () =>
+      subscribeAudioDeviceChange(({ kind, deviceId }) => {
+        // Antes de entrar não liga o microfone: o initMedia já usa o salvo.
+        if (kind !== 'input' || !joined) return;
+        void switchMicrophone(deviceId).then((ok) => {
+          if (!ok) toast('Não foi possível trocar o microfone', 'error');
+        });
+      }),
+    [switchMicrophone, toast, joined],
+  );
 
   /**
    * Entra na sala e forma a malha. Usado no primeiro join E no reconnect:
@@ -622,7 +658,7 @@ function RoomPageInner({ roomId }: { roomId: string }) {
               variant="warning"
               icon={<Icon name="mic" size={18} />}
               title="Microfone indisponível"
-              description="Não foi possível usar o microfone solicitado. Abra Dispositivos para escolher outro ou tentar novamente após conferir a permissão. Você ainda pode ouvir os participantes e compartilhar tela."
+              description="Não foi possível usar o microfone solicitado. Abra Configurações, na seção Áudio, para escolher outro ou tentar novamente após conferir a permissão. Você ainda pode ouvir os participantes e compartilhar tela."
             />
           </div>
         )}
@@ -646,8 +682,6 @@ function RoomPageInner({ roomId }: { roomId: string }) {
           <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
             <VideoGrid
               peers={webrtc.peers}
-              outputDeviceId={webrtc.audioDevices.outputId}
-              onOutputError={webrtc.audioDevices.reportOutputError}
               localStream={webrtc.localStream}
               localScreenStream={webrtc.localScreenStream}
               isMuted={webrtc.isMuted}
@@ -679,8 +713,8 @@ function RoomPageInner({ roomId }: { roomId: string }) {
         {/* Controls */}
         <div id="room-controls">
           <RoomControls
-            audioDevices={webrtc.audioDevices}
-            isChangingMicrophone={webrtc.isChangingMicrophone}
+            isSpeaking={speaking.has(LOCAL_ID)}
+            talkingWhileMuted={webrtc.isMuted && speaking.has(MUTED_PROBE_ID)}
             isMuted={webrtc.isMuted}
             isDeafened={webrtc.isDeafened}
             isScreenSharing={webrtc.isScreenSharing}
@@ -726,8 +760,13 @@ function RoomPageInner({ roomId }: { roomId: string }) {
             chatUnread={chat.unread}
             showChat={chatOpen}
             onToggleChat={() => setChatOpen((prev) => !prev)}
+            onInviteFriend={currentUserId !== null ? () => setInviteFriendsOpen(true) : undefined}
           />
         </div>
+
+        {inviteFriendsOpen && (
+          <InviteFriendsDialog roomId={roomId} onClose={() => setInviteFriendsOpen(false)} />
+        )}
 
         {confirmDelete && (
           <DeleteRoomDialog

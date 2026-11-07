@@ -30,6 +30,8 @@ describe('isPermissionAllowed', () => {
     const request = { permission: 'speaker-selection', requestingUrl: PAGE, allowedOrigin: ORIGIN };
     expect(isPermissionAllowed(request)).toBe(false);
     expect(isPermissionAllowed({ ...request, isMainFrame: true })).toBe(true);
+    expect(isPermissionAllowed({ ...request, isMainFrame: true, requestingUrl: 'https://example.com/' })).toBe(false);
+    expect(isPermissionAllowed({ ...request, isMainFrame: true, allowedOrigin: null })).toBe(false);
   });
 
   it('nega camera', () => {

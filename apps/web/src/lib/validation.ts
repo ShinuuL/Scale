@@ -7,8 +7,9 @@ export { ROOM_NAME_MIN, ROOM_NAME_MAX, createRoomSchema } from '@scale/shared';
 export type { CreateRoomInput } from '@scale/shared';
 
 // ─── Auth schemas ───────────────────────────────────────────────
+// `email` leva o e-mail OU o @nome (o servidor decide qual e).
 export const loginSchema = z.object({
-  email: z.string().email('Please enter a valid email address'),
+  email: z.string().trim().min(1, 'Informe o e-mail ou o nome de usuário'),
   password: z.string().min(1, 'Password is required'),
 });
 
@@ -21,6 +22,7 @@ export const registerSchema = z.object({
     .min(8, 'Password must be at least 8 characters')
     .max(128, 'Password must be at most 128 characters'),
   name: z.string().min(1, 'Name is required').max(100, 'Name must be at most 100 characters'),
+  username: z.string().optional(),
 });
 
 export type RegisterInput = z.infer<typeof registerSchema>;

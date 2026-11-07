@@ -4,8 +4,9 @@ import { useRef, useEffect, useState, useCallback } from 'react';
 import { clsx } from 'clsx';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
+import { SpeakingBars } from '@/components/room/SpeakingBars';
 import { copyText } from '@/lib/clipboard';
-import { setAudioSink } from '@/hooks/useAudioDevices';
+import { applySavedSink, subscribeAudioDeviceChange } from '@/lib/audioDevices';
 import type { PeerConnection } from '@/hooks/useWebRTC';
 
 /** Id da transmissão/participante local (os remotos usam o peerId). */
@@ -57,15 +58,7 @@ export function resolveFocus(shares: LiveShare[], requested: string | null): Liv
  * Um `<audio>` por peer remoto, FORA dos tiles: trocar o layout (palco ↔
  * grade, foco) não desmonta o elemento e o som não corta.
  */
-function PeerAudio({
-  stream,
-  outputDeviceId,
-  onOutputError,
-}: {
-  stream: MediaStream | null;
-  outputDeviceId: string;
-  onOutputError?: () => void;
-}) {
+function PeerAudio({ stream }: { stream: MediaStream | null }) {
   const audioRef = useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
@@ -94,19 +87,15 @@ function PeerAudio({
     return cleanup;
   }, [stream]);
 
+  // Saída escolhida nas configurações; troca ao vivo pelo evento.
   useEffect(() => {
-    const element = audioRef.current;
-    if (!element) return;
-    let active = true;
-    void setAudioSink(element, outputDeviceId).catch(() => {
-      if (!active) return;
-      void setAudioSink(element, '').catch(() => {});
-      onOutputError?.();
+    const audioEl = audioRef.current;
+    if (!audioEl) return;
+    void applySavedSink(audioEl);
+    return subscribeAudioDeviceChange((detail) => {
+      if (detail.kind === 'output') void applySavedSink(audioEl);
     });
-    return () => {
-      active = false;
-    };
-  }, [outputDeviceId, onOutputError]);
+  }, []);
 
   return <audio ref={audioRef} autoPlay playsInline />;
 }
@@ -143,7 +132,7 @@ function Avatar({
         'rounded-full flex items-center justify-center font-semibold select-none overflow-hidden',
         'bg-accent-subtle text-accent border border-line',
         'ring-offset-2 ring-offset-surface-tertiary transition-colors duration-150 motion-reduce:transition-none',
-        speaking ? 'ring-[3px] ring-[var(--status-online)]' : 'ring-0',
+        speaking ? 'ring-[3px] ring-[var(--status-online)] animate-speak-pulse motion-reduce:animate-none' : 'ring-0',
         size === 'lg' && 'w-24 h-24 text-3xl',
         size === 'md' && 'w-16 h-16 text-xl',
         size === 'sm' && 'w-10 h-10 text-sm',
@@ -209,14 +198,10 @@ function MemberCard({
         compact ? 'h-full w-full' : 'aspect-video w-full',
       )}
     >
-      <Avatar
-        name={member.name}
-        speaking={speaking}
-        size={compact ? 'sm' : 'lg'}
-        src={member.avatarUrl}
-      />
-      <span className="absolute bottom-2 left-2 max-w-[75%] truncate rounded-md bg-black/60 px-2 py-0.5 text-xs font-medium text-white">
-        {label}
+      <Avatar name={member.name} speaking={speaking} size={compact ? 'sm' : 'lg'} src={member.avatarUrl} />
+      <span className="absolute bottom-2 left-2 flex max-w-[75%] items-center gap-1.5 rounded-md bg-black/60 px-2 py-0.5 text-xs font-medium text-white">
+        {speaking && <SpeakingBars active size="sm" />}
+        <span className="truncate">{label}</span>
       </span>
       {member.muted && (
         <span className="absolute bottom-2 right-2 rounded-md bg-black/60 p-1 text-red-300">
@@ -230,8 +215,6 @@ function MemberCard({
 // ─── Grade ──────────────────────────────────────────────────────
 
 interface VideoGridProps {
-  outputDeviceId?: string;
-  onOutputError?: () => void;
   peers: Map<string, PeerConnection>;
   localStream: MediaStream | null;
   localScreenStream: MediaStream | null;
@@ -251,8 +234,6 @@ interface VideoGridProps {
 }
 
 export function VideoGrid({
-  outputDeviceId = '',
-  onOutputError,
   peers,
   localStream,
   localScreenStream,
@@ -298,12 +279,7 @@ export function VideoGrid({
   const audioLayer = (
     <div className="hidden" aria-hidden="true">
       {peerArray.map((peer) => (
-        <PeerAudio
-          key={peer.peerId}
-          stream={peer.stream}
-          outputDeviceId={outputDeviceId}
-          onOutputError={onOutputError}
-        />
+        <PeerAudio key={peer.peerId} stream={peer.stream} />
       ))}
     </div>
   );

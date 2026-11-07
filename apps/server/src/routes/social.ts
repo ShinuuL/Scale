@@ -29,7 +29,7 @@ import { guardRoomParticipation } from '../lib/roomAccess.js';
  *                         outras abas do remetente tambem atualizam).
  */
 
-const publicUserSelect = { id: true, name: true, avatarUpdatedAt: true, username: { select: { name: true } } } as const;
+export const publicUserSelect = { id: true, name: true, avatarUpdatedAt: true, username: { select: { name: true } } } as const;
 
 type PublicUserRow = { id: string; username: { name: string } | null; name: string; avatarUpdatedAt: Date | null };
 

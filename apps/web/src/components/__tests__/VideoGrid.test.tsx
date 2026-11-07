@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent, act, within } from '@testing-library/react';
+import { describe, it, expect } from 'vitest';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { VideoGrid, collectLiveShares, resolveFocus, LOCAL_ID } from '@/components/room/VideoGrid';
 import type { PeerConnection } from '@/hooks/useWebRTC';
 
@@ -94,34 +94,6 @@ describe('VideoGrid', () => {
     ]);
     render(<VideoGrid {...base} peers={peers} localScreenStream={null} />);
     expect(document.querySelectorAll('audio')).toHaveLength(2);
-  });
-
-  it('aplica a saída a cada player, inclusive peer novo, e avisa/faz fallback se falhar', async () => {
-    const descriptor = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'setSinkId');
-    const sink = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(HTMLMediaElement.prototype, 'setSinkId', { configurable: true, value: sink });
-    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
-    const onOutputError = vi.fn();
-    const peers = new Map([['p1', peer('p1', 'Bia', false)]]);
-    try {
-      const { rerender } = render(<VideoGrid {...base} peers={peers} localScreenStream={null} outputDeviceId="headset" onOutputError={onOutputError} />);
-      await act(async () => {});
-      expect(sink).toHaveBeenCalledTimes(1);
-      expect(sink).toHaveBeenCalledWith('headset');
-      peers.set('p2', peer('p2', 'Caio', false));
-      rerender(<VideoGrid {...base} peers={peers} localScreenStream={null} outputDeviceId="headset" onOutputError={onOutputError} />);
-      await act(async () => {});
-      expect(sink).toHaveBeenCalledTimes(2);
-      sink.mockRejectedValueOnce(new DOMException('Dispositivo removido', 'NotFoundError'));
-      rerender(<VideoGrid {...base} peers={peers} localScreenStream={null} outputDeviceId="missing" onOutputError={onOutputError} />);
-      await act(async () => {});
-      expect(onOutputError).toHaveBeenCalledOnce();
-      expect(sink).toHaveBeenCalledWith('');
-      expect(document.querySelectorAll('audio')).toHaveLength(2);
-    } finally {
-      if (descriptor) Object.defineProperty(HTMLMediaElement.prototype, 'setSinkId', descriptor);
-      else Reflect.deleteProperty(HTMLMediaElement.prototype, 'setSinkId');
-    }
   });
 
   it('mostra a foto de perfil de quem tem; sem foto ou se a imagem falhar, a inicial', () => {

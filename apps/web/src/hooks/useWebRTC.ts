@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import type { UseSocketReturn, PeerInfo } from './useSocket';
+import { getSavedDeviceId } from '@/lib/audioDevices';
 import { roomTicketHeaders } from '@/lib/roomAccess';
-import { useAudioDevices, type AudioDevicesState } from './useAudioDevices';
 
 export interface PeerConnection {
   peerId: string;
@@ -19,7 +19,6 @@ export interface PeerConnection {
 
 export interface UseWebRTCHReturn {
   peers: Map<string, PeerConnection>;
-  audioDevices: AudioDevicesState;
   isChangingMicrophone: boolean;
   screenShareError: string | null;
   screenAudioAvailable: boolean;
@@ -47,6 +46,12 @@ export interface UseWebRTCHReturn {
    * `null` quando bloqueado (contexto inseguro / getDisplayMedia indisponível).
    */
   toggleScreenShare: () => Promise<boolean | null>;
+  /**
+   * Troca o microfone ao vivo ('' = padrão do sistema): replaceTrack em todos
+   * os peers, sem renegociar, preservando o mudo. Falhou = mantém a faixa
+   * antiga e devolve false.
+   */
+  switchMicrophone: (deviceId: string) => Promise<boolean>;
   initMedia: () => Promise<void>;
   cleanupMedia: () => void;
   /**
@@ -80,6 +85,105 @@ export const AUDIO_CONSTRAINTS: MediaTrackConstraints = {
   autoGainControl: true,
   channelCount: 1,
 };
+
+// ─── Qualidade de voz (Opus) ──────────────────────────────────
+// Voz picotada pela internet: o Chrome negocia o Opus sem limite explícito e
+// com DTX livre. Fixamos FEC (recupera pacote perdido sem retransmitir), DTX
+// desligado (o DTX corta o som em pausas e o início das falas some), mono e
+// um bitrate de voz confortável.
+export const OPUS_MAX_BITRATE = 40000;
+const OPUS_FMTP: Record<string, string> = {
+  useinbandfec: '1',
+  usedtx: '0',
+  stereo: '0',
+  'sprop-stereo': '0',
+  maxaveragebitrate: String(OPUS_MAX_BITRATE),
+};
+const STATS_LOG_INTERVAL_MS = 10000;
+
+/**
+ * Ajusta o `a=fmtp` do Opus no SDP local antes de aplicar e enviar. Os
+ * parâmetros de fmtp são a preferência de RECEPÇÃO de quem os anuncia, por
+ * isso offer e answer passam por aqui.
+ */
+export function tuneOpusSdp(sdp: string): string {
+  const pt = /a=rtpmap:(\d+) opus\/48000/i.exec(sdp)?.[1];
+  if (!pt) return sdp;
+  const fmtpRe = new RegExp(`a=fmtp:${pt} ([^\\r\\n]*)`);
+  const match = fmtpRe.exec(sdp);
+  if (!match) {
+    const params = Object.entries(OPUS_FMTP).map(([k, v]) => `${k}=${v}`).join(';');
+    return sdp.replace(/(a=rtpmap:\d+ opus\/48000[^\r\n]*)(\r?\n)/i, `$1$2a=fmtp:${pt} ${params}$2`);
+  }
+  const current = new Map<string, string>();
+  for (const part of match[1].split(';')) {
+    const [k, v] = part.split('=');
+    if (k?.trim()) current.set(k.trim(), (v ?? '').trim());
+  }
+  for (const [k, v] of Object.entries(OPUS_FMTP)) current.set(k, v);
+  const merged = [...current].map(([k, v]) => `${k}=${v}`).join(';');
+  return sdp.replace(fmtpRe, `a=fmtp:${pt} ${merged}`);
+}
+
+function tuneOpus<T extends RTCSessionDescriptionInit>(desc: T): T {
+  return desc.sdp ? { ...desc, sdp: tuneOpusSdp(desc.sdp) } : desc;
+}
+
+/** Áudio com prioridade alta na fila de envio (DSCP) e teto de bitrate. */
+async function tuneAudioSender(pc: RTCPeerConnection): Promise<void> {
+  const sender = findAudioTransceiver(pc)?.sender;
+  if (!sender || typeof sender.getParameters !== 'function') return;
+  try {
+    const params = sender.getParameters();
+    if (!params.encodings || params.encodings.length === 0) return;
+    for (const enc of params.encodings) {
+      enc.maxBitrate = OPUS_MAX_BITRATE;
+      enc.priority = 'high';
+      (enc as RTCRtpEncodingParameters & { networkPriority?: RTCPriorityType }).networkPriority = 'high';
+    }
+    await sender.setParameters(params);
+  } catch (err) {
+    console.debug('[WebRTC] tuneAudioSender ignorado:', err);
+  }
+}
+
+/**
+ * Diagnóstico de voz no console a cada 10 s: perda, jitter, ocultação
+ * (trechos "inventados" pelo decoder = som picotado), RTT e tipo de rota.
+ */
+async function logAudioStats(pc: RTCPeerConnection, peerId: string): Promise<void> {
+  const report = await pc.getStats();
+  let lost = 0;
+  let received = 0;
+  let jitter = 0;
+  let concealed = 0;
+  let totalSamples = 0;
+  let rtt: number | undefined;
+  let route = '?';
+  const byId = new Map<string, Record<string, unknown>>();
+  report.forEach((s: Record<string, unknown>) => byId.set(s.id as string, s));
+  report.forEach((s: Record<string, unknown>) => {
+    if (s.type === 'inbound-rtp' && s.kind === 'audio') {
+      lost += Number(s.packetsLost ?? 0);
+      received += Number(s.packetsReceived ?? 0);
+      jitter = Math.max(jitter, Number(s.jitter ?? 0));
+      concealed += Number(s.concealedSamples ?? 0);
+      totalSamples += Number(s.totalSamplesReceived ?? 0);
+    }
+    if (s.type === 'candidate-pair' && s.nominated && s.state === 'succeeded') {
+      rtt = s.currentRoundTripTime as number | undefined;
+      const local = byId.get(s.localCandidateId as string);
+      const remote = byId.get(s.remoteCandidateId as string);
+      route = `${String(local?.candidateType)}->${String(remote?.candidateType)}`;
+    }
+  });
+  const lossPct = received + lost > 0 ? (100 * lost) / (received + lost) : 0;
+  const concealPct = totalSamples > 0 ? (100 * concealed) / totalSamples : 0;
+  console.info(
+    `[WebRTC][voz] ${peerId}: perda=${lossPct.toFixed(1)}% jitter=${(jitter * 1000).toFixed(0)}ms ` +
+      `ocultado=${concealPct.toFixed(1)}% rtt=${rtt !== undefined ? (rtt * 1000).toFixed(0) : '?'}ms rota=${route}`,
+  );
+}
 
 /**
  * Transceiver de áudio que REALMENTE está no SDP: o associado a um m-line
@@ -122,22 +226,25 @@ interface IceRestartState {
   disconnectTimer: ReturnType<typeof setTimeout> | null;
 }
 
-async function fetchIceServers(roomId: string, roomTicket?: string | null): Promise<{ config: RTCConfiguration; expiresAt?: string | null }> {
+async function fetchIceServers(roomId: string, roomTicket?: string | null): Promise<{ config: RTCConfiguration; expiresAt?: number | string | null }> {
   try {
     const url = `/api/turn/credentials?roomId=${encodeURIComponent(roomId)}`;
     const res = await fetch(url, {
       signal: AbortSignal.timeout(3000),
       headers: roomTicketHeaders(roomTicket),
     });
-    // O convidado usa room ticket; sem autorização ou sem configuração TURN,
-    // a chamada ainda pode tentar conectividade direta via STUN.
+    // O TURN chega primeiro pelo evento `room:ice-servers` do join-room; esta
+    // busca (sessão ou room ticket) só renova a credencial temporária. Sem
+    // autorização ou sem TURN configurado, a chamada segue com STUN.
     if (!res.ok) {
       if (res.status === 401) {
         console.debug('[WebRTC] TURN indisponível sem participação — usando apenas STUN');
       }
       return { config: DEFAULT_ICE_SERVERS };
     }
-    const data = (await res.json()) as { iceServers?: RTCIceServer[]; expiresAt?: string | null };
+    // expiresAt: o backend manda epoch em SEGUNDOS (lib/turnCredentials.ts);
+    // ISO também é aceito por compatibilidade.
+    const data = (await res.json()) as { iceServers?: RTCIceServer[]; expiresAt?: number | string | null };
     if (data.iceServers && data.iceServers.length > 0) {
       return { config: { iceServers: data.iceServers }, expiresAt: data.expiresAt };
     }
@@ -168,7 +275,6 @@ export function useWebRTC(
   const isMutedRef = useRef(false);
   const mediaGenerationRef = useRef(0);
   const mediaRequestRef = useRef<Promise<boolean> | null>(null);
-  const [microphoneId, setMicrophoneId] = useState('');
   const [isChangingMicrophone, setIsChangingMicrophone] = useState(false);
   const [screenShareError, setScreenShareError] = useState<string | null>(null);
   const [screenAudioAvailable, setScreenAudioAvailable] = useState(false);
@@ -190,6 +296,39 @@ export function useWebRTC(
   const iceRestartStateRef = useRef<Map<string, IceRestartState>>(new Map());
   // Timers do aviso "peer conectado sem faixa de áudio" — limpos no cleanup.
   const audioDiagnosticTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+
+  // Config recebida do join-room (room:ice-servers): uma renovação que falhe
+  // (rate limit, rede) não pode rebaixar a chamada de TURN para só STUN.
+  const iceFromRoomRef = useRef(false);
+
+  // ICE servers do join-room: STUN + TURN com credencial temporária, também
+  // para convidado. O servidor emite ANTES do room:peer-joined, então PCs
+  // novos já nascem com relay; os existentes (re-join) recebem via
+  // setConfiguration e usam o TURN no próximo ICE restart.
+  const rawSocket = socketHook.socket;
+  useEffect(() => {
+    if (!rawSocket || typeof rawSocket.on !== 'function') return;
+    const onIceServers = (payload: { roomId?: string; iceServers?: RTCIceServer[]; turnEnabled?: boolean }) => {
+      if (payload?.roomId !== roomId || !Array.isArray(payload.iceServers) || payload.iceServers.length === 0) {
+        return;
+      }
+      const config: RTCConfiguration = { iceServers: payload.iceServers };
+      iceFromRoomRef.current = true;
+      iceConfigRef.current = config;
+      console.debug(`[WebRTC] ICE servers da sala (TURN ${payload.turnEnabled ? 'ligado' : 'desligado'})`);
+      peersRef.current.forEach((peer) => {
+        try {
+          peer.connection.setConfiguration({ ...peer.connection.getConfiguration(), ...config });
+        } catch (err) {
+          console.warn('[WebRTC] setConfiguration falhou para', peer.peerId, err);
+        }
+      });
+    };
+    rawSocket.on('room:ice-servers', onIceServers);
+    return () => {
+      rawSocket.off('room:ice-servers', onIceServers);
+    };
+  }, [rawSocket, roomId]);
 
   // ─── Broadcast peer map updates ───────────────────────────────
   const broadcastPeersUpdate = useCallback(() => {
@@ -285,7 +424,7 @@ export function useWebRTC(
         if (typeof pc.restartIce === 'function') {
           pc.restartIce();
         }
-        const offer = await pc.createOffer({ iceRestart: true });
+        const offer = tuneOpus(await pc.createOffer({ iceRestart: true }));
         await pc.setLocalDescription(offer);
         await socketHook.emitOffer(roomId, peerId, offer);
       } catch (err) {
@@ -304,7 +443,7 @@ export function useWebRTC(
     pendingNegotiationsRef.current.delete(peerId);
     makingOfferRef.current.add(peerId);
     try {
-      const offer = await pc.createOffer();
+      const offer = tuneOpus(await pc.createOffer());
       if (pc.signalingState !== 'stable') {
         pendingNegotiationsRef.current.add(peerId);
         return;
@@ -363,26 +502,37 @@ export function useWebRTC(
     if (!roomTicket) return;
     let active = true;
     let refreshTimer: ReturnType<typeof setTimeout> | undefined;
-    const refresh = async (resuming = false) => {
+    // Só os endereços contam como "mudou": a credencial temporária muda a cada
+    // busca, e reiniciar o ICE por isso logo após o join seria desperdício.
+    const serverUrls = (config: RTCConfiguration) =>
+      JSON.stringify((config.iceServers ?? []).map((server) => server.urls));
+    // scheduled = renovação antes de expirar: a alocação TURN em uso precisa
+    // da credencial nova, então o ICE reinicia.
+    const refresh = async (resuming = false, scheduled = false) => {
       if (refreshTimer) clearTimeout(refreshTimer);
       const { config, expiresAt } = await fetchIceServers(roomId, roomTicket);
       if (!active) return;
-      const previous = JSON.stringify(iceConfigRef.current);
-      iceConfigRef.current = config;
-      if (roomTicket && (resuming || previous !== JSON.stringify(config))) {
-        peersRef.current.forEach((peer, peerId) => {
-          if (peer.connection.signalingState === 'closed') return;
-          peer.connection.setConfiguration(config);
-          peer.connection.restartIce();
-          void requestNegotiationRef.current(peerId);
-        });
+      if (config === DEFAULT_ICE_SERVERS && iceFromRoomRef.current) {
+        // Falha na renovação: mantém o TURN do join e tenta de novo depois.
+        refreshTimer = setTimeout(() => { void refresh(resuming, scheduled); }, 300000);
+        return;
       }
-      const expiry = expiresAt ? Date.parse(expiresAt) : NaN;
+      const urlsChanged = serverUrls(iceConfigRef.current) !== serverUrls(config);
+      iceConfigRef.current = config;
+      const restart = resuming || scheduled || urlsChanged;
+      peersRef.current.forEach((peer, peerId) => {
+        if (peer.connection.signalingState === 'closed') return;
+        peer.connection.setConfiguration(config);
+        if (!restart) return;
+        peer.connection.restartIce();
+        void requestNegotiationRef.current(peerId);
+      });
+      const expiry = typeof expiresAt === 'number' ? expiresAt * 1000 : expiresAt ? Date.parse(expiresAt) : NaN;
       // Atualiza um minuto antes de expirar; após erro tenta de novo sem
       // derrubar os transportes ICE já estabelecidos da chamada.
       if (roomTicket) {
         const delay = Number.isFinite(expiry) ? Math.max(30000, expiry - Date.now() - 60000) : 300000;
-        refreshTimer = setTimeout(() => { void refresh(); }, delay);
+        refreshTimer = setTimeout(() => { void refresh(false, true); }, delay);
       }
     };
     const onResume = () => { void refresh(true); };
@@ -521,16 +671,30 @@ export function useWebRTC(
         broadcastPeersUpdate();
       };
 
+      let statsTimer: ReturnType<typeof setInterval> | null = null;
       pc.onconnectionstatechange = () => {
         const state = pc.connectionState;
         if (state === 'connected') {
           resetIceRestartState(peerId);
+          void tuneAudioSender(pc);
+          if (!statsTimer) {
+            statsTimer = setInterval(() => {
+              if (pc.connectionState === 'closed') {
+                if (statsTimer) clearInterval(statsTimer);
+                statsTimer = null;
+                return;
+              }
+              void logAudioStats(pc, peerId).catch(() => {});
+            }, STATS_LOG_INTERVAL_MS);
+          }
         } else if (state === 'failed') {
           // Connection failed: try to recover by restarting ICE (limited
           // attempts). Dropped only after exhausting the budget.
           void attemptIceRestart(peerId, 'connection-state');
         } else if (state === 'closed') {
           resetIceRestartState(peerId);
+          if (statsTimer) clearInterval(statsTimer);
+          statsTimer = null;
         }
         // 'disconnected' is handled below via oniceconnectionstatechange.
       };
@@ -639,7 +803,7 @@ export function useWebRTC(
         peersMetaRef.current.set(peer.peerId, meta);
         const pc = createPeerConnection(peer.peerId, meta);
         try {
-          const offer = await pc.createOffer();
+          const offer = tuneOpus(await pc.createOffer());
           await pc.setLocalDescription(offer);
           await socketHook.emitOffer(roomId, peer.peerId, offer);
           socketHook.emitScreenShareState(roomId, peer.peerId, Boolean(localScreenStreamRef.current));
@@ -665,8 +829,16 @@ export function useWebRTC(
     setIsChangingMicrophone(true);
     let candidate: MediaStream | null = null;
     try {
+      // deviceId explícito (escolha ao vivo nas Configurações) usa `exact`: se
+      // falhar, a voz anterior é mantida. '' = o microfone salvo nas
+      // configurações como `ideal`, para que um aparelho que sumiu caia no
+      // padrão do sistema em vez de falhar.
+      const savedMic = deviceId ? '' : getSavedDeviceId('input');
+      const constraint = deviceId
+        ? { deviceId: { exact: deviceId } }
+        : savedMic ? { deviceId: { ideal: savedMic } } : {};
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { ...AUDIO_CONSTRAINTS, ...(deviceId ? { deviceId: { exact: deviceId } } : {}) },
+        audio: { ...AUDIO_CONSTRAINTS, ...constraint },
         video: false,
       });
       candidate = stream;
@@ -701,7 +873,6 @@ export function useWebRTC(
       localStreamRef.current = stream;
       candidate = null;
       setLocalStream(stream);
-      setMicrophoneId(deviceId);
       setIsMuted(isMutedRef.current);
       setAudioMuted(isMutedRef.current);
       setMediaError(null);
@@ -714,9 +885,10 @@ export function useWebRTC(
     } catch (error) {
       candidate?.getTracks().forEach((track) => track.stop());
       if (generation !== mediaGenerationRef.current) return false;
-      const name = mediaErrorName(error);
-      setMediaError(name);
+      // Troca que falhou com a voz anterior ainda viva não é "microfone
+      // indisponível": quem chamou (Configurações) avisa por conta própria.
       if (!localStreamRef.current?.getAudioTracks().some((track) => track.readyState === 'live')) {
+        setMediaError(mediaErrorName(error));
         isMutedRef.current = true;
         setIsMuted(true);
         setAudioMuted(true);
@@ -727,7 +899,9 @@ export function useWebRTC(
     }
   }, []);
 
-  const audioDevices = useAudioDevices({ localStream, microphoneId, captureMicrophone });
+  // Troca ao vivo pelas Configurações → Áudio (room/page.tsx). Mesmo caminho da
+  // captura inicial: só assume a faixa nova quando todos os peers aceitaram.
+  const switchMicrophone = captureMicrophone;
 
   const initMedia = useCallback(async (): Promise<void> => {
     if (localStreamRef.current?.getAudioTracks().some((track) => track.readyState === 'live')) return;
@@ -930,7 +1104,7 @@ export function useWebRTC(
       // We are the existing peer — create offer to the new peer
       const pc = createPeerConnection(peer.peerId, meta);
       try {
-        const offer = await pc.createOffer();
+        const offer = tuneOpus(await pc.createOffer());
         await pc.setLocalDescription(offer);
         await socketHook.emitOffer(roomId, peer.peerId, offer);
           socketHook.emitScreenShareState(roomId, peer.peerId, Boolean(localScreenStreamRef.current));
@@ -1030,7 +1204,7 @@ export function useWebRTC(
       }
       prepareAudioForAnswer(pc, localStreamRef.current);
       if (syncScreenTracks(data.fromPeerId, pc)) pendingNegotiationsRef.current.add(data.fromPeerId);
-      const answer = await pc.createAnswer();
+      const answer = tuneOpus(await pc.createAnswer());
       await pc.setLocalDescription(answer);
       socketHook.emitAnswer(roomId, data.fromPeerId, answer);
       socketHook.emitScreenShareState(roomId, data.fromPeerId, Boolean(localScreenStreamRef.current));
@@ -1120,7 +1294,6 @@ export function useWebRTC(
   return useMemo<UseWebRTCHReturn>(
     () => ({
       peers,
-      audioDevices,
       isChangingMicrophone,
       screenShareError,
       screenAudioAvailable,
@@ -1134,13 +1307,13 @@ export function useWebRTC(
       toggleMute,
       toggleDeafen,
       toggleScreenShare,
+      switchMicrophone,
       initMedia,
       cleanupMedia,
       connectToPeers,
     }),
     [
       peers,
-      audioDevices,
       isChangingMicrophone,
       screenShareError,
       screenAudioAvailable,
@@ -1154,6 +1327,7 @@ export function useWebRTC(
       toggleMute,
       toggleDeafen,
       toggleScreenShare,
+      switchMicrophone,
       initMedia,
       cleanupMedia,
       connectToPeers,

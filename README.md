@@ -81,6 +81,10 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
 | `DATABASE_URL` | URL do SQLite | `file:./data.db` |
 | `ALLOWED_ORIGINS` | Origens CORS permitidas (CSV) | `http://localhost:3000,http://localhost:8080` |
 | `ENABLE_TURN` | Habilitar servidor TURN | `false` |
+| `TURN_URL` | URLs TURN (CSV) com o IP/dominio publico do host | vazio |
+| `TURN_SECRET` | Segredo da credencial TURN temporaria (o mesmo vai para o coturn) | vazio |
+| `TURN_EXTERNAL_IP` | IP publico anunciado pelo coturn | vazio |
+| `TURN_TTL_SECONDS` | Validade da credencial TURN | `86400` |
 | `PROXY_PORT` | Porta do proxy (Caddy) no host: e a entrada do app | `8080` |
 | `PORT` | Porta do backend em dev no host (container sempre 4000) | `4100` |
 | `BACKEND_PORT` | Porta do backend publicada no host (so loopback) | `4100` |
@@ -190,8 +194,9 @@ Regra geral: **nada do servidor e consultavel pelo front sem a prova certa**.
 
 ### COTURN (profile `turn`)
 
-- Servidor TURN para WebRTC
-- Uso quando NAT traversal direto nao funciona
+- Servidor TURN para WebRTC: sem ele, quem esta atras de CGNAT/4G/rede de empresa entra na sala mas ninguem se ouve
+- Credencial temporaria (REST API do coturn, `TURN_SECRET`), entregue a todo participante que entra na sala (logado ou convidado) pelo evento `room:ice-servers`
+- O audio NAO passa pelo tunel: abra 3478 UDP+TCP e 49160-49200 UDP no roteador/firewall do host
 
 ## Observabilidade
 

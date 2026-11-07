@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/Input';
 import { Logo } from '@/components/ui/Logo';
 import { Icon } from '@/components/ui/Icon';
 import Link from 'next/link';
-import { GithubLoginButton, readGithubError } from '@/components/auth/GithubLogin';
+import { OAuthLoginButtons, readOAuthError } from '@/components/auth/OAuthLogin';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -16,11 +16,11 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Erro do login com GitHub (/login?github=<codigo>). Em efeito, nao no
+  // Erro do login externo (/login?github=<codigo> ou ?google=<codigo>). Em efeito, nao no
   // estado inicial: a pagina e pre-renderizada sem query (export estatico).
   useEffect(() => {
-    const githubError = readGithubError();
-    if (githubError) setError(githubError);
+    const oauthError = readOAuthError();
+    if (oauthError) setError(oauthError);
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -29,12 +29,12 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      await api.login({ email, password });
+      await api.login({ email: email.trim(), password });
       window.location.href = '/';
     } catch (err: unknown) {
       const apiErr = err as { error?: string; status?: number };
       if (apiErr.status === 401) {
-        setError('Email ou senha incorretos');
+        setError('Usuário ou senha incorretos');
       } else {
         setError(apiErr.error || 'Falha ao fazer login');
       }
@@ -56,13 +56,16 @@ export default function LoginPage() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <Input
-              label="E-mail"
-              type="email"
-              placeholder="seu@email.com"
+              id="login"
+              label="E-mail ou nome de usuário"
+              type="text"
+              placeholder="seu@email.com ou @usuario"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              autoComplete="email"
+              autoComplete="username"
+              autoCapitalize="none"
+              spellCheck={false}
             />
             <Input
               label="Senha"
@@ -85,7 +88,7 @@ export default function LoginPage() {
             </Button>
           </form>
 
-          <GithubLoginButton />
+          <OAuthLoginButtons />
 
           <div className="mt-4 text-center">
             <Link

@@ -263,6 +263,24 @@ describe('participacao efetiva: historico, download e upload exigem room ticket 
     }
   });
 
+  it('join-room de convidado entrega ICE servers (room:ice-servers) para a sala', async () => {
+    const client = await connect(h.port, { guestName: 'Ice', guestId: randomUUID() });
+    try {
+      const iceEvent = nextEvent<{ roomId: string; iceServers: RTCIceServer[]; turnEnabled: boolean }>(
+        client,
+        'room:ice-servers',
+      );
+      const ack = await emitAck(client, 'join-room', { roomId });
+      expect(ack.success).toBe(true);
+      const evt = await iceEvent;
+      expect(evt.roomId).toBe(roomId);
+      expect(evt.iceServers.length).toBeGreaterThan(0);
+      expect(typeof evt.turnEnabled).toBe('boolean');
+    } finally {
+      client.disconnect();
+    }
+  });
+
   it('join-room negado (senha errada) nao emite ticket', async () => {
     const bcrypt = (await import('bcryptjs')).default;
     const locked = await prisma.room.create({
@@ -272,6 +290,7 @@ describe('participacao efetiva: historico, download e upload exigem room ticket 
     try {
       let got = false;
       client.on('room:ticket', () => (got = true));
+      client.on('room:ice-servers', () => (got = true));
       const ack = await emitAck(client, 'join-room', { roomId: locked.id, password: 'errada-xx' });
       expect(ack.error).toBeDefined();
       expect(ack.ticket).toBeUndefined();

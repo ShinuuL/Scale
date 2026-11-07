@@ -28,6 +28,25 @@ const friend = { id: 'bia', name: 'Bia', username: 'bia', avatarUpdatedAt: null 
 const empty = { friends: [], incoming: [], outgoing: [] };
 
 describe('amigos e conversas', () => {
+  it('preserva ligação pelo painel e pela conversa, com erro acessível e recuperação', async () => {
+    vi.spyOn(api, 'getFriends').mockResolvedValue({ ...empty, friends: [friend] });
+    vi.spyOn(api, 'getDirectMessages').mockResolvedValue({ messages: [], hasMore: false });
+    const startCall = vi.spyOn(api, 'startCall').mockRejectedValue({ status: 429 });
+    render(<FriendsPage />);
+    const sidebar = screen.getByRole('complementary', { name: 'Painel lateral' });
+    fireEvent.click(await within(sidebar).findByRole('button', { name: 'Ligar para Bia' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Muitas ligações seguidas');
+    expect(startCall).toHaveBeenCalledWith('bia');
+    expect(within(sidebar).getByRole('button', { name: 'Ligar para Bia' })).toBeEnabled();
+
+    fireEvent.click(await screen.findByRole('button', { name: /Abrir conversa com Bia/ }));
+    const conversation = await screen.findByRole('region', { name: 'Conversa com Bia' });
+    startCall.mockRejectedValueOnce({ status: 503 });
+    fireEvent.click(within(conversation).getByRole('button', { name: 'Ligar para Bia' }));
+    await waitFor(() => expect(startCall).toHaveBeenCalledTimes(2));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível ligar agora.');
+  });
+
   beforeEach(() => {
     vi.restoreAllMocks();
     vi.spyOn(api, 'getMe').mockResolvedValue({ user: me });

@@ -101,7 +101,11 @@ export function hardenWebContents(contents: WebContents): void {
   }
 }
 
-/** Notifications require explicit native consent, scoped to origin and session. */
+/**
+ * Handlers de permissao da sessao: so 'media' (audio), 'display-capture' e
+ * 'speaker-selection' da origin configurada. Notifications exigem consentimento
+ * nativo explicito, por origin e por sessao.
+ */
 export function installPermissionHandlers(ses: Session): void {
   ses.setPermissionRequestHandler((contents, permission, callback, details) => {
     if (permission === 'notifications') {

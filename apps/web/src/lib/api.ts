@@ -1,6 +1,16 @@
 import { z } from 'zod';
 import type { CreateRoomInput, RoomResponse, RoomListItem, AuthResponse, LoginInput, RegisterInput, Metrics } from './validation';
-import { directMessageSchema, dmSendSchema, friendsListSchema, type DirectMessage, type FriendsList } from '@scale/shared';
+import {
+  acceptCallResponseSchema,
+  activeCallsSchema,
+  directMessageSchema,
+  dmSendSchema,
+  friendsListSchema,
+  startCallResponseSchema,
+  type ActiveCalls,
+  type DirectMessage,
+  type FriendsList,
+} from '@scale/shared';
 import { createRoomSchema, authResponseSchema, roomResponseSchema, roomListItemSchema, metricsSchema } from './validation';
 
 // Caminhos SEMPRE relativos (`/api/...`): em producao o Caddy serve o frontend
@@ -186,10 +196,61 @@ class ApiClient {
     return authResponseSchema.parse(data);
   }
 
+  // ─── Ligacoes ───────────────────────────────────────────────
+  /**
+   * Liga para um amigo e faz a tela dele tocar. Sem `roomId` cria uma sala
+   * privada nova; com `roomId` chama para a sala em que voce ja esta.
+   */
+  async startCall(friendId: string, roomId?: string): Promise<{ callId: string; roomId: string; expiresAt: string }> {
+    const data = await this.request<unknown>('/api/calls', {
+      method: 'POST',
+      body: JSON.stringify(roomId ? { friendId, roomId } : { friendId }),
+    });
+    return startCallResponseSchema.parse(data);
+  }
+
+  /** Chamadas tocando agora (recebidas e feitas por esta conta). */
+  async getActiveCalls(): Promise<ActiveCalls> {
+    return activeCallsSchema.parse(await this.request<unknown>('/api/calls'));
+  }
+
+  async acceptCall(callId: string): Promise<{ roomId: string; inviteToken: string }> {
+    const data = await this.request<unknown>(`/api/calls/${encodeURIComponent(callId)}/accept`, {
+      method: 'POST',
+      body: '{}',
+    });
+    return acceptCallResponseSchema.parse(data);
+  }
+
+  async declineCall(callId: string): Promise<void> {
+    await this.request(`/api/calls/${encodeURIComponent(callId)}/decline`, { method: 'POST', body: '{}' });
+  }
+
+  async cancelCall(callId: string): Promise<void> {
+    await this.request(`/api/calls/${encodeURIComponent(callId)}/cancel`, { method: 'POST', body: '{}' });
+  }
+
+  /** O @nome esta livre? (o servidor normaliza: "@Fulano" vira "fulano"). */
+  async checkUsername(username: string): Promise<{ username: string; available: boolean }> {
+    const data = await this.request<unknown>(
+      `/api/auth/username-available?username=${encodeURIComponent(username)}`,
+    );
+    return z.object({ username: z.string(), available: z.boolean() }).parse(data);
+  }
+
   /** Provedores de login externos ligados no servidor (o botao some quando desligado). */
-  async getAuthProviders(): Promise<{ github: boolean }> {
+  async getAuthProviders(): Promise<{ github: boolean; google: boolean }> {
     const data = await this.request<unknown>('/api/auth/providers');
-    return z.object({ github: z.boolean() }).parse(data);
+    // `google` com default: servidor antigo (sem o campo) = desligado.
+    return z.object({ github: z.boolean(), google: z.boolean().default(false) }).parse(data);
+  }
+
+  /** Contas de login externo vinculadas a conta logada. */
+  async getLinkedAccounts(): Promise<{ github: { login: string } | null; google: boolean }> {
+    const data = await this.request<unknown>('/api/me/links');
+    return z
+      .object({ github: z.object({ login: z.string() }).nullable(), google: z.boolean() })
+      .parse(data);
   }
 
   async getMe(): Promise<{ user: MeUser }> {

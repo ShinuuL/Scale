@@ -140,11 +140,38 @@ docker compose up --build -d
   vinda do github.com), `__Host-` em produção (site irmão não planta cookie),
   uso único, 10 min. `code`/`state` são redigidos nos logs.
 - Escopos `read:user user:email`; o access token não é gravado.
-- Conta: githubId vinculado (tabela `GithubAccount`) entra; e-mail já cadastrado
-  sem vínculo **não** é vinculado sozinho (o cadastro por senha não verifica
-  e-mail); senão cria conta com o e-mail primário **verificado** do GitHub.
+- Conta: regras comuns em "Contas vinculadas" abaixo; e-mail usado é o
+  primário **verificado** do GitHub.
 - Balde `githubOAuth`: 20 / 10 min por IP; criação também conta no `register`.
-- Erros voltam como `/login?github=<cancelado|falhou|email_em_uso|sem_email|limite|desligado>`.
+- Erros voltam como `/login?github=<cancelado|falhou|outra_conta|sem_email|limite|desligado>`.
+
+### Login com Google (OAuth/OIDC)
+- Opcional: liga com `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` e `PUBLIC_URL`
+  (callback `<PUBLIC_URL>/api/auth/google/callback`). `GET /api/auth/providers`
+  devolve `{ github, google }`.
+- Mesmo desenho do GitHub: `state` em cookie HttpOnly `SameSite=Lax`
+  (`__Host-` em produção), uso único, 10 min; escopos `openid email profile`;
+  access token descartado; balde `googleOAuth` 20 / 10 min por IP.
+- Conta: vínculo pelo `sub` (tabela `GoogleAccount`); e-mail só com
+  `email_verified`. Regras comuns em "Contas vinculadas".
+- Erros: `/login?google=<cancelado|falhou|outra_conta|sem_email|limite|desligado>`.
+
+### Contas vinculadas (GitHub e Google)
+- Rotas numa fábrica só: `apps/server/src/routes/oauthAuth.ts`; regras de conta
+  em `apps/server/src/lib/oauthAccount.ts`.
+- Login: id do provedor já vinculado → entra. Senão, e-mail **verificado** pelo
+  provedor que já existe → **vincula automaticamente** e entra (decisão de
+  produto; fica no log). Se essa conta já tem OUTRA conta do mesmo provedor →
+  `outra_conta`. Senão cria a conta.
+  - Risco aceito: o cadastro por senha não confirma e-mail; quem tivesse
+    pré-cadastrado o e-mail de outra pessoa continuaria entrando com a senha.
+- Vínculo pela sessão (Configurações > Contas vinculadas, vale para e-mail
+  diferente): `GET /api/auth/<p>/link` (logado) → provedor → callback →
+  `/?vinculo=<p>.<ok|outra_conta|ja_vinculado|cancelado|falhou|limite>`.
+  Como o cookie de sessão é `SameSite=Strict` e não vem na volta do provedor,
+  a intenção `state → userId` fica **na memória do servidor** (10 min, uso
+  único), nunca em cookie editável. Vincular não troca a sessão.
+- `GET /api/me/links` (logado): `{ github: { login } | null, google }`.
 
 ### Convidado (guestId)
 - O servidor emite um `guestId` (UUID v4) no cookie `scale_guest` — HttpOnly,

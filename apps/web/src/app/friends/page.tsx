@@ -12,6 +12,7 @@ import {
 } from '@scale/shared';
 import { api, type MeUser } from '@/lib/api';
 import { useUserEvents } from '@/hooks/useUserEvents';
+import { roomPath } from '@/lib/roomLink';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { Input } from '@/components/ui/Input';
@@ -153,6 +154,23 @@ export default function FriendsPage() {
       setSelectedId(null);
   }, [list, selectedId]);
 
+  // Liga: o servidor cria a sala privada e faz a tela do amigo tocar; quem
+  // liga entra na sala e espera la (o cartao "Chamando…" vem do CallCenter).
+  const [callingId, setCallingId] = useState<string | null>(null);
+  const [callError, setCallError] = useState<string | null>(null);
+  const callFriend = async (friendId: string) => {
+    setCallingId(friendId);
+    setCallError(null);
+    try {
+      const { roomId } = await api.startCall(friendId);
+      window.location.href = roomPath(roomId);
+    } catch (err) {
+      const status = (err as { status?: number }).status;
+      setCallError(status === 429 ? 'Muitas ligações seguidas. Espere um pouco.' : 'Não foi possível ligar agora.');
+      setCallingId(null);
+    }
+  };
+
   const openChat = (id: string) => {
     setView('conversations');
     setSelectedId(id);
@@ -228,6 +246,7 @@ export default function FriendsPage() {
           </button>
         </div>
         <div className="p-3">
+          {callError && <p role="alert" className="px-2 py-2 text-sm text-red-400">{callError}</p>}
           <h2 className="px-2 py-2 text-sm font-semibold text-ink-secondary">Conversas</h2>
           {listState === 'loading' && (
             <p role="status" className="p-2 text-sm text-ink-muted">
@@ -249,13 +268,13 @@ export default function FriendsPage() {
           )}
           <ul className="space-y-1">
             {list.friends.map((friend) => (
-              <li key={friend.id}>
+              <li key={friend.id} className="flex items-center gap-1">
                 <button
                   type="button"
                   onClick={() => openChat(friend.id)}
                   aria-current={selectedId === friend.id ? 'page' : undefined}
                   className={clsx(
-                    'flex min-h-14 w-full items-center gap-3 rounded-md px-2 py-2 text-left hover:bg-surface-hover',
+                    'flex min-h-14 min-w-0 flex-1 items-center gap-3 rounded-md px-2 py-2 text-left hover:bg-surface-hover',
                     selectedId === friend.id && 'bg-accent-subtle',
                   )}
                 >
@@ -280,6 +299,9 @@ export default function FriendsPage() {
                     </span>
                   )}
                 </button>
+                <Button variant="ghost" size="sm" onClick={() => void callFriend(friend.id)} disabled={callingId !== null} aria-label={`Ligar para ${friend.name}`}>
+                  <Icon name="phone" />
+                </Button>
               </li>
             ))}
           </ul>
@@ -377,6 +399,8 @@ export default function FriendsPage() {
               friend={selected}
               incoming={incomingByFriend[selected.id] ?? []}
               onBack={() => setSelectedId(null)}
+              onCall={() => void callFriend(selected.id)}
+              calling={callingId === selected.id}
               onRemoveFriend={() =>
                 void act(async () => {
                   await api.removeFriend(selected.id);
@@ -517,11 +541,11 @@ export default function FriendsPage() {
                       ) : (
                         <ul className="divide-y divide-line">
                           {list.friends.map((friend) => (
-                            <li key={friend.id}>
+                            <li key={friend.id} className="flex items-center gap-1">
                               <button
                                 type="button"
                                 onClick={() => openChat(friend.id)}
-                                className="flex min-h-16 w-full items-center gap-3 rounded-md px-2 py-3 text-left hover:bg-surface-hover"
+                                className="flex min-h-16 min-w-0 flex-1 items-center gap-3 rounded-md px-2 py-3 text-left hover:bg-surface-hover"
                               >
                                 <UserAvatar
                                   userId={friend.id}
@@ -539,6 +563,9 @@ export default function FriendsPage() {
                                 <Icon name="chat" className="text-ink-muted" />
                                 <span className="sr-only">Abrir conversa com {friend.name}</span>
                               </button>
+                              <Button variant="ghost" size="sm" onClick={() => void callFriend(friend.id)} disabled={callingId !== null} aria-label={`Ligar para ${friend.name}`}>
+                                <Icon name="phone" />
+                              </Button>
                             </li>
                           ))}
                         </ul>

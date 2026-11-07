@@ -77,6 +77,26 @@ Editar configuração (admins, TURN...): `nano /opt/scale/.env` e depois `./depl
    ```
 4. Rode `./deploy/deploy.sh`. O botão "Entrar com GitHub" aparece no login.
 
+## Login com Google
+
+1. No Google Cloud Console, em **APIs e serviços > Tela de permissão OAuth**,
+   configure o app (tipo **Externo**, escopos `openid`, `email`, `profile`) e
+   publique-o (em "Teste", só os usuários de teste listados conseguem entrar).
+2. Em **Credenciais > Criar credenciais > ID do cliente OAuth**, tipo
+   **Aplicativo da Web**:
+   - Origem JavaScript autorizada: `https://scale.nexushosts.tech:8443`
+   - URI de redirecionamento: `https://scale.nexushosts.tech:8443/api/auth/google/callback`
+3. No `.env` da VPS (`PUBLIC_URL` é o mesmo do GitHub):
+   ```
+   GOOGLE_CLIENT_ID=<client id>
+   GOOGLE_CLIENT_SECRET=<client secret>
+   ```
+4. Rode `./deploy/deploy.sh`. O botão "Entrar com Google" aparece no login.
+
+Regra de conta igual à do GitHub: quem entra com um e-mail verificado que já
+tem conta no Scale é vinculado automaticamente. Para vincular uma conta com
+e-mail diferente: Configurações > Contas vinculadas > Vincular.
+
 ## Backup e restauração
 
 O script produz **um arquivo conjunto** `backups/backup-AAAAMMDD-HHMMSS-PID.tar.gz`,
@@ -142,11 +162,10 @@ copie os backups para fora da VPS (`scp`/`rclone`).
 ## TURN e observabilidade da VPS
 
 `TURN_URL`, `TURN_USERNAME` e `TURN_CREDENTIAL` continuam suportados para
-provedores com credencial estática. Opcionalmente `TURN_AUTH_SECRET` habilita
-credenciais HMAC SHA1 temporárias de uma hora, no padrão REST do coturn:
-o relay externo precisa de `use-auth-secret` e do mesmo segredo estático.
-Não configure esse modo se o provedor não o suporta. O Compose não configura
-sozinho o coturn para esse segredo nem altera a infraestrutura externa.
+provedores com credencial estática. `TURN_SECRET` habilita credenciais HMAC
+SHA1 temporárias (validade em `TURN_TTL_SECONDS`), no padrão REST do coturn:
+o serviço `coturn` do Compose (perfil `turn`) já sobe com `use-auth-secret` e o
+mesmo segredo. Um relay externo precisa da mesma configuração.
 
 `GET /api/turn/credentials?roomId=<uuid>` aceita convidados somente com
 `X-Room-Ticket` válido de uma sala ativa em que entraram. Login continua

@@ -28,6 +28,7 @@ model User {
 
   username               Username?
   githubAccount          GithubAccount?
+  googleAccount          GoogleAccount?
   friendRequestsSent     Friendship[]    @relation("FriendshipRequester")
   friendRequestsReceived Friendship[]    @relation("FriendshipAddressee")
   directMessagesSent     DirectMessage[] @relation("DirectMessageSender")
@@ -41,6 +42,18 @@ model GithubAccount {
   id        String   @id @default(cuid())
   githubId  String   @unique
   login     String
+  userId    String   @unique
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Conta Google vinculada (login OAuth/OIDC). `googleId` e o `sub` estavel do
+// Google. Tabela propria pelo mesmo motivo do GithubAccount; o access token
+// nao e guardado.
+model GoogleAccount {
+  id        String   @id @default(cuid())
+  googleId  String   @unique
   userId    String   @unique
   createdAt DateTime @default(now())
 

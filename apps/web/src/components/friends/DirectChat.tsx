@@ -14,6 +14,10 @@ export interface DirectChatProps {
   incoming: DirectMessage[];
   onBack?: () => void;
   onRemoveFriend: () => void;
+  /** Liga para o amigo (botao some quando ausente). */
+  onCall?: () => void;
+  /** Ligacao sendo criada: desabilita o botao. */
+  calling?: boolean;
 }
 
 const timeFmt = new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' });
@@ -35,7 +39,7 @@ function mergeMessages(a: DirectMessage[], b: DirectMessage[]): DirectMessage[] 
 }
 
 /** Conversa privada com um amigo: historico paginado, envio e tempo real. */
-export function DirectChat({ meId, friend, incoming, onBack, onRemoveFriend }: DirectChatProps) {
+export function DirectChat({ meId, friend, incoming, onBack, onRemoveFriend, onCall, calling = false }: DirectChatProps) {
   const [messages, setMessages] = useState<DirectMessage[]>([]);
   const [historyFailed, setHistoryFailed] = useState(false);
   const [historyAttempt, setHistoryAttempt] = useState(0);
@@ -161,6 +165,19 @@ export function DirectChat({ meId, friend, incoming, onBack, onRemoveFriend }: D
           <h2 className="truncate text-sm font-semibold text-white">{friend.name}</h2>
           {friend.username && <p className="truncate text-xs text-ink-muted">@{friend.username}</p>}
         </div>
+        {onCall && !confirmRemove && (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={onCall}
+            disabled={calling}
+            aria-busy={calling}
+            aria-label={`Ligar para ${friend.name}`}
+          >
+            <Icon name="phone" size={14} />
+            <span className="hidden sm:inline">{calling ? 'Ligando...' : 'Ligar'}</span>
+          </Button>
+        )}
         {confirmRemove ? (
           <div className="flex items-center gap-2">
             <span className="hidden text-xs text-ink-muted sm:inline">Desfazer amizade?</span>

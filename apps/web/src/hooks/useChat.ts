@@ -5,6 +5,7 @@ import type { Socket } from 'socket.io-client';
 import { CHAT_MESSAGE_MAX } from '@scale/shared';
 import { chatMessageClientSchema, chatEditClientSchema } from '@/lib/validation';
 import { roomTicketHeaders } from '@/lib/roomAccess';
+import { applySavedSink } from '@/lib/audioDevices';
 
 // ─── Tipos públicos ────────────────────────────────────────────
 export interface ChatFileInfo {
@@ -62,6 +63,7 @@ function playMentionSound(): void {
   try {
     const audio = new Audio(MENTION_SOUND_URL);
     audio.volume = MENTION_SOUND_VOLUME;
+    void applySavedSink(audio);
     audio.play().catch(() => {});
   } catch {
     // Audio indisponível (SSR / ambiente sem áudio) — menção ainda chega via UI

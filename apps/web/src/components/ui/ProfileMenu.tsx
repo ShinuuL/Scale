@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { clsx } from 'clsx';
 import { Icon } from '@/components/ui/Icon';
 import { SettingsDialog } from '@/components/ui/SettingsDialog';
+import { hasLinkResult } from '@/components/ui/LinkedAccounts';
 import { avatarUrl, type MeUser } from '@/lib/api';
 
 interface ProfileMenuProps {
@@ -54,6 +55,12 @@ function Avatar({ name, photo, size }: { name: string; photo: string | null; siz
 export function ProfileMenu({ name, email, isAuthenticated, user, onUserChange, className, onNavigate }: ProfileMenuProps) {
   const [open, setOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // Volta do vinculo GitHub/Google (/?vinculo=...): reabre as Configuracoes
+  // para mostrar o resultado na secao "Contas vinculadas".
+  useEffect(() => {
+    if (isAuthenticated && hasLinkResult()) setSettingsOpen(true);
+  }, [isAuthenticated]);
   const photo = avatarUrl(user?.avatarUpdatedAt);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);

@@ -9,7 +9,8 @@
 #     (acme-dns), pois 80/443 da VPS sao de outro projeto;
 #   - `proxy` deixa de ser publicado em 0.0.0.0 (so loopback, diagnostico);
 #   - backend confia tambem na borda (172.28.0.6) no TRUST_PROXY;
-#   - restart automatico em todos os servicos.
+#   - restart automatico em todos os servicos;
+#   - health check no `coturn` (TURN, profile `turn`).
 # O tunel cloudflared NAO e usado aqui (nao ative o profile `tunnel`).
 
 services:
@@ -64,6 +65,17 @@ services:
         # IP ESTATICO: entra no TRUST_PROXY do backend e no trusted_proxies
         # do Caddyfile interno.
         ipv4_address: 172.28.0.6
+
+  # coturn: definido no compose base (profile `turn`, ligado pelo deploy.sh
+  # quando ENABLE_TURN=true). Aqui so o health check: binding STUN no proprio
+  # servidor; sem resposta o `timeout` encerra (124).
+  coturn:
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 4 turnutils_stunclient 127.0.0.1 >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 6s
+      retries: 3
+      start_period: 10s
 
 volumes:
   edge_data:
