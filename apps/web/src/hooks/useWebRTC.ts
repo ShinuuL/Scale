@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import type { UseSocketReturn, PeerInfo } from './useSocket';
+import { getSavedDeviceId } from '@/lib/audioDevices';
 import { roomTicketHeaders } from '@/lib/roomAccess';
-import { useAudioDevices, type AudioDevicesState } from './useAudioDevices';
 
 export interface PeerConnection {
   peerId: string;
@@ -19,7 +19,6 @@ export interface PeerConnection {
 
 export interface UseWebRTCHReturn {
   peers: Map<string, PeerConnection>;
-  audioDevices: AudioDevicesState;
   isChangingMicrophone: boolean;
   screenShareError: string | null;
   screenAudioAvailable: boolean;
@@ -47,6 +46,12 @@ export interface UseWebRTCHReturn {
    * `null` quando bloqueado (contexto inseguro / getDisplayMedia indisponível).
    */
   toggleScreenShare: () => Promise<boolean | null>;
+  /**
+   * Troca o microfone ao vivo ('' = padrão do sistema): replaceTrack em todos
+   * os peers, sem renegociar, preservando o mudo. Falhou = mantém a faixa
+   * antiga e devolve false.
+   */
+  switchMicrophone: (deviceId: string) => Promise<boolean>;
   initMedia: () => Promise<void>;
   cleanupMedia: () => void;
   /**
@@ -122,22 +127,25 @@ interface IceRestartState {
   disconnectTimer: ReturnType<typeof setTimeout> | null;
 }
 
-async function fetchIceServers(roomId: string, roomTicket?: string | null): Promise<{ config: RTCConfiguration; expiresAt?: string | null }> {
+async function fetchIceServers(roomId: string, roomTicket?: string | null): Promise<{ config: RTCConfiguration; expiresAt?: number | string | null }> {
   try {
     const url = `/api/turn/credentials?roomId=${encodeURIComponent(roomId)}`;
     const res = await fetch(url, {
       signal: AbortSignal.timeout(3000),
       headers: roomTicketHeaders(roomTicket),
     });
-    // O convidado usa room ticket; sem autorização ou sem configuração TURN,
-    // a chamada ainda pode tentar conectividade direta via STUN.
+    // O TURN chega primeiro pelo evento `room:ice-servers` do join-room; esta
+    // busca (sessão ou room ticket) só renova a credencial temporária. Sem
+    // autorização ou sem TURN configurado, a chamada segue com STUN.
     if (!res.ok) {
       if (res.status === 401) {
         console.debug('[WebRTC] TURN indisponível sem participação — usando apenas STUN');
       }
       return { config: DEFAULT_ICE_SERVERS };
     }
-    const data = (await res.json()) as { iceServers?: RTCIceServer[]; expiresAt?: string | null };
+    // expiresAt: o backend manda epoch em SEGUNDOS (lib/turnCredentials.ts);
+    // ISO também é aceito por compatibilidade.
+    const data = (await res.json()) as { iceServers?: RTCIceServer[]; expiresAt?: number | string | null };
     if (data.iceServers && data.iceServers.length > 0) {
       return { config: { iceServers: data.iceServers }, expiresAt: data.expiresAt };
     }
@@ -168,7 +176,6 @@ export function useWebRTC(
   const isMutedRef = useRef(false);
   const mediaGenerationRef = useRef(0);
   const mediaRequestRef = useRef<Promise<boolean> | null>(null);
-  const [microphoneId, setMicrophoneId] = useState('');
   const [isChangingMicrophone, setIsChangingMicrophone] = useState(false);
   const [screenShareError, setScreenShareError] = useState<string | null>(null);
   const [screenAudioAvailable, setScreenAudioAvailable] = useState(false);
@@ -190,6 +197,39 @@ export function useWebRTC(
   const iceRestartStateRef = useRef<Map<string, IceRestartState>>(new Map());
   // Timers do aviso "peer conectado sem faixa de áudio" — limpos no cleanup.
   const audioDiagnosticTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+
+  // Config recebida do join-room (room:ice-servers): uma renovação que falhe
+  // (rate limit, rede) não pode rebaixar a chamada de TURN para só STUN.
+  const iceFromRoomRef = useRef(false);
+
+  // ICE servers do join-room: STUN + TURN com credencial temporária, também
+  // para convidado. O servidor emite ANTES do room:peer-joined, então PCs
+  // novos já nascem com relay; os existentes (re-join) recebem via
+  // setConfiguration e usam o TURN no próximo ICE restart.
+  const rawSocket = socketHook.socket;
+  useEffect(() => {
+    if (!rawSocket || typeof rawSocket.on !== 'function') return;
+    const onIceServers = (payload: { roomId?: string; iceServers?: RTCIceServer[]; turnEnabled?: boolean }) => {
+      if (payload?.roomId !== roomId || !Array.isArray(payload.iceServers) || payload.iceServers.length === 0) {
+        return;
+      }
+      const config: RTCConfiguration = { iceServers: payload.iceServers };
+      iceFromRoomRef.current = true;
+      iceConfigRef.current = config;
+      console.debug(`[WebRTC] ICE servers da sala (TURN ${payload.turnEnabled ? 'ligado' : 'desligado'})`);
+      peersRef.current.forEach((peer) => {
+        try {
+          peer.connection.setConfiguration({ ...peer.connection.getConfiguration(), ...config });
+        } catch (err) {
+          console.warn('[WebRTC] setConfiguration falhou para', peer.peerId, err);
+        }
+      });
+    };
+    rawSocket.on('room:ice-servers', onIceServers);
+    return () => {
+      rawSocket.off('room:ice-servers', onIceServers);
+    };
+  }, [rawSocket, roomId]);
 
   // ─── Broadcast peer map updates ───────────────────────────────
   const broadcastPeersUpdate = useCallback(() => {
@@ -363,26 +403,37 @@ export function useWebRTC(
     if (!roomTicket) return;
     let active = true;
     let refreshTimer: ReturnType<typeof setTimeout> | undefined;
-    const refresh = async (resuming = false) => {
+    // Só os endereços contam como "mudou": a credencial temporária muda a cada
+    // busca, e reiniciar o ICE por isso logo após o join seria desperdício.
+    const serverUrls = (config: RTCConfiguration) =>
+      JSON.stringify((config.iceServers ?? []).map((server) => server.urls));
+    // scheduled = renovação antes de expirar: a alocação TURN em uso precisa
+    // da credencial nova, então o ICE reinicia.
+    const refresh = async (resuming = false, scheduled = false) => {
       if (refreshTimer) clearTimeout(refreshTimer);
       const { config, expiresAt } = await fetchIceServers(roomId, roomTicket);
       if (!active) return;
-      const previous = JSON.stringify(iceConfigRef.current);
-      iceConfigRef.current = config;
-      if (roomTicket && (resuming || previous !== JSON.stringify(config))) {
-        peersRef.current.forEach((peer, peerId) => {
-          if (peer.connection.signalingState === 'closed') return;
-          peer.connection.setConfiguration(config);
-          peer.connection.restartIce();
-          void requestNegotiationRef.current(peerId);
-        });
+      if (config === DEFAULT_ICE_SERVERS && iceFromRoomRef.current) {
+        // Falha na renovação: mantém o TURN do join e tenta de novo depois.
+        refreshTimer = setTimeout(() => { void refresh(resuming, scheduled); }, 300000);
+        return;
       }
-      const expiry = expiresAt ? Date.parse(expiresAt) : NaN;
+      const urlsChanged = serverUrls(iceConfigRef.current) !== serverUrls(config);
+      iceConfigRef.current = config;
+      const restart = resuming || scheduled || urlsChanged;
+      peersRef.current.forEach((peer, peerId) => {
+        if (peer.connection.signalingState === 'closed') return;
+        peer.connection.setConfiguration(config);
+        if (!restart) return;
+        peer.connection.restartIce();
+        void requestNegotiationRef.current(peerId);
+      });
+      const expiry = typeof expiresAt === 'number' ? expiresAt * 1000 : expiresAt ? Date.parse(expiresAt) : NaN;
       // Atualiza um minuto antes de expirar; após erro tenta de novo sem
       // derrubar os transportes ICE já estabelecidos da chamada.
       if (roomTicket) {
         const delay = Number.isFinite(expiry) ? Math.max(30000, expiry - Date.now() - 60000) : 300000;
-        refreshTimer = setTimeout(() => { void refresh(); }, delay);
+        refreshTimer = setTimeout(() => { void refresh(false, true); }, delay);
       }
     };
     const onResume = () => { void refresh(true); };
@@ -665,8 +716,16 @@ export function useWebRTC(
     setIsChangingMicrophone(true);
     let candidate: MediaStream | null = null;
     try {
+      // deviceId explícito (escolha ao vivo nas Configurações) usa `exact`: se
+      // falhar, a voz anterior é mantida. '' = o microfone salvo nas
+      // configurações como `ideal`, para que um aparelho que sumiu caia no
+      // padrão do sistema em vez de falhar.
+      const savedMic = deviceId ? '' : getSavedDeviceId('input');
+      const constraint = deviceId
+        ? { deviceId: { exact: deviceId } }
+        : savedMic ? { deviceId: { ideal: savedMic } } : {};
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { ...AUDIO_CONSTRAINTS, ...(deviceId ? { deviceId: { exact: deviceId } } : {}) },
+        audio: { ...AUDIO_CONSTRAINTS, ...constraint },
         video: false,
       });
       candidate = stream;
@@ -701,7 +760,6 @@ export function useWebRTC(
       localStreamRef.current = stream;
       candidate = null;
       setLocalStream(stream);
-      setMicrophoneId(deviceId);
       setIsMuted(isMutedRef.current);
       setAudioMuted(isMutedRef.current);
       setMediaError(null);
@@ -714,9 +772,10 @@ export function useWebRTC(
     } catch (error) {
       candidate?.getTracks().forEach((track) => track.stop());
       if (generation !== mediaGenerationRef.current) return false;
-      const name = mediaErrorName(error);
-      setMediaError(name);
+      // Troca que falhou com a voz anterior ainda viva não é "microfone
+      // indisponível": quem chamou (Configurações) avisa por conta própria.
       if (!localStreamRef.current?.getAudioTracks().some((track) => track.readyState === 'live')) {
+        setMediaError(mediaErrorName(error));
         isMutedRef.current = true;
         setIsMuted(true);
         setAudioMuted(true);
@@ -727,7 +786,9 @@ export function useWebRTC(
     }
   }, []);
 
-  const audioDevices = useAudioDevices({ localStream, microphoneId, captureMicrophone });
+  // Troca ao vivo pelas Configurações → Áudio (room/page.tsx). Mesmo caminho da
+  // captura inicial: só assume a faixa nova quando todos os peers aceitaram.
+  const switchMicrophone = captureMicrophone;
 
   const initMedia = useCallback(async (): Promise<void> => {
     if (localStreamRef.current?.getAudioTracks().some((track) => track.readyState === 'live')) return;
@@ -1120,7 +1181,6 @@ export function useWebRTC(
   return useMemo<UseWebRTCHReturn>(
     () => ({
       peers,
-      audioDevices,
       isChangingMicrophone,
       screenShareError,
       screenAudioAvailable,
@@ -1134,13 +1194,13 @@ export function useWebRTC(
       toggleMute,
       toggleDeafen,
       toggleScreenShare,
+      switchMicrophone,
       initMedia,
       cleanupMedia,
       connectToPeers,
     }),
     [
       peers,
-      audioDevices,
       isChangingMicrophone,
       screenShareError,
       screenAudioAvailable,
@@ -1154,6 +1214,7 @@ export function useWebRTC(
       toggleMute,
       toggleDeafen,
       toggleScreenShare,
+      switchMicrophone,
       initMedia,
       cleanupMedia,
       connectToPeers,

@@ -142,11 +142,10 @@ copie os backups para fora da VPS (`scp`/`rclone`).
 ## TURN e observabilidade da VPS
 
 `TURN_URL`, `TURN_USERNAME` e `TURN_CREDENTIAL` continuam suportados para
-provedores com credencial estática. Opcionalmente `TURN_AUTH_SECRET` habilita
-credenciais HMAC SHA1 temporárias de uma hora, no padrão REST do coturn:
-o relay externo precisa de `use-auth-secret` e do mesmo segredo estático.
-Não configure esse modo se o provedor não o suporta. O Compose não configura
-sozinho o coturn para esse segredo nem altera a infraestrutura externa.
+provedores com credencial estática. `TURN_SECRET` habilita credenciais HMAC
+SHA1 temporárias (validade em `TURN_TTL_SECONDS`), no padrão REST do coturn:
+o serviço `coturn` do Compose (perfil `turn`) já sobe com `use-auth-secret` e o
+mesmo segredo. Um relay externo precisa da mesma configuração.
 
 `GET /api/turn/credentials?roomId=<uuid>` aceita convidados somente com
 `X-Room-Ticket` válido de uma sala ativa em que entraram. Login continua

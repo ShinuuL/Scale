@@ -6,6 +6,7 @@ import { clsx } from 'clsx';
 import { USERNAME_MAX, usernameSchema, type DirectMessage, type FriendsList, type PublicUser } from '@scale/shared';
 import { api, type MeUser } from '@/lib/api';
 import { useUserEvents } from '@/hooks/useUserEvents';
+import { roomPath } from '@/lib/roomLink';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { Input } from '@/components/ui/Input';
@@ -130,6 +131,23 @@ export default function FriendsPage() {
   useEffect(() => {
     if (selectedId && !list.friends.some((f) => f.id === selectedId) && list !== EMPTY) setSelectedId(null);
   }, [list, selectedId]);
+
+  // Liga: o servidor cria a sala privada e faz a tela do amigo tocar; quem
+  // liga entra na sala e espera la (o cartao "Chamando…" vem do CallCenter).
+  const [callingId, setCallingId] = useState<string | null>(null);
+  const [callError, setCallError] = useState<string | null>(null);
+  const callFriend = async (friendId: string) => {
+    setCallingId(friendId);
+    setCallError(null);
+    try {
+      const { roomId } = await api.startCall(friendId);
+      window.location.href = roomPath(roomId);
+    } catch (err) {
+      const status = (err as { status?: number }).status;
+      setCallError(status === 429 ? 'Muitas ligações seguidas. Espere um pouco.' : 'Não foi possível ligar agora.');
+      setCallingId(null);
+    }
+  };
 
   const openChat = (id: string) => {
     setSelectedId(id);
@@ -292,6 +310,11 @@ export default function FriendsPage() {
               <h2 id="friends-title" className={sectionTitle}>
                 Amigos ({list.friends.length})
               </h2>
+              {callError && (
+                <p role="alert" className="mb-2 px-1 text-sm text-red-400">
+                  {callError}
+                </p>
+              )}
               {list.friends.length === 0 ? (
                 <p className="px-1 text-sm text-slate-400">Adicione alguém pelo @nome para começar a conversar.</p>
               ) : (
@@ -299,13 +322,13 @@ export default function FriendsPage() {
                   {list.friends.map((f) => {
                     const count = unread[f.id] ?? 0;
                     return (
-                      <li key={f.id}>
+                      <li key={f.id} className="flex items-center gap-1">
                         <button
                           type="button"
                           onClick={() => openChat(f.id)}
                           aria-current={selectedId === f.id ? 'true' : undefined}
                           className={clsx(
-                            'flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-white/[0.06] focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-400',
+                            'flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-white/[0.06] focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-400',
                             selectedId === f.id && 'bg-white/[0.08]',
                           )}
                         >
@@ -320,6 +343,16 @@ export default function FriendsPage() {
                               <span className="sr-only"> mensagens novas</span>
                             </span>
                           )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void callFriend(f.id)}
+                          disabled={callingId !== null}
+                          aria-label={`Ligar para ${f.name}`}
+                          title={`Ligar para ${f.name}`}
+                          className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-emerald-500/15 hover:text-emerald-300 disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-400"
+                        >
+                          <Icon name="phone" />
                         </button>
                       </li>
                     );
@@ -369,6 +402,8 @@ export default function FriendsPage() {
                 friend={selected}
                 incoming={incomingByFriend[selected.id] ?? []}
                 onBack={() => setSelectedId(null)}
+                onCall={() => void callFriend(selected.id)}
+                calling={callingId === selected.id}
                 onRemoveFriend={() =>
                   void act(async () => {
                     await api.removeFriend(selected.id);

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
 import './globals.css';
 import { PALETTE_BOOT_SRC } from '@/lib/theme';
+import { CallCenter } from '@/components/calls/CallCenter';
 import { ApplicationFeatures } from '@/components/pwa/ApplicationFeatures';
 
 export const metadata: Metadata = {
@@ -40,6 +41,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <div id="app-root">
           {children}
         </div>
+        {/* Chamadas entre amigos: tela tocando e "Chamando…" em qualquer pagina. */}
+        <CallCenter />
         <ApplicationFeatures />
       </body>
     </html>

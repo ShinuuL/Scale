@@ -1,6 +1,10 @@
 import { originOf } from './serverUrl';
 
-/** Permissoes que o Scale usa: microfone ('media' so audio) e captura de tela. */
+/**
+ * Permissoes que o Scale usa: microfone ('media' so audio), captura de tela,
+ * escolha da saida de audio ('speaker-selection', setSinkId/audiooutput, so no
+ * frame principal) e notificacoes (frame principal + consentimento explicito).
+ */
 export const ALLOWED_PERMISSIONS: ReadonlySet<string> = new Set(['media', 'display-capture', 'speaker-selection', 'notifications']);
 
 export interface PermissionRequest {

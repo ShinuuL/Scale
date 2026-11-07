@@ -28,12 +28,12 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      await api.login({ email, password });
+      await api.login({ email: email.trim(), password });
       window.location.href = '/';
     } catch (err: unknown) {
       const apiErr = err as { error?: string; status?: number };
       if (apiErr.status === 401) {
-        setError('Email ou senha incorretos');
+        setError('Usuário ou senha incorretos');
       } else {
         setError(apiErr.error || 'Falha ao fazer login');
       }
@@ -54,13 +54,16 @@ export default function LoginPage() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4" noValidate>
             <Input
-              label="Email"
-              type="email"
-              placeholder="seu@email.com"
+              id="login"
+              label="E-mail ou nome de usuário"
+              type="text"
+              placeholder="seu@email.com ou @usuario"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              autoComplete="email"
+              autoComplete="username"
+              autoCapitalize="none"
+              spellCheck={false}
             />
             <Input
               label="Senha"

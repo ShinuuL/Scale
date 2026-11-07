@@ -17,6 +17,12 @@ done
 (( ${#JWT_SECRET} >= 32 && ${#GUEST_COOKIE_SECRET} >= 32 )) \
   || { echo "JWT_SECRET e GUEST_COOKIE_SECRET precisam de >= 32 caracteres." >&2; exit 1; }
 [[ "$JWT_SECRET" != "change-me-in-production" ]] || { echo "Troque o JWT_SECRET." >&2; exit 1; }
+# TURN ligado com credencial temporaria: sobe o coturn (profile turn) junto.
+if [[ "${ENABLE_TURN:-false}" == "true" && -n "${TURN_SECRET:-}" ]]; then
+  (( ${#TURN_SECRET} >= 32 )) || { echo "TURN_SECRET precisa de >= 32 caracteres." >&2; exit 1; }
+  [[ -n "${TURN_EXTERNAL_IP:-}" ]] || { echo "Defina TURN_EXTERNAL_IP (IP publico da VPS)." >&2; exit 1; }
+  COMPOSE+=(--profile turn)
+fi
 EDGE_PORT="${EDGE_PORT:-8443}"
 ORIGIN="https://$SCALE_DOMAIN"; [[ "$EDGE_PORT" == 443 ]] || ORIGIN="$ORIGIN:$EDGE_PORT"
 [[ ",$ALLOWED_ORIGINS," == *",$ORIGIN,"* ]] \
@@ -32,7 +38,8 @@ fi
 
 echo "Aguardando servicos ficarem healthy..."
 for _ in $(seq 1 30); do
-  unhealthy=$("${COMPOSE[@]}" ps --format '{{.Service}} {{.Health}}' | grep -v ' healthy$' || true)
+  # Health vazio = servico sem healthcheck (coturn): conta como ok se estiver rodando.
+  unhealthy=$("${COMPOSE[@]}" ps --format '{{.Service}} {{.Health}}' | grep -vE ' (healthy)?$' || true)
   [[ -z "$unhealthy" ]] && break
   sleep 5
 done

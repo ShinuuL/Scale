@@ -1,5 +1,7 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
+import { Prisma, type User } from '@prisma/client';
+import { usernameSchema } from '@scale/shared';
 import { prisma } from '../lib/prisma.js';
 import {
   hashPassword,
@@ -15,22 +17,58 @@ import {
   isLoginEmailRateLimited,
   isRegisterRateLimited,
   isRefreshRateLimited,
+  isUsernameCheckRateLimited,
   resetLoginRateLimit,
   resetLoginEmailRateLimit,
 } from '../lib/rateLimit.js';
 
 // O transform normaliza (trim + lowercase) no PARSE: todo consumidor do schema
 // recebe o email canônico, impossível esquecer a normalização num caminho novo.
+// `username` e opcional na API (clientes antigos e a conta criada pelo GitHub
+// escolhem depois, em /friends); o formulario do site sempre envia.
 const registerSchema = z.object({
   email: z.string().email().transform(normalizeEmail),
   password: z.string().min(8).max(128),
   name: z.string().min(1).max(100),
+  username: usernameSchema.optional(),
 });
 
+// `email` aceita o e-mail OU o @nome (o nome do campo ficou por compatibilidade
+// com clientes antigos). Quem decide qual dos dois e `parseLoginIdentifier`.
 const loginSchema = z.object({
-  email: z.string().email().transform(normalizeEmail),
+  email: z.string().trim().min(1).max(254),
   password: z.string().min(1),
 });
+
+const usernameQuerySchema = z.object({ username: usernameSchema });
+
+type LoginIdentifier = { kind: 'email'; value: string } | { kind: 'username'; value: string };
+
+/**
+ * E-mail se tiver "@" depois do primeiro caractere ("@fulano" e @nome);
+ * senao @nome. Devolve null quando nao e nenhum dos dois formatos validos.
+ */
+function parseLoginIdentifier(raw: string): LoginIdentifier | null {
+  if (raw.indexOf('@', 1) > 0) {
+    const email = z.string().email().safeParse(raw);
+    return email.success ? { kind: 'email', value: normalizeEmail(email.data) } : null;
+  }
+  const username = usernameSchema.safeParse(raw);
+  return username.success ? { kind: 'username', value: username.data } : null;
+}
+
+async function findUserByLogin(id: LoginIdentifier): Promise<User | null> {
+  if (id.kind === 'email') return findUserByEmail(id.value);
+  const handle = await prisma.username.findUnique({
+    where: { name: id.value },
+    select: { user: true },
+  });
+  return handle?.user ?? null;
+}
+
+function isUniqueViolation(err: unknown): boolean {
+  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
+}
 
 /**
  * Mensagem unica para "email nao existe" e "senha errada": nao vaza se a conta
@@ -78,20 +116,41 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
 
     // `email` já vem normalizado pelo schema (trim + lowercase): a checagem de
     // duplicidade e a gravação usam a mesma forma canônica do login.
-    const { email, password, name } = parsed.data;
+    const { email, password, name, username } = parsed.data;
 
     // findUserByEmail também enxerga linhas legadas (email com maiúsculas) —
     // sem isso o cadastro criaria um irmão case-variant do mesmo email.
     const existing = await findUserByEmail(email);
     if (existing) {
-      return reply.code(409).send({ error: 'Email already registered' });
+      return reply.code(409).send({ error: 'Email already registered', field: 'email' });
+    }
+    if (username && (await prisma.username.findUnique({ where: { name: username } }))) {
+      return reply.code(409).send({ error: 'Username already taken', field: 'username' });
     }
 
     const passwordHash = await hashPassword(password);
-    const user = await prisma.user.create({
-      data: { email, passwordHash, name },
-      select: { id: true, email: true, name: true, createdAt: true },
-    });
+    let user;
+    try {
+      // Conta e @nome na mesma escrita: nunca sobra conta sem o nome escolhido.
+      user = await prisma.user.create({
+        data: {
+          email,
+          passwordHash,
+          name,
+          ...(username ? { username: { create: { name: username } } } : {}),
+        },
+        select: { id: true, email: true, name: true, createdAt: true },
+      });
+    } catch (err) {
+      // Corrida: outro cadastro levou o email ou o @nome entre a checagem e aqui.
+      if (isUniqueViolation(err)) {
+        const target = String((err as Prisma.PrismaClientKnownRequestError).meta?.target ?? '');
+        return target.includes('email')
+          ? reply.code(409).send({ error: 'Email already registered', field: 'email' })
+          : reply.code(409).send({ error: 'Username already taken', field: 'username' });
+      }
+      throw err;
+    }
 
     const token = signToken({
       userId: user.id,
@@ -138,8 +197,16 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
       });
     }
 
-    const email = parsed.data.email; // já normalizado pelo schema
-    const emailLimit = isLoginEmailRateLimited(email);
+    const identifier = parseLoginIdentifier(parsed.data.email);
+    // Balde por conta: chave "u:<nome>" para @nome, o email puro para email (o
+    // "@" no meio impede colisao entre os dois formatos). Texto que nao e
+    // nenhum dos dois cai no balde do texto cru e responde 401 como os outros.
+    const accountKey = identifier
+      ? identifier.kind === 'email'
+        ? identifier.value
+        : `u:${identifier.value}`
+      : `raw:${parsed.data.email.toLowerCase()}`;
+    const emailLimit = isLoginEmailRateLimited(accountKey);
     if (ipLimit.limited || emailLimit.limited) {
       const retryAfterSeconds = Math.max(
         ipLimit.retryAfterSeconds,
@@ -152,7 +219,8 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
 
     // findUserByEmail cobre a forma canonica E as linhas legadas gravadas com
     // maiusculas (o SQLite compara BINARY, entao findUnique nao bastaria).
-    const user = await findUserByEmail(email);
+    // Mesma resposta (e mesmo tempo) para email ou @nome inexistente.
+    const user = identifier ? await findUserByLogin(identifier) : null;
     if (!user) {
       // Gasta o mesmo tempo do caminho com bcrypt para nao vazar a existencia
       // da conta pelo timing da resposta.
@@ -171,7 +239,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
     // vezes nao fica preso, e o atacante nao ganha nada (quando acerta a senha
     // ele ja tem a conta).
     resetLoginRateLimit(ip);
-    resetLoginEmailRateLimit(email);
+    resetLoginEmailRateLimit(accountKey);
 
     const token = signToken({
       userId: user.id,
@@ -195,6 +263,25 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
         createdAt: user.createdAt,
       },
     });
+  });
+
+  // GET /api/auth/username-available?username=fulano — o cadastro mostra na
+  // hora se o @nome esta livre. Nao vaza nada novo: o @nome ja e publico (e
+  // por ele que se manda pedido de amizade).
+  fastify.get('/api/auth/username-available', async (request, reply) => {
+    const limit = isUsernameCheckRateLimited(getClientIp(request));
+    if (limit.limited) {
+      return tooMany(reply, 'Too many checks. Try again later.', limit.retryAfterSeconds);
+    }
+    const parsed = usernameQuerySchema.safeParse(request.query);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        error: 'Validation failed',
+        details: parsed.error.flatten().fieldErrors,
+      });
+    }
+    const taken = await prisma.username.findUnique({ where: { name: parsed.data.username } });
+    return reply.send({ username: parsed.data.username, available: !taken });
   });
 
   // GET /api/auth/me (requires auth)

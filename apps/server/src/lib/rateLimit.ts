@@ -292,6 +292,17 @@ export function resetRefreshRateLimit(ip: string): void {
   reset(refreshStore, ip);
 }
 
+// Checagem de @nome livre no cadastro: 60 / min por IP. O formulario consulta
+// enquanto a pessoa digita (com atraso), entao o teto e folgado; so barra a
+// varredura em massa de nomes.
+const USERNAME_CHECK_WINDOW_MS = 60_000;
+const USERNAME_CHECK_MAX = 60;
+const usernameCheckStore = createBucket('usernameCheck');
+
+export function isUsernameCheckRateLimited(ip: string): RateLimitResult {
+  return ipBucket(usernameCheckStore, ip, USERNAME_CHECK_WINDOW_MS, USERNAME_CHECK_MAX);
+}
+
 // Login com GitHub: 20 / 10 min por IP, somando inicio e callback. Cada
 // callback faz duas chamadas HTTP ao GitHub; o balde segura o abuso disso.
 const GITHUB_OAUTH_WINDOW_MS = 10 * 60_000;
@@ -332,6 +343,20 @@ export function isProfileUpdateRateLimited(userId: string): RateLimitResult {
 
 export function resetProfileUpdateRateLimit(userId: string): void {
   reset(profileStore, userId);
+}
+
+// Ligacoes: 15 / 5 min por USUARIO. Cada uma cria uma sala e faz o celular
+// do amigo tocar; o teto barra o "trote" em sequencia.
+const CALL_WINDOW_MS = 5 * 60_000;
+const CALL_MAX = 15;
+const callStore = createBucket('call');
+
+export function isCallRateLimited(userId: string): RateLimitResult {
+  return take(callStore, userId, CALL_WINDOW_MS, CALL_MAX);
+}
+
+export function resetCallRateLimit(userId: string): void {
+  reset(callStore, userId);
 }
 
 // Pedidos de amizade: 30 / hora por USUARIO. Freia a varredura de @nomes

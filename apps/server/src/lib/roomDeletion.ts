@@ -33,8 +33,12 @@ export async function purgeRoom(
     // Marcar antes de mudar o banco permite retomar inclusive apos crash.
     const handle = await fs.open(marker, 'w', 0o600);
     try { await handle.sync(); } finally { await handle.close(); }
-    const markerDirectory = await fs.open(path.dirname(marker), 'r');
-    try { await markerDirectory.sync(); } finally { await markerDirectory.close(); }
+    // fsync de diretorio so existe em POSIX; no Windows (dev/start.bat) abrir
+    // ou sincronizar uma pasta da EPERM/EISDIR e o marcador ja esta gravado.
+    if (process.platform !== 'win32') {
+      const markerDirectory = await fs.open(path.dirname(marker), 'r');
+      try { await markerDirectory.sync(); } finally { await markerDirectory.close(); }
+    }
     await prisma.room.updateMany({ where: { id: roomId }, data: { status: 'ENDED' } });
     evictRoom(io, roomId);
     // Nao perde referencias se a remocao falhar: sala fica ENDED e marcada.

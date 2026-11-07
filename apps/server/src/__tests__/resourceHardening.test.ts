@@ -151,7 +151,7 @@ describe('TURN para participante efetivo', () => {
   it('valida sala/ticket, rejeita ended/expirado e mantem sessao legado', async () => {
     vi.stubEnv('ENABLE_TURN', 'true');
     vi.stubEnv('TURN_URL', 'turn:relay.example.test:3478');
-    vi.stubEnv('TURN_AUTH_SECRET', 'synthetic-test-secret');
+    vi.stubEnv('TURN_SECRET', 'synthetic-test-secret');
     resetEnv();
     const r = await room();
     const other = await room();
@@ -163,8 +163,9 @@ describe('TURN para participante efetivo', () => {
       const response = await get(r.id);
       expect(response.statusCode).toBe(200);
       expect(response.headers['cache-control']).toBe('no-store');
-      expect(response.json().ttlSeconds).toBe(3600);
-      const server = response.json().iceServers[1] as { username: string; credential: string };
+      // Credencial temporaria de lib/turnCredentials.ts: expiresAt em segundos.
+      expect(response.json().expiresAt).toBeGreaterThan(Math.floor(Date.now() / 1000));
+      const server = (response.json().iceServers as { username?: string; credential: string }[]).find((item) => item.username) as { username: string; credential: string };
       expect(server.credential).toBe(createHmac('sha1', 'synthetic-test-secret').update(server.username).digest('base64'));
       expect((await get(other.id)).statusCode).toBe(401);
       expect((await get(r.id, 'invalid')).statusCode).toBe(401);

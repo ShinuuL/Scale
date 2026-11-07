@@ -55,8 +55,32 @@ const config: Config = {
         // M3 emphasizedDecelerate, 180ms: entrada de menu (fade + scale).
         'menu-in': 'menuIn 180ms cubic-bezier(0.05, 0.7, 0.1, 1)',
         'fade-in-fast': 'fadeIn 120ms linear',
+        // Indicador de fala: halo que pulsa em volta do avatar + barrinhas.
+        'speak-pulse': 'speakPulse 1.1s ease-out infinite',
+        'eq-bar': 'eqBar 0.7s ease-in-out infinite',
+        // Tela de chamada: ondas saindo do avatar + telefone balancando.
+        'call-ripple': 'callRipple 2.4s ease-out infinite',
+        'call-shake': 'callShake 1.2s ease-in-out infinite',
       },
       keyframes: {
+        callRipple: {
+          '0%': { transform: 'scale(1)', opacity: '0.55' },
+          '100%': { transform: 'scale(2.3)', opacity: '0' },
+        },
+        callShake: {
+          '0%, 50%, 100%': { transform: 'rotate(0deg)' },
+          '10%, 30%': { transform: 'rotate(-14deg)' },
+          '20%, 40%': { transform: 'rotate(14deg)' },
+        },
+        speakPulse: {
+          '0%': { boxShadow: '0 0 0 0 rgb(var(--c-brand-400) / 0.65)' },
+          '70%': { boxShadow: '0 0 0 12px rgb(var(--c-brand-400) / 0)' },
+          '100%': { boxShadow: '0 0 0 0 rgb(var(--c-brand-400) / 0)' },
+        },
+        eqBar: {
+          '0%, 100%': { transform: 'scaleY(0.3)' },
+          '50%': { transform: 'scaleY(1)' },
+        },
         menuIn: {
           '0%': { opacity: '0', transform: 'scale(0.95) translateY(-4px)' },
           '100%': { opacity: '1', transform: 'scale(1) translateY(0)' },

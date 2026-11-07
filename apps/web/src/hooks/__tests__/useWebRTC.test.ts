@@ -287,18 +287,16 @@ describe('dispositivos e ciclo de vida da captura', () => {
     await act(async () => { await result.current.initMedia(); });
     await emit('signalOffer', { fromPeerId: 'me-050', name: 'Ana', isRegistered: false, offer: { type: 'offer' } });
     act(() => { result.current.toggleMute(); });
-    await act(async () => { await result.current.audioDevices.selectInput('usb'); });
+    await act(async () => { await result.current.switchMicrophone('usb'); });
     expect(getUserMediaMock).toHaveBeenLastCalledWith({ audio: expect.objectContaining({ deviceId: { exact: 'usb' } }), video: false });
     expect(first.stop).toHaveBeenCalledOnce();
     expect(second.enabled).toBe(false);
     expect(result.current.isMuted).toBe(true);
     expect(pcInstances[0].transceivers).toHaveLength(1);
     expect(pcInstances[0].transceivers[0].sender.track).toBe(second);
-    await act(async () => { await result.current.audioDevices.selectInput('bad-device'); });
+    await act(async () => { await result.current.switchMicrophone('bad-device'); });
     expect(result.current.localStream?.getAudioTracks()).toEqual([second]);
     expect(second.stop).not.toHaveBeenCalled();
-    expect(result.current.audioDevices.microphoneId).toBe('usb');
-    expect(result.current.audioDevices.error).toContain('Não foi possível');
   });
 
   it('microfone removido tenta padrão sem desmutar; captura pendente é parada após cleanup', async () => {
@@ -315,8 +313,8 @@ describe('dispositivos e ciclo de vida da captura', () => {
     let resolveCapture: (stream: MockMediaStream) => void = () => {};
     const late = createMockTrack('audio');
     getUserMediaMock.mockReturnValueOnce(new Promise<MockMediaStream>((resolve) => { resolveCapture = resolve; }));
-    let pending: Promise<void> = Promise.resolve();
-    act(() => { pending = result.current.audioDevices.selectInput('late'); });
+    let pending: Promise<unknown> = Promise.resolve();
+    act(() => { pending = result.current.switchMicrophone('late'); });
     act(() => { result.current.cleanupMedia(); });
     await act(async () => { resolveCapture(new MockMediaStream([late])); await pending; });
     expect(late.stop).toHaveBeenCalledOnce();
@@ -332,12 +330,11 @@ describe('dispositivos e ciclo de vida da captura', () => {
     await act(async () => { await result.current.initMedia(); });
     for (const peerId of ['me-040', 'me-050']) await emit('signalOffer', { fromPeerId: peerId, name: 'Ana', isRegistered: false, offer: { type: 'offer' } });
     pcInstances[1].transceivers[0].sender.replaceTrack.mockRejectedValueOnce(new DOMException('Requer renegociação', 'InvalidModificationError'));
-    await act(async () => { await result.current.audioDevices.selectInput('usb'); });
+    await act(async () => { await result.current.switchMicrophone('usb'); });
     expect(result.current.localStream?.getAudioTracks()).toEqual([original]);
     expect(original.stop).not.toHaveBeenCalled();
     expect(rejected.stop).toHaveBeenCalledOnce();
     for (const pc of pcInstances) expect(pc.transceivers[0].sender.track).toBe(original);
-    expect(result.current.audioDevices.error).toContain('Não foi possível');
   });
 
   it('falha inicial de microfone mantém mute ao recuperar permissão', async () => {
@@ -347,7 +344,7 @@ describe('dispositivos e ciclo de vida da captura', () => {
     const { result } = renderHook(() => useWebRTC(hook, ROOM_ID));
     await act(async () => { await result.current.initMedia(); });
     expect(result.current.isMuted).toBe(true);
-    await act(async () => { await result.current.audioDevices.selectInput(''); });
+    await act(async () => { await result.current.switchMicrophone(''); });
     expect(mic.enabled).toBe(false);
     expect(result.current.isMuted).toBe(true);
     expect(result.current.mediaError).toBeNull();
@@ -1072,5 +1069,88 @@ describe('deafen persistente', () => {
       result.current.toggleDeafen();
     });
     expect(track.enabled).toBe(true);
+  });
+});
+
+describe('switchMicrophone (troca ao vivo)', () => {
+  function stream(): MediaStream {
+    return new MockMediaStream([createMockTrack('audio')]) as unknown as MediaStream;
+  }
+  function senderOf(pc: MockRTCPeerConnection): MockRTCRtpSender {
+    return pc.transceivers.filter((t) => t.receiver.track.kind === 'audio')[0].sender;
+  }
+
+  it('replaceTrack em todos os peers, para a faixa antiga e entrega um MediaStream novo', async () => {
+    const { hook, emit } = createHookMock('me-100');
+    const { result } = renderHook(() => useWebRTC(hook, ROOM_ID));
+    getUserMediaMock.mockResolvedValueOnce(stream());
+    await act(async () => {
+      await result.current.initMedia();
+    });
+    await emit('peerJoined', { peerId: 'me-200', isRegistered: false, name: 'Bia' });
+    await emit('peerJoined', { peerId: 'me-300', isRegistered: false, name: 'Caio' });
+    const oldStream = result.current.localStream;
+    const oldTrack = oldStream?.getAudioTracks()[0] as MediaStreamTrack;
+
+    const next = stream();
+    getUserMediaMock.mockResolvedValueOnce(next);
+    let ok = false;
+    await act(async () => {
+      ok = await result.current.switchMicrophone('mic-2');
+    });
+
+    expect(ok).toBe(true);
+    expect(getUserMediaMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ audio: expect.objectContaining({ deviceId: { exact: 'mic-2' } }) }),
+    );
+    const newTrack = next.getAudioTracks()[0];
+    expect(pcInstances).toHaveLength(2);
+    pcInstances.forEach((pc) => expect(senderOf(pc).replaceTrack).toHaveBeenLastCalledWith(newTrack));
+    expect(oldTrack.stop).toHaveBeenCalled();
+    expect(result.current.localStream).toBe(next);
+    expect(result.current.localStream).not.toBe(oldStream);
+  });
+
+  it('mantém o mudo na faixa nova', async () => {
+    const { hook } = createHookMock('me-100');
+    const { result } = renderHook(() => useWebRTC(hook, ROOM_ID));
+    getUserMediaMock.mockResolvedValueOnce(stream());
+    await act(async () => {
+      await result.current.initMedia();
+    });
+    act(() => {
+      result.current.toggleMute();
+    });
+    expect(result.current.isMuted).toBe(true);
+
+    const next = stream();
+    getUserMediaMock.mockResolvedValueOnce(next);
+    await act(async () => {
+      await result.current.switchMicrophone('');
+    });
+    expect(next.getAudioTracks()[0].enabled).toBe(false);
+    expect(result.current.isMuted).toBe(true);
+  });
+
+  it('falha no getUserMedia: mantém a faixa antiga e devolve false', async () => {
+    const { hook } = createHookMock('me-100');
+    const { result } = renderHook(() => useWebRTC(hook, ROOM_ID));
+    getUserMediaMock.mockResolvedValueOnce(stream());
+    await act(async () => {
+      await result.current.initMedia();
+    });
+    const oldStream = result.current.localStream;
+    const oldTrack = oldStream?.getAudioTracks()[0] as MediaStreamTrack;
+
+    getUserMediaMock.mockRejectedValueOnce(new Error('NotFoundError'));
+    let ok = true;
+    await act(async () => {
+      ok = await result.current.switchMicrophone('sumiu');
+    });
+    expect(ok).toBe(false);
+    expect(oldTrack.stop).not.toHaveBeenCalled();
+    expect(result.current.localStream).toBe(oldStream);
+    // A voz anterior segue viva: não é "microfone indisponível".
+    expect(result.current.mediaError).toBeNull();
   });
 });
