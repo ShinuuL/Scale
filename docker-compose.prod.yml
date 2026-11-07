@@ -10,7 +10,7 @@
 #   - `proxy` deixa de ser publicado em 0.0.0.0 (so loopback, diagnostico);
 #   - backend confia tambem na borda (172.28.0.6) no TRUST_PROXY;
 #   - restart automatico em todos os servicos;
-#   - `coturn` (TURN) sempre ligado, com health check.
+#   - health check no `coturn` (TURN, profile `turn`).
 # O tunel cloudflared NAO e usado aqui (nao ative o profile `tunnel`).
 
 services:
@@ -66,44 +66,18 @@ services:
         # do Caddyfile interno.
         ipv4_address: 172.28.0.6
 
-  # TURN para WebRTC atras de NAT simetrico. No compose base fica no profile
-  # `turn`; em producao sobe sempre. Mesma configuracao que rodava na VPS:
-  # credenciais efemeras (--use-auth-secret com TURN_SECRET), relay so em IP
-  # publico (faixas privadas/loopback negadas, evita SSRF para a rede interna)
-  # e cota de alocacoes. Portas: 3478 (udp/tcp) + relay 49160-49200/udp.
+  # coturn: definido no compose base (profile `turn`, ligado pelo deploy.sh
+  # quando ENABLE_TURN=true). Aqui so o health check: binding STUN no proprio
+  # servidor; sem resposta o `timeout` encerra (124).
   coturn:
-    image: coturn/coturn:4.6
-    profiles: !reset []
-    restart: unless-stopped
-    ports: !override
-      - "3478:3478/udp"
-      - "3478:3478/tcp"
-      - "49160-49200:49160-49200/udp"
-    command:
-      - -n
-      - --log-file=stdout
-      - --listening-port=3478
-      - --min-port=49160
-      - --max-port=49200
-      - --fingerprint
-      - --use-auth-secret
-      - --static-auth-secret=${TURN_SECRET:?defina TURN_SECRET no .env}
-      - --realm=scale
-      - --external-ip=${TURN_EXTERNAL_IP:?defina TURN_EXTERNAL_IP no .env}
-      - --no-cli
-      - --no-tls
-      - --no-dtls
-      - --no-multicast-peers
-      - --denied-peer-ip=0.0.0.0-0.255.255.255
-      - --denied-peer-ip=10.0.0.0-10.255.255.255
-      - --denied-peer-ip=100.64.0.0-100.127.255.255
-      - --denied-peer-ip=127.0.0.0-127.255.255.255
-      - --denied-peer-ip=169.254.0.0-169.254.255.255
-      - --denied-peer-ip=172.16.0.0-172.31.255.255
-      - --denied-peer-ip=192.168.0.0-192.168.255.255
-      - --total-quota=100
-      - --user-quota=12
-    volumes:
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 4 turnutils_stunclient 127.0.0.1 >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 6s
+      retries: 3
+      start_period: 10s
+
+volumes:
       - coturn_data:/var/lib/coturn
     healthcheck:
       # Binding STUN no proprio servidor; sem resposta o `timeout` encerra (124).
@@ -116,4 +90,3 @@ services:
 volumes:
   edge_data:
   edge_config:
-  coturn_data:
