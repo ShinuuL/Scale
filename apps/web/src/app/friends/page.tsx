@@ -246,7 +246,6 @@ export default function FriendsPage() {
           </button>
         </div>
         <div className="p-3">
-          {callError && <p role="alert" className="px-2 py-2 text-sm text-red-400">{callError}</p>}
           <h2 className="px-2 py-2 text-sm font-semibold text-ink-secondary">Conversas</h2>
           {listState === 'loading' && (
             <p role="status" className="p-2 text-sm text-ink-muted">
@@ -387,6 +386,11 @@ export default function FriendsPage() {
       )}
       {authState === 'ready' && me && hasUsername && (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          {callError && (
+            <p role="alert" className="border-b border-line px-5 py-3 text-sm text-red-300">
+              {callError}
+            </p>
+          )}
           {actionError && (
             <p role="alert" className="border-b border-line px-5 py-3 text-sm text-red-300">
               {actionError}

@@ -73,7 +73,7 @@ export default function RegisterPage() {
     usernameState.kind === 'checking'
       ? 'Verificando...'
       : usernameState.kind === 'available'
-        ? `@${usernameState.name} está disponível ✓`
+        ? `@${usernameState.name} está disponível`
         : 'Seus amigos vão te encontrar por ele. Letras, números e _.';
 
   const handleSubmit = async (e: React.FormEvent) => {
