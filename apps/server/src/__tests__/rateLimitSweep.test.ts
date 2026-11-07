@@ -45,6 +45,7 @@ describe('expurgo dos baldes de rate limit', () => {
       'signal',
       'turn',
       'upload',
+      'usernameCheck',
     ]);
   });
 

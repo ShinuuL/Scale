@@ -186,6 +186,14 @@ class ApiClient {
     return authResponseSchema.parse(data);
   }
 
+  /** O @nome esta livre? (o servidor normaliza: "@Fulano" vira "fulano"). */
+  async checkUsername(username: string): Promise<{ username: string; available: boolean }> {
+    const data = await this.request<unknown>(
+      `/api/auth/username-available?username=${encodeURIComponent(username)}`,
+    );
+    return z.object({ username: z.string(), available: z.boolean() }).parse(data);
+  }
+
   /** Provedores de login externos ligados no servidor (o botao some quando desligado). */
   async getAuthProviders(): Promise<{ github: boolean }> {
     const data = await this.request<unknown>('/api/auth/providers');

@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { usernameSchema } from '@scale/shared';
 import { api } from '@/lib/api';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -9,24 +10,96 @@ import { Icon } from '@/components/ui/Icon';
 import Link from 'next/link';
 import { GithubLoginButton } from '@/components/auth/GithubLogin';
 
+type UsernameState =
+  | { kind: 'idle' }
+  | { kind: 'invalid'; message: string }
+  | { kind: 'checking' }
+  | { kind: 'available'; name: string }
+  | { kind: 'taken'; name: string }
+  | { kind: 'unknown' };
+
+/** Atraso entre a ultima tecla e a consulta ao servidor. */
+const USERNAME_CHECK_DELAY_MS = 400;
+
 export default function RegisterPage() {
   const [name, setName] = useState('');
+  const [username, setUsername] = useState('');
+  const [usernameState, setUsernameState] = useState<UsernameState>({ kind: 'idle' });
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // Valida o formato na hora e, se estiver certo, pergunta ao servidor se o
+  // @nome esta livre (com atraso, para nao consultar a cada tecla).
+  useEffect(() => {
+    if (!username.trim()) {
+      setUsernameState({ kind: 'idle' });
+      return;
+    }
+    const parsed = usernameSchema.safeParse(username);
+    if (!parsed.success) {
+      setUsernameState({ kind: 'invalid', message: parsed.error.issues[0]?.message ?? 'Nome inválido' });
+      return;
+    }
+    setUsernameState({ kind: 'checking' });
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      api
+        .checkUsername(parsed.data)
+        .then((r) => {
+          if (cancelled) return;
+          setUsernameState(r.available ? { kind: 'available', name: r.username } : { kind: 'taken', name: r.username });
+        })
+        .catch(() => {
+          // Sem resposta (limite ou rede): o servidor confere de novo no envio.
+          if (!cancelled) setUsernameState({ kind: 'unknown' });
+        });
+    }, USERNAME_CHECK_DELAY_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [username]);
+
+  const usernameError =
+    usernameState.kind === 'invalid'
+      ? usernameState.message
+      : usernameState.kind === 'taken'
+        ? `@${usernameState.name} já está em uso`
+        : undefined;
+  const usernameHelper =
+    usernameState.kind === 'checking'
+      ? 'Verificando...'
+      : usernameState.kind === 'available'
+        ? `@${usernameState.name} está disponível ✓`
+        : 'Seus amigos vão te encontrar por ele. Letras, números e _.';
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    const parsedUsername = usernameSchema.safeParse(username);
+    if (!parsedUsername.success) {
+      setError('Escolha um nome de usuário válido');
+      return;
+    }
+    if (usernameState.kind === 'taken') {
+      setError(`@${usernameState.name} já está em uso`);
+      return;
+    }
+
     setLoading(true);
 
     try {
-      await api.register({ name, email, password });
+      await api.register({ name, email, password, username: parsedUsername.data });
       window.location.href = '/';
     } catch (err: unknown) {
       const apiErr = err as { error?: string; status?: number };
-      if (apiErr.status === 409) {
+      if (apiErr.status === 409 && apiErr.error === 'Username already taken') {
+        setUsernameState({ kind: 'taken', name: parsedUsername.data });
+        setError(`@${parsedUsername.data} já está em uso`);
+      } else if (apiErr.status === 409) {
         setError('Este email já está registrado');
       } else {
         setError(apiErr.error || 'Falha ao criar conta');
@@ -55,6 +128,21 @@ export default function RegisterPage() {
               onChange={(e) => setName(e.target.value)}
               required
               autoComplete="name"
+            />
+            <Input
+              id="username"
+              label="Nome de usuário"
+              type="text"
+              placeholder="ex.: fulano_123"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              required
+              autoComplete="username"
+              autoCapitalize="none"
+              spellCheck={false}
+              maxLength={21}
+              error={usernameError}
+              helperText={usernameHelper}
             />
             <Input
               label="Email"
