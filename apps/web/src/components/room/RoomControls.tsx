@@ -3,8 +3,12 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
+import { AudioDeviceSettings } from './AudioDeviceSettings';
+import type { AudioDevicesState } from '@/hooks/useAudioDevices';
 
 interface RoomControlsProps {
+  audioDevices?: AudioDevicesState;
+  isChangingMicrophone?: boolean;
   isMuted: boolean;
   isDeafened: boolean;
   isScreenSharing: boolean;
@@ -24,6 +28,8 @@ interface RoomControlsProps {
 }
 
 export function RoomControls({
+  audioDevices,
+  isChangingMicrophone = false,
   isMuted,
   isDeafened,
   isScreenSharing,
@@ -48,7 +54,7 @@ export function RoomControls({
 
   return (
     <div
-      className="flex items-center justify-center gap-1.5 sm:gap-2 px-2 sm:px-4 py-3 border-t border-white/5 bg-forest-950/60 backdrop-blur-xl transition-colors"
+      className="flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 px-2 sm:px-4 py-3 border-t border-white/5 bg-forest-950/60 backdrop-blur-xl transition-colors"
       role="toolbar"
       aria-label="Controles da sala"
     >
@@ -65,6 +71,8 @@ export function RoomControls({
         <span aria-hidden="true">{isMuted ? <Icon name="micOff" /> : <Icon name="mic" />}</span>
         <span className="hidden sm:inline">{isMuted ? 'Mudo' : 'Mic'}</span>
       </Button>
+
+      {audioDevices && <AudioDeviceSettings devices={audioDevices} busy={isChangingMicrophone} />}
 
       {/* Deafen */}
       <Button

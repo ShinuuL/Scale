@@ -8,6 +8,7 @@ import { isDev } from './paths';
 import { getAllowedOrigin, installGlobalHardening, installPermissionHandlers } from './security';
 import { runSetup } from './setupWindow';
 import { loadConfig } from './store';
+import { installDesktopLifecycle } from './desktopLifecycle';
 
 // Sandbox em todos os renderers, antes de qualquer janela.
 app.enableSandbox();
@@ -21,6 +22,7 @@ if (profileArg) app.setPath('userData', profileArg.slice('--profile='.length));
 let mainWindow: BrowserWindow | undefined;
 /** Durante o setup inicial a unica janela fecha antes da principal abrir. */
 let mainWindowCreated = false;
+let showMainWindow: (() => void) | undefined;
 
 /** --server=<url> so vale fora do pacote e com --dev (nao e persistido). */
 function devServerOverride(): string | null {
@@ -57,9 +59,11 @@ async function start(): Promise<void> {
   }
 
   mainWindow = createMainWindow({ onChangeServer: () => void changeServer() });
+  showMainWindow = installDesktopLifecycle(mainWindow).show;
   mainWindowCreated = true;
   mainWindow.on('closed', () => {
     mainWindow = undefined;
+    showMainWindow = undefined;
   });
   loadServer(mainWindow, origin);
 }
@@ -70,10 +74,10 @@ if (!app.requestSingleInstanceLock()) {
   installGlobalHardening();
 
   app.on('second-instance', () => {
-    if (!mainWindow) return;
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.focus();
+    showMainWindow?.();
   });
+
+  app.on('activate', () => showMainWindow?.());
 
   app.on('window-all-closed', () => {
     if (mainWindowCreated) app.quit();

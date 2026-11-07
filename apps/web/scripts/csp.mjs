@@ -59,6 +59,8 @@ const policy = [
   "img-src 'self' data: blob:",
   "media-src 'self' blob:",
   "font-src 'self' data:",
+  "worker-src 'self'",
+  "manifest-src 'self'",
   // 'self' cobre fetch /api e o WebSocket same-origin (ws/wss do proprio host).
   "connect-src 'self' wss:",
   "object-src 'none'",

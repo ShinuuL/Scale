@@ -31,7 +31,8 @@ export function createMainWindow(hooks: MainWindowHooks): BrowserWindow {
     show: false,
     backgroundColor: '#071412',
     // Sem preload: a pagina remota nao recebe nenhuma API do Electron.
-    webPreferences: secureWebPreferences(),
+    // Keep WebRTC running when hidden in the tray; affects this client, not VPS.
+    webPreferences: { ...secureWebPreferences(), backgroundThrottling: false },
   });
   if (saved?.maximized) win.maximize();
 

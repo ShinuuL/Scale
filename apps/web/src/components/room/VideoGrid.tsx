@@ -5,6 +5,7 @@ import { clsx } from 'clsx';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { copyText } from '@/lib/clipboard';
+import { setAudioSink } from '@/hooks/useAudioDevices';
 import type { PeerConnection } from '@/hooks/useWebRTC';
 
 /** Id da transmissão/participante local (os remotos usam o peerId). */
@@ -58,7 +59,7 @@ export function resolveFocus(shares: LiveShare[], requested: string | null): Liv
  * Um `<audio>` por peer remoto, FORA dos tiles: trocar o layout (palco ↔
  * grade, foco) não desmonta o elemento e o som não corta.
  */
-function PeerAudio({ stream }: { stream: MediaStream | null }) {
+function PeerAudio({ stream, outputDeviceId, onOutputError }: { stream: MediaStream | null; outputDeviceId: string; onOutputError?: () => void }) {
   const audioRef = useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
@@ -86,6 +87,18 @@ function PeerAudio({ stream }: { stream: MediaStream | null }) {
     window.addEventListener('keydown', onFirstGesture, true);
     return cleanup;
   }, [stream]);
+
+  useEffect(() => {
+    const element = audioRef.current;
+    if (!element) return;
+    let active = true;
+    void setAudioSink(element, outputDeviceId).catch(() => {
+      if (!active) return;
+      void setAudioSink(element, '').catch(() => {});
+      onOutputError?.();
+    });
+    return () => { active = false; };
+  }, [outputDeviceId, onOutputError]);
 
   return <audio ref={audioRef} autoPlay playsInline />;
 }
@@ -190,6 +203,8 @@ function MemberCard({ member, speaking, compact }: { member: Member; speaking: b
 // ─── Grade ──────────────────────────────────────────────────────
 
 interface VideoGridProps {
+  outputDeviceId?: string;
+  onOutputError?: () => void;
   peers: Map<string, PeerConnection>;
   localStream: MediaStream | null;
   localScreenStream: MediaStream | null;
@@ -209,6 +224,8 @@ interface VideoGridProps {
 }
 
 export function VideoGrid({
+  outputDeviceId = '',
+  onOutputError,
   peers,
   localStream,
   localScreenStream,
@@ -248,7 +265,7 @@ export function VideoGrid({
   const audioLayer = (
     <div className="hidden" aria-hidden="true">
       {peerArray.map((peer) => (
-        <PeerAudio key={peer.peerId} stream={peer.stream} />
+        <PeerAudio key={peer.peerId} stream={peer.stream} outputDeviceId={outputDeviceId} onOutputError={onOutputError} />
       ))}
     </div>
   );

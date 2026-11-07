@@ -69,7 +69,7 @@
 			X-Content-Type-Options nosniff
 			Referrer-Policy no-referrer
 			X-Frame-Options DENY
-			Permissions-Policy "microphone=(self), display-capture=(self), camera=(), geolocation=(), payment=(), usb=()"
+			Permissions-Policy "microphone=(self), display-capture=(self), speaker-selection=(self), camera=(), geolocation=(), payment=(), usb=()"
 			-Server
 		}
 

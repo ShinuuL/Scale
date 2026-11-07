@@ -1,14 +1,24 @@
 import { defineConfig } from 'vitest/config';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+
+// Nunca usar data.db de desenvolvimento: cada execucao tem seu banco descartavel.
+const testDirectory = mkdtempSync(path.join(tmpdir(), 'scale-server-test-'));
+const testDatabaseUrl = `file:${path.join(testDirectory, 'data.db')}`;
+process.env.SCALE_TEST_DIRECTORY = testDirectory;
+process.env.SCALE_TEST_DATABASE_URL = testDatabaseUrl;
 
 export default defineConfig({
   test: {
     globals: true,
+    globalSetup: ['./src/__tests__/helpers/databaseSetup.ts'],
     environment: 'node',
-    // The repo-root .env points DATABASE_URL at the Docker container path
-    // (file:/app/data/data.db), which does not exist on a local machine.
-    // Give tests a local SQLite file so they run anywhere.
+    // Cada invocacao cria esquema novo em diretorio temporario; nunca usa
+    // DATABASE_URL/data.db de desenvolvimento ou volumes Docker.
     env: {
-      DATABASE_URL: 'file:./data.db',
+      DATABASE_URL: testDatabaseUrl,
+      NODE_ENV: 'test',
     },
     // Os arquivos de teste compartilham o mesmo SQLite local e vários fazem
     // deleteMany global (rooms/messages/files) no beforeAll. Em paralelo, esse

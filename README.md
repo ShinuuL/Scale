@@ -74,7 +74,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
 
 | Variavel | Descricao | Padrao |
 |----------|-----------|--------|
-| `JWT_SECRET` | Chave dos JWT de sessao (deriva tambem a chave do room ticket) | `change-me-in-production` |
+| `JWT_SECRET` | Chave dos JWT de sessao (deriva tambem a chave do room ticket). **Obrigatorio em producao, >= 32 caracteres.** Trocar o valor derruba as sessoes abertas | `change-me-in-production` so em dev/teste (recusado em producao) |
 | `GUEST_COOKIE_SECRET` | Assina o cookie `guestId` do convidado. **Obrigatorio em producao, >= 32 caracteres.** Trocar o valor faz convidados perderem a autoria das mensagens antigas | derivado do `JWT_SECRET` so em dev/teste |
 | `ADMIN_EMAILS` | E-mails (CSV) dos administradores do sistema: veem `/api/metrics` e o painel `/metrics` e podem apagar qualquer sala | vazio = ninguem |
 | `METRICS_ADMIN_EMAILS` | Nome legado de `ADMIN_EMAILS`, ainda aceito (as duas listas sao unidas) | vazio |

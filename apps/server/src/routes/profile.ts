@@ -2,11 +2,13 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
+import { pipeline } from 'node:stream/promises';
+import { byteLimit, StreamLimitError, tryAvatarSlot, tryResourceLock } from '../lib/resourceLimits.js';
 import { z } from 'zod';
 import { AVATAR_MIMES, MAX_AVATAR_SIZE_BYTES, USER_NAME_MAX, USER_NAME_MIN } from '@scale/shared';
 import { prisma } from '../lib/prisma.js';
 import { signToken } from '../lib/auth.js';
-import { UPLOADS_ROOT } from '../lib/uploads.js';
+import { readFileHead, UPLOADS_ROOT } from '../lib/uploads.js';
 import { isProfileUpdateRateLimited } from '../lib/rateLimit.js';
 
 /** Fotos de perfil: uploads/avatars/<userId>.<ext>, fora das pastas de sala. */
@@ -126,36 +128,52 @@ export async function profileRoutes(fastify: FastifyInstance): Promise<void> {
     const limit = isProfileUpdateRateLimited(userId);
     if (limit.limited) return tooMany(reply, limit.retryAfterSeconds);
 
-    const part = await request.file({ limits: { fileSize: MAX_AVATAR_SIZE_BYTES, files: 1 } });
-    if (!part) return reply.code(400).send({ error: 'Nenhum arquivo enviado' });
-
-    const buf = await part.toBuffer().catch(() => null);
-    // Confere o tamanho tambem aqui: nao depende so do limite do busboy.
-    if (!buf || part.file.truncated || buf.length > MAX_AVATAR_SIZE_BYTES) {
-      return reply.code(413).send({ error: 'File too large. Max 32MB' });
+    const releaseUser = tryResourceLock(`avatar:${userId}`);
+    if (!releaseUser) return tooMany(reply, 1);
+    const releaseSlot = tryAvatarSlot();
+    if (!releaseSlot) { releaseUser(); return tooMany(reply, 1); }
+    let abs: string | undefined;
+    let committed = false;
+    try {
+      const part = await request.file({ limits: { fileSize: MAX_AVATAR_SIZE_BYTES, files: 1 } });
+      if (!part) return reply.code(400).send({ error: 'Nenhum arquivo enviado' });
+      const current = await prisma.user.findUnique({ where: { id: userId }, select: { avatarPath: true } });
+      if (!current) { part.file.resume(); return reply.code(404).send({ error: 'User not found' }); }
+      await fsp.mkdir(AVATARS_ROOT, { recursive: true });
+      // UUID evita colisao entre duas atualizacoes no mesmo milissegundo.
+      abs = path.join(AVATARS_ROOT, `${crypto.randomUUID()}.upload`);
+      await pipeline(part.file, byteLimit(MAX_AVATAR_SIZE_BYTES), fs.createWriteStream(abs, { mode: 0o600, flags: 'wx' }));
+      if (part.file.truncated) {
+        await fsp.unlink(abs).catch(() => {}); abs = undefined;
+        return reply.code(413).send({ error: 'File too large. Max 32MB' });
+      }
+      const mime = detectAvatarMime(await readFileHead(abs));
+      if (!mime) {
+        await fsp.unlink(abs).catch(() => {}); abs = undefined;
+        return reply.code(400).send({ error: 'Formato não permitido. Use PNG, JPEG ou WebP' });
+      }
+      const finalAbs = `${abs}.${AVATAR_EXT[mime]}`;
+      await fsp.rename(abs, finalAbs);
+      abs = finalAbs;
+      const user = await prisma.user.update({
+        where: { id: userId },
+        data: { avatarPath: path.relative(process.cwd(), abs), avatarMime: mime, avatarUpdatedAt: new Date() },
+        select: meSelect,
+      }).then(toMe);
+      committed = true;
+      await removeAvatarFile(current.avatarPath);
+      return reply.send({ user });
+    } catch (err) {
+      if (err instanceof StreamLimitError || (err as { code?: string }).code === 'FST_REQ_FILE_TOO_LARGE') {
+        if (abs) { await fsp.unlink(abs).catch(() => {}); abs = undefined; }
+        return reply.code(413).send({ error: 'File too large. Max 32MB' });
+      }
+      throw err;
+    } finally {
+      if (abs && !committed) await fsp.unlink(abs).catch(() => {});
+      releaseSlot();
+      releaseUser();
     }
-
-    // O formato vale pelo conteudo, nao pelo MIME declarado.
-    const mime = detectAvatarMime(buf);
-    if (!mime) return reply.code(400).send({ error: 'Formato não permitido. Use PNG, JPEG ou WebP' });
-
-    const current = await prisma.user.findUnique({ where: { id: userId }, select: { avatarPath: true } });
-    if (!current) return reply.code(404).send({ error: 'User not found' });
-
-    await fsp.mkdir(AVATARS_ROOT, { recursive: true });
-    // Nome novo por versao: a foto antiga so some depois que a nova esta gravada.
-    const abs = path.join(AVATARS_ROOT, `${userId}-${Date.now()}.${AVATAR_EXT[mime]}`);
-    if (!abs.startsWith(AVATARS_ROOT + path.sep)) return reply.code(400).send({ error: 'Invalid path' });
-    await fsp.writeFile(abs, buf, { mode: 0o600 });
-
-    const user = await prisma.user.update({
-      where: { id: userId },
-      data: { avatarPath: path.relative(process.cwd(), abs), avatarMime: mime, avatarUpdatedAt: new Date() },
-      select: meSelect,
-    }).then(toMe);
-    if (current.avatarPath) await removeAvatarFile(current.avatarPath);
-
-    return reply.send({ user });
   });
 
   // DELETE /api/me/avatar — remove a foto (idempotente).
@@ -163,16 +181,20 @@ export async function profileRoutes(fastify: FastifyInstance): Promise<void> {
     const userId = request.userId;
     if (!userId) return reply.code(401).send({ error: 'Not authenticated' });
 
-    const current = await prisma.user.findUnique({ where: { id: userId }, select: { avatarPath: true } });
-    if (!current) return reply.code(404).send({ error: 'User not found' });
+    const release = tryResourceLock(`avatar:${userId}`);
+    if (!release) return tooMany(reply, 1);
+    try {
+      const current = await prisma.user.findUnique({ where: { id: userId }, select: { avatarPath: true } });
+      if (!current) return reply.code(404).send({ error: 'User not found' });
 
-    const user = await prisma.user.update({
-      where: { id: userId },
-      data: { avatarPath: null, avatarMime: null, avatarUpdatedAt: null },
-      select: meSelect,
-    }).then(toMe);
-    await removeAvatarFile(current.avatarPath);
-    return reply.send({ user });
+      const user = await prisma.user.update({
+        where: { id: userId },
+        data: { avatarPath: null, avatarMime: null, avatarUpdatedAt: null },
+        select: meSelect,
+      }).then(toMe);
+      await removeAvatarFile(current.avatarPath);
+      return reply.send({ user });
+    } finally { release(); }
   });
 
   // GET /api/me/avatar — a propria foto (so o dono da sessao, por enquanto).

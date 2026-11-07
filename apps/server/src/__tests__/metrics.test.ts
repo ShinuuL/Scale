@@ -133,6 +133,10 @@ describe('GET /api/metrics', () => {
     expect(typeof body.chat?.deletes).toBe('number');
     expect(typeof body.chat?.filesBytes).toBe('number');
     expect(typeof body.chat?.quotaExceeded).toBe('number');
+    expect(res.json().resources.memory.rss).toBeGreaterThan(0);
+    expect(res.json().resources.cpu.userSeconds).toBeGreaterThanOrEqual(0);
+    expect(res.json().resources.eventLoop.p99Ms).toBeGreaterThanOrEqual(0);
+    expect(typeof res.json().storedFileBytes).toBe('number');
   });
 
   it('Accept: text/plain responde Prometheus text com scale_chat_*', async () => {
@@ -149,6 +153,10 @@ describe('GET /api/metrics', () => {
     expect(res.payload).toContain('scale_chat_deletes_total');
     expect(res.payload).toContain('scale_chat_files_bytes_total');
     expect(res.payload).toContain('scale_chat_quota_exceeded_total');
+    expect(res.payload).toContain('scale_process_resident_memory_bytes');
+    expect(res.payload).toContain('scale_process_cpu_user_seconds_total');
+    expect(res.payload).toContain('scale_event_loop_delay_p99_seconds');
+    expect(res.payload).toContain('scale_chat_files_stored_bytes');
   });
 
   it('?format=prometheus também responde text/plain', async () => {
@@ -171,6 +179,14 @@ describe('GET /api/metrics', () => {
     expect(res.statusCode).toBe(401);
     expect(res.payload).not.toContain('scale_chat');
     expect(JSON.parse(res.payload)).toMatchObject({ error: 'Authentication required' });
+  });
+
+  it('usuario comum recebe 403 sem metricas internas', async () => {
+    const regular = signToken({ userId: 'regular', email: 'regular@example.test', name: 'Regular' });
+    const res = await app.inject({ url: '/api/metrics', headers: { authorization: `Bearer ${regular}` } });
+    expect(res.statusCode).toBe(403);
+    expect(res.payload).not.toContain('resources');
+    expect(res.payload).not.toContain('scale_process');
   });
 
   it('Prometheus text tambem exige credencial', async () => {

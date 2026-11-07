@@ -611,7 +611,8 @@ d4('acesso sem barreira de rede (túnel HTTPS)', () => {
   let port: number;
 
   ba4(async () => {
-    process.env.JWT_SECRET = 'test-secret-for-unit-tests';
+    // Producao exige JWT_SECRET >= 32 caracteres — lib/env.ts.
+    process.env.JWT_SECRET = 'segredo-de-teste-do-jwt-em-producao-0123456789';
     process.env.ALLOWED_ORIGINS = 'http://localhost:3000';
     process.env.NODE_ENV = 'production'; // vitest seta 'test'; aqui queremos sem bypass
     // Producao exige GUEST_COOKIE_SECRET (>= 32 caracteres) — lib/guestId.ts.
@@ -635,6 +636,7 @@ d4('acesso sem barreira de rede (túnel HTTPS)', () => {
   aa4(async () => {
     await app.close();
     process.env.NODE_ENV = 'test';
+    process.env.JWT_SECRET = 'test-secret-for-unit-tests';
     delete process.env.GUEST_COOKIE_SECRET;
     resetEnv();
   });
