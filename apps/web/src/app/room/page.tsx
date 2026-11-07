@@ -170,7 +170,27 @@ function RoomPageInner({ roomId }: { roomId: string }) {
       });
   }, []);
 
-  const webrtc = useWebRTC(socket, roomId);
+  const webrtc = useWebRTC(socket, roomId, chat.roomTicket);
+
+  useEffect(() => {
+    const publish = (active: boolean) => {
+      document.documentElement.dataset.scaleCallActive = String(active);
+      window.dispatchEvent(new CustomEvent('scale:call-state', { detail: { active } }));
+    };
+    publish(joined);
+    return () => publish(false);
+  }, [joined]);
+
+  const toggleMediaMute = webrtc.toggleMute;
+  useEffect(() => {
+    const toggleMute = () => {
+      if (!joined) return;
+      const muted = toggleMediaMute();
+      if (muted !== null) toast(muted ? 'Microfone silenciado' : 'Microfone ativado', 'info');
+    };
+    window.addEventListener('scale:toggle-mute', toggleMute);
+    return () => window.removeEventListener('scale:toggle-mute', toggleMute);
+  }, [joined, toggleMediaMute, toast]);
   const displayName = accountName ?? socket.guestName;
 
   // Fotos de perfil na chamada: a propria vem de /api/me/avatar; a dos outros
@@ -648,8 +668,14 @@ function RoomPageInner({ roomId }: { roomId: string }) {
             variant="warning"
             icon={<Icon name="mic" size={18} />}
             title="Microfone indisponível"
-            description="O navegador bloqueou o acesso ao microfone (permissão negada ou contexto inseguro). A chamada segue funcionando; participantes com áudio habilitado falam normalmente."
+            description="Não foi possível usar o microfone solicitado. Abra Configurações → Áudio para escolher outro ou tentar novamente após conferir a permissão. Você ainda pode ouvir os participantes e compartilhar tela."
           />
+        </div>
+      )}
+
+      {(webrtc.screenShareError || webrtc.isScreenSharing) && (
+        <div role="status" aria-live="polite" className="mx-4 mt-3 rounded-lg border border-white/10 bg-forest-900 px-4 py-2 text-sm text-forest-100">
+          {webrtc.screenShareError || (webrtc.screenAudioAvailable ? 'Tela com áudio. Use fones para reduzir eco.' : 'Tela sem áudio. A fonte escolhida não forneceu áudio; o microfone continua independente.')}
         </div>
       )}
 
@@ -713,13 +739,13 @@ function RoomPageInner({ roomId }: { roomId: string }) {
           talkingWhileMuted={webrtc.isMuted && speaking.has(MUTED_PROBE_ID)}
           isDeafened={webrtc.isDeafened}
           isScreenSharing={webrtc.isScreenSharing}
-          controlsDisabled={!socket.connected || Boolean(webrtc.mediaError)}
+          controlsDisabled={!socket.connected}
           onToggleMute={() => {
             // toggleMute retorna o NOVO estado (boolean) ou null quando não há
             // stream local — evita ler isMuted stale logo após o toggle.
             const result = webrtc.toggleMute();
             if (result === null) {
-              toast('Microfone indisponível em conexão insegura — use HTTPS', 'error');
+              toast('Microfone indisponível. Escolha um dispositivo e verifique a permissão.', 'error');
             } else {
               toast(result ? 'Microfone silenciado' : 'Microfone ativado', 'info');
             }
@@ -735,7 +761,7 @@ function RoomPageInner({ roomId }: { roomId: string }) {
           onToggleScreenShare={async () => {
             const result = await webrtc.toggleScreenShare();
             if (result === null) {
-              toast('Compartilhamento de tela indisponível em conexão insegura — use HTTPS', 'error');
+              toast('Compartilhamento não iniciado. Consulte o aviso da captura.', 'info');
             } else {
               toast(result ? 'Compartilhamento de tela iniciado' : 'Compartilhamento de tela encerrado', 'info');
             }

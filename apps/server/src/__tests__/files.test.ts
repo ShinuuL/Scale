@@ -31,7 +31,7 @@ describe('uploads lib', () => {
     expect(detectMagicBytes(Buffer.from([0x00, 0x01, 0x02, 0x03]))).toBeNull();
   });
 
-  it('quota soma com grace 7d', async () => {
+  it('quota conta linhas ate GC confirmar remocao fisica', async () => {
     const room = await prisma.room.create({
       data: { name: 'Quota Room', isPersistent: true },
     });
@@ -46,7 +46,7 @@ describe('uploads lib', () => {
       await prisma.chatFile.create({
         data: { roomId: room.id, messageId: msg.id, filename: 'b.png', mime: 'image/png', size: 50, path: `uploads/${room.id}/b.png` },
       });
-      // apagado há 8 dias (> 7d) NÃO conta
+      // apagado há 8 dias ainda conta ate o GC remover arquivo e linha
       await prisma.chatFile.create({
         data: {
           roomId: room.id,
@@ -58,7 +58,7 @@ describe('uploads lib', () => {
           deletedAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000),
         },
       });
-      expect(await getQuotaUsage(room.id)).toBe(150);
+      expect(await getQuotaUsage(room.id)).toBe(1150);
     } finally {
       await prisma.room.delete({ where: { id: room.id } }).catch(() => {});
     }
@@ -358,9 +358,9 @@ describe('REST files', () => {
         row(2, 2_000_000_000, new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)), // apagado ha 30 dias: nao conta
       ],
     });
-    expect(await getQuotaUsage(quotaRoom.id)).toBe(1_999_000_000);
+    expect(await getQuotaUsage(quotaRoom.id)).toBe(3_999_000_000);
     await prisma.chatFile.create({ data: row(3, 1_200_000_000) });
-    expect(await getQuotaUsage(quotaRoom.id)).toBe(3_199_000_000); // > 2^31
+    expect(await getQuotaUsage(quotaRoom.id)).toBe(5_199_000_000); // > 2^31
     await prisma.chatFile.deleteMany({ where: { roomId: quotaRoom.id, filename: 'q3.bin' } });
 
     // 1,999 GB usados; 2 MB novos -> passa de 2 GB -> 413 e nada fica no disco

@@ -72,7 +72,10 @@ atualiza sem reinstalar). Guia: `docs/desktop.md`.
   revalida tudo com zod e confere o frame remetente.
 - Navegacao: so a origin configurada; outra origin `https:` abre no navegador do
   sistema; o resto e bloqueado. `<webview>` sempre bloqueado.
-- Permissoes: so `media` (apenas audio), `display-capture` e `speaker-selection` da origin configurada.
+- Permissoes: `media` (apenas audio), `display-capture` e `speaker-selection`
+  da origin configurada; selecao de saida somente no frame principal.
+  `notifications` exige frame principal, confirmacao nativa explicita e
+  consentimento por origin valido somente na sessao atual.
   Captura de tela passa pelo seletor proprio (`setDisplayMediaRequestHandler`).
 - Erros de TLS nunca sao ignorados (sem handler `certificate-error`).
 - Fuses: RunAsNode, NODE_OPTIONS, `--inspect` e privilegios extras de `file://`

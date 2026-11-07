@@ -2,6 +2,11 @@ name: scale
 
 services:
   backend:
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     build:
       context: .
       dockerfile: apps/server/Dockerfile
@@ -79,6 +84,11 @@ services:
   #   TURN_SECRET=<openssl rand -hex 32>
   #   TURN_EXTERNAL_IP=<IP publico do host>
   coturn:
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     image: coturn/coturn:4.6
     profiles:
       - turn
@@ -123,6 +133,11 @@ services:
   # cloudflared (profile `tunnel`) aponta para http://proxy:8080. O Caddyfile e
   # a CSP gerada no build vao DENTRO da imagem (rebuild para mudar).
   proxy:
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     build:
       context: .
       dockerfile: apps/web/Dockerfile
@@ -155,6 +170,11 @@ services:
   # aparece nos logs: `docker compose logs cloudflared`. O tunel aponta para o
   # proxy interno e este distribui por path. Veja docs/tunnel-setup.md.
   cloudflared:
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     image: cloudflare/cloudflared:latest
     profiles:
       - tunnel

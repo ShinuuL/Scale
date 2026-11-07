@@ -668,7 +668,7 @@ describe('ChatPanel (Task 10)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Carregar mais' }));
     expect(chat.loadMore).toHaveBeenCalled();
 
-    chat.loadMore.mockClear();
+    vi.mocked(chat.loadMore).mockClear();
     const { chat: chatNoMore } = renderChatPanel({ chat: { hasMore: false } });
     expect(chatNoMore.loadMore).not.toHaveBeenCalled();
   });

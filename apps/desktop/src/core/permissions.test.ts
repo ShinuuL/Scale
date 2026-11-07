@@ -17,14 +17,21 @@ describe('isPermissionAllowed', () => {
     );
   });
 
-  it('permite escolher a saida de audio so na origin configurada', () => {
-    expect(isPermissionAllowed({ permission: 'speaker-selection', requestingUrl: PAGE, allowedOrigin: ORIGIN })).toBe(
-      true,
-    );
-    expect(
-      isPermissionAllowed({ permission: 'speaker-selection', requestingUrl: 'https://example.com/', allowedOrigin: ORIGIN }),
-    ).toBe(false);
-    expect(isPermissionAllowed({ permission: 'speaker-selection', requestingUrl: PAGE, allowedOrigin: null })).toBe(false);
+  it('notifications require consent and the configured top-level frame', () => {
+    const request = { permission: 'notifications', requestingUrl: PAGE, allowedOrigin: ORIGIN };
+    expect(isPermissionAllowed(request)).toBe(false);
+    expect(isPermissionAllowed({ ...request, notificationConsent: true })).toBe(false);
+    expect(isPermissionAllowed({ ...request, isMainFrame: true })).toBe(false);
+    expect(isPermissionAllowed({ ...request, isMainFrame: true, notificationConsent: true })).toBe(true);
+    expect(isPermissionAllowed({ ...request, isMainFrame: true, notificationConsent: true, requestingUrl: 'https://evil.com/' })).toBe(false);
+  });
+
+  it('speaker selection requires the configured top-level frame', () => {
+    const request = { permission: 'speaker-selection', requestingUrl: PAGE, allowedOrigin: ORIGIN };
+    expect(isPermissionAllowed(request)).toBe(false);
+    expect(isPermissionAllowed({ ...request, isMainFrame: true })).toBe(true);
+    expect(isPermissionAllowed({ ...request, isMainFrame: true, requestingUrl: 'https://example.com/' })).toBe(false);
+    expect(isPermissionAllowed({ ...request, isMainFrame: true, allowedOrigin: null })).toBe(false);
   });
 
   it('nega camera', () => {

@@ -79,27 +79,90 @@ Editar configuração (admins, TURN...): `nano /opt/scale/.env` e depois `./depl
 
 ## Backup e restauração
 
+O script produz **um arquivo conjunto** `backups/backup-AAAAMMDD-HHMMSS-PID.tar.gz`,
+com `db_data/data.db` e `uploads_data/`. Usa a API de backup online SQLite
+(Python 3.12 em container auxiliar), inclui WAL confirmado e verifica `quick_check`.
+Copia apenas anexos e avatares imutáveis referenciados nesse snapshot; não para
+nem reinicia o backend. Exclusão concorrente de anexo/avatares cancela a cópia:
+nenhum arquivo parcial é publicado e a retenção só roda após sucesso. Nesse caso,
+repita o backup após a exclusão; um arquivo já ausente exige investigar o volume.
+
+Comandos para revisão e uso operacional pelo responsável:
+
 ```bash
-./deploy/backup.sh     # backups/db_data-*.tar.gz e backups/uploads_data-*.tar.gz (retém 14 dias)
+./deploy/backup.sh
+KEEP_DAYS=14 MAX_BACKUPS=30 ./deploy/backup.sh
+python3 -B -m unittest discover -s deploy -p test_backup.py -v
 ```
 
-Cron diário sugerido (`crontab -e` como `scale`):
+`KEEP_DAYS` vale 14 e `MAX_BACKUPS` vale 30 por padrão; o máximo precisa ser
+pelo menos `KEEP_DAYS + 1`. A retenção protege o snapshot mais recente de cada
+dia existente na janela, limita cópias extras pela quantidade e preserva sempre
+o último backup. Isso não cria pontos de recuperação nos dias sem execução.
+Os pares legados `db_data-*`/`uploads_data-*` continuam válidos no formato antigo:
+são preservados durante a janela e só removidos por idade depois de um backup
+novo bem-sucedido. O teto de quantidade aplica-se aos arquivos conjuntos novos.
+Backups completos continuam consumindo I/O proporcional aos dados; não há
+deduplicação/incremental. O helper informa tamanho comprimido e duração no log. A compressão gzip
+é sem perdas, nível 1 por padrão para economizar CPU;
+`BACKUP_COMPRESSION_LEVEL=1..9` permite calibrar após medição.
+O host precisa de `flock` (util-linux) e Docker; volumes de origem são montados
+somente para leitura. O lock impede backup simultâneo por cron e deploy.
+
+Cron diário sugerido (`crontab -e` como `scale`; crie `backups/` com modo 700 antes):
 
 ```cron
 0 3 * * * cd /opt/scale && ./deploy/backup.sh >> backups/backup.log 2>&1
 ```
 
-Restaurar (troque o carimbo de data):
+Primeiro valide a restauração em **volumes novos de ensaio**, sem substituir os
+volumes em uso. O exemplo abaixo cria somente `scale_restore_*` e contém um
+nome de arquivo ilustrativo que deve ser substituído pelo snapshot escolhido:
 
 ```bash
-dc stop backend
-docker run --rm -v scale_db_data:/d -v scale_uploads_data:/u -v "$PWD/backups:/in" alpine sh -c \
-  'rm -rf /d/* /u/* && tar -xzf /in/db_data-AAAAMMDD-HHMMSS.tar.gz -C /d \
-   && tar -xzf /in/uploads_data-AAAAMMDD-HHMMSS.tar.gz -C /u && chown -R 1001:1001 /d /u'
-dc start backend
+docker volume create scale_restore_db
+docker volume create scale_restore_uploads
+docker run --rm -v scale_restore_db:/d -v scale_restore_uploads:/u \
+  -v "$PWD/backups:/in:ro" python:3.12-alpine sh -ec '
+  mkdir /restore
+  tar -xzf /in/backup-AAAAMMDD-HHMMSS-PID.tar.gz -C /restore
+  cp /restore/db_data/data.db /d/data.db
+  if [ -d /restore/uploads_data ]; then cp -a /restore/uploads_data/. /u/; fi
+  python -c "import sqlite3; c=sqlite3.connect(\"/d/data.db\"); assert c.execute(\"PRAGMA integrity_check\").fetchall()==[(\"ok\",)]"
+  chown -R 1001:1001 /d /u'
 ```
 
-Copie os backups para fora da VPS (`scp`/`rclone`).
+Valide também os anexos, avatares, usuários e salas nessa instância de ensaio.
+Uma restauração em produção requer janela própria, backend parado e troca dos
+volumes aprovada pelo responsável. Nunca misture um banco de um snapshot com
+anexos de outro. Os snapshots não contêm `.env`, segredos JWT/cookies ou os
+certificados; preserve essas configurações separadamente de forma segura e
+copie os backups para fora da VPS (`scp`/`rclone`).
+
+## TURN e observabilidade da VPS
+
+`TURN_URL`, `TURN_USERNAME` e `TURN_CREDENTIAL` continuam suportados para
+provedores com credencial estática. `TURN_SECRET` habilita credenciais HMAC
+SHA1 temporárias (validade em `TURN_TTL_SECONDS`), no padrão REST do coturn:
+o serviço `coturn` do Compose (perfil `turn`) já sobe com `use-auth-secret` e o
+mesmo segredo. Um relay externo precisa da mesma configuração.
+
+`GET /api/turn/credentials?roomId=<uuid>` aceita convidados somente com
+`X-Room-Ticket` válido de uma sala ativa em que entraram. Login continua
+compatível. A resposta privada não admite cache e informa `expiresAt`/`ttlSeconds`
+no modo temporário; o cliente renova antes do prazo e atualiza o ICE dos peers.
+Ticket de sala tem validade própria de 12 horas, já existente; não é token de
+sessão. Custos/banda e testes de relay real continuam dependendo do provedor.
+
+`GET /api/metrics` exige administrador e expõe RSS/heap, CPU acumulada,
+latência do event loop (janela de até 60 s), capacidade/livre do filesystem dos
+uploads e bytes de anexos **referenciados no banco**, inclusive soft deletes.
+Esse último valor não inclui avatares nem órfãos; o contador histórico de upload
+continua acumulado desde o boot. As métricas não prometem capacidade da VPS.
+Logs Docker têm rotação de 10 MB por arquivo, três arquivos por serviço;
+limites de CPU/RAM, imagens pré-compiladas em CI e migração explícita de banco
+permanecem pendentes de medição/planejamento operacional. O boot ainda usa o
+`prisma db push` existente; esta entrega não o executa em produção.
 
 ## Instalação do zero (outra VPS)
 

@@ -1,4 +1,4 @@
-import { app, shell, type Session, type WebContents, type WebPreferences } from 'electron';
+import { app, BrowserWindow, dialog, shell, type Session, type WebContents, type WebPreferences } from 'electron';
 import { decideNavigation, canOpenExternally } from '../core/navigation';
 import { isPermissionAllowed } from '../core/permissions';
 import { originOf } from '../core/serverUrl';
@@ -6,8 +6,11 @@ import { isDev } from './paths';
 
 /** Origin do servidor configurado (unica origin com acesso dentro do app). */
 let allowedOrigin: string | null = null;
+const notificationConsents = new Map<string, boolean>();
+const notificationPending = new Set<string>();
 
 export function setAllowedOrigin(origin: string | null): void {
+  if (origin !== allowedOrigin) notificationConsents.clear();
   allowedOrigin = origin;
 }
 
@@ -98,9 +101,34 @@ export function hardenWebContents(contents: WebContents): void {
   }
 }
 
-/** Handlers de permissao da sessao: so 'media' (audio), 'display-capture' e 'speaker-selection' da origin configurada. */
+/**
+ * Handlers de permissao da sessao: so 'media' (audio), 'display-capture' e
+ * 'speaker-selection' da origin configurada. Notifications exigem consentimento
+ * nativo explicito, por origin e por sessao.
+ */
 export function installPermissionHandlers(ses: Session): void {
-  ses.setPermissionRequestHandler((_contents, permission, callback, details) => {
+  ses.setPermissionRequestHandler((contents, permission, callback, details) => {
+    if (permission === 'notifications') {
+      const origin = allowedOrigin;
+      const parent = BrowserWindow.fromWebContents(contents);
+      if (!origin || !parent || !details.isMainFrame || contents.isDestroyed() ||
+          originOf(details.requestingUrl) !== origin || originOf(contents.getURL()) !== origin) {
+        callback(false); return;
+      }
+      if (notificationConsents.has(origin)) { callback(notificationConsents.get(origin) === true); return; }
+      if (notificationPending.has(origin) || !parent.isFocused()) { callback(false); return; }
+      notificationPending.add(origin);
+      void dialog.showMessageBox(parent, {
+        type: 'question', title: 'Notificações do Scale', message: 'Permitir notificações neste servidor?',
+        detail: `${origin}\nO Scale poderá exibir alertas no sistema enquanto estiver aberto, inclusive na bandeja. A permissão vale somente nesta sessão.`,
+        buttons: ['Permitir notificações', 'Agora não'], defaultId: 1, cancelId: 1, noLink: true,
+      }).then(({ response }) => {
+        const granted = response === 0 && allowedOrigin === origin && !contents.isDestroyed() && originOf(contents.getURL()) === origin;
+        if (allowedOrigin === origin) notificationConsents.set(origin, granted);
+        callback(granted);
+      }).catch(() => callback(false)).finally(() => notificationPending.delete(origin));
+      return;
+    }
     const mediaTypes = 'mediaTypes' in details ? (details.mediaTypes ?? []) : undefined;
     callback(
       isPermissionAllowed({
@@ -108,6 +136,7 @@ export function installPermissionHandlers(ses: Session): void {
         requestingUrl: details.requestingUrl ?? '',
         allowedOrigin,
         mediaTypes,
+        isMainFrame: details.isMainFrame,
       }),
     );
   });
@@ -120,6 +149,8 @@ export function installPermissionHandlers(ses: Session): void {
       requestingUrl: requestingOrigin,
       allowedOrigin,
       mediaTypes: details.mediaType ? [details.mediaType] : [],
+      isMainFrame: details.isMainFrame,
+      notificationConsent: allowedOrigin ? notificationConsents.get(allowedOrigin) === true : false,
     });
   });
 
