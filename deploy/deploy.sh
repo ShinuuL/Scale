@@ -24,9 +24,14 @@ if [[ "${ENABLE_TURN:-false}" == "true" && -n "${TURN_SECRET:-}" ]]; then
   COMPOSE+=(--profile turn)
 fi
 EDGE_PORT="${EDGE_PORT:-8443}"
-ORIGIN="https://$SCALE_DOMAIN"; [[ "$EDGE_PORT" == 443 ]] || ORIGIN="$ORIGIN:$EDGE_PORT"
-[[ ",$ALLOWED_ORIGINS," == *",$ORIGIN,"* ]] \
-  || { echo "ALLOWED_ORIGINS precisa conter $ORIGIN." >&2; exit 1; }
+EDGE_ORIGIN="https://$SCALE_DOMAIN"; [[ "$EDGE_PORT" == 443 ]] || EDGE_ORIGIN="$EDGE_ORIGIN:$EDGE_PORT"
+# Endereco principal: PUBLIC_URL (ex.: https://scale.nexushosts.tech, sem
+# porta, servido pelo Caddy do Nexus); sem ela, o da borda na EDGE_PORT.
+ORIGIN="${PUBLIC_URL:-$EDGE_ORIGIN}"; ORIGIN="${ORIGIN%/}"
+for o in "$ORIGIN" "$EDGE_ORIGIN"; do
+  [[ ",$ALLOWED_ORIGINS," == *",$o,"* ]] \
+    || { echo "ALLOWED_ORIGINS precisa conter $o." >&2; exit 1; }
+done
 
 # Backup antes de atualizar (se ja houver instalacao).
 if docker volume inspect scale_db_data >/dev/null 2>&1; then

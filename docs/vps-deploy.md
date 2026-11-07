@@ -1,6 +1,8 @@
 # Produção na VPS
 
-Endereço: **https://scale.nexushosts.tech:8443**
+Endereço: **scale.nexushosts.tech** (sem porta; `http://` redireciona para
+`https://`). O endereço antigo `https://scale.nexushosts.tech:8443` continua
+funcionando para links antigos.
 
 | Item | Valor |
 |---|---|
@@ -12,11 +14,16 @@ Endereço: **https://scale.nexushosts.tech:8443**
 ## Arquitetura
 
 ```
-cliente --HTTPS:8443--> edge (172.28.0.6) --> proxy :8080 (172.28.0.4) --> backend :4000
+cliente --HTTPS:443--> Caddy do Nexus (172.28.0.7) --+
+cliente --HTTPS:8443-> edge (172.28.0.6) ------------+--> proxy :8080 (172.28.0.4) --> backend :4000
 ```
 
-- As portas 80/443 da VPS são do Caddy do **Nexus**. O Scale tem um Caddy
-  próprio (`edge`) só na **8443** e não toca no Nexus.
+- As portas 80/443 da VPS são do Caddy do **Nexus** (`/opt/manga-engine`,
+  usuário `nexus`). Ele atende também `scale.nexushosts.tech` e repassa para o
+  proxy do Scale pela rede `scale_scale`, onde entra com o IP fixo
+  **172.28.0.7** (confiado no `Caddyfile` e no `TRUST_PROXY`). Ver
+  "Endereço sem porta" abaixo.
+- O `edge` do Scale continua na **8443** (links antigos).
 - O certificado (Let's Encrypt) sai por **DNS-01 delegado ao acme-dns**, sem
   usar as portas 80/443:
   - `A      scale                  -> 187.41.116.22`
@@ -63,17 +70,63 @@ cat .deployed-commit                  # commit em produção
 
 Editar configuração (admins, TURN...): `nano /opt/scale/.env` e depois `./deploy/deploy.sh`.
 
+## Endereço sem porta (Caddy do Nexus)
+
+O Scale não pode abrir as portas 80/443 (são do Nexus). Quem atende
+`scale.nexushosts.tech` nelas é o Caddy do Nexus, com certificado próprio
+(Let's Encrypt automático, já que ele tem a 80/443) e redirecionamento
+`http -> https`. Mudanças, feitas como usuário `nexus` em `/opt/manga-engine`
+(e no repositório do Nexus, para não se perderem no próximo deploy dele):
+
+1. `deploy/Caddyfile`, novo bloco:
+   ```
+   scale.nexushosts.tech {
+   	encode zstd gzip
+   	header Strict-Transport-Security "max-age=31536000"
+   	reverse_proxy 172.28.0.4:8080
+   }
+   ```
+   Sem `trusted_proxies`: o Caddy do Nexus descarta qualquer `X-Forwarded-For`
+   de fora e grava o IP real do cliente.
+2. `docker-compose.caddy.yml`, no serviço `caddy`:
+   ```yaml
+       networks:
+         default: {}
+         scale:
+           ipv4_address: 172.28.0.7
+   ```
+   e no fim do arquivo:
+   ```yaml
+   networks:
+     scale:
+       name: scale_scale
+       external: true
+   ```
+3. `docker compose -f docker-compose.caddy.yml up -d caddy`.
+
+Cuidados: a rede `scale_scale` precisa existir para o Caddy do Nexus subir
+(o `deploy.sh` do Scale só faz `up`, nunca `down`). Se o Scale estiver fora do
+ar, só `scale.nexushosts.tech` dá 502; o Nexus segue normal.
+
+No `/opt/scale/.env` do Scale:
+```
+PUBLIC_URL=https://scale.nexushosts.tech
+ALLOWED_ORIGINS=https://scale.nexushosts.tech,https://scale.nexushosts.tech:8443
+```
+e o callback do OAuth App do GitHub passa a ser
+`https://scale.nexushosts.tech/api/auth/github/callback`.
+
 ## Login com GitHub
 
 1. Em https://github.com/settings/developers, crie um **OAuth App**:
-   - Homepage URL: `https://scale.nexushosts.tech:8443`
-   - Authorization callback URL: `https://scale.nexushosts.tech:8443/api/auth/github/callback`
+   - Homepage URL: `https://scale.nexushosts.tech`
+   - Authorization callback URL: `https://scale.nexushosts.tech/api/auth/github/callback`
 2. Gere um client secret.
 3. Na VPS, edite `/opt/scale/.env` (não cole o secret em chat nem no Git):
    ```
    GITHUB_CLIENT_ID=<client id>
    GITHUB_CLIENT_SECRET=<client secret>
-   PUBLIC_URL=https://scale.nexushosts.tech:8443
+   PUBLIC_URL=https://scale.nexushosts.tech
    ```
 4. Rode `./deploy/deploy.sh`. O botão "Entrar com GitHub" aparece no login.
 

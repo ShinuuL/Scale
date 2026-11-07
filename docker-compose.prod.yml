@@ -16,9 +16,10 @@ services:
   backend:
     restart: unless-stopped
     environment:
-      # Cadeia de hops na VPS: cliente -> edge (172.28.0.6) -> proxy
-      # (172.28.0.4) -> backend. So esses hops, nunca a subnet/gateway.
-      - TRUST_PROXY=172.28.0.4/32,172.28.0.6/32
+      # Cadeia de hops na VPS: cliente -> edge (172.28.0.6, :8443) ou Caddy
+      # do Nexus (172.28.0.7, :443 sem porta) -> proxy (172.28.0.4) ->
+      # backend. So esses hops, nunca a subnet/gateway.
+      - TRUST_PROXY=172.28.0.4/32,172.28.0.6/32,172.28.0.7/32
 
   proxy:
     ports: !override
