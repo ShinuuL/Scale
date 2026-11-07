@@ -38,7 +38,8 @@ fi
 
 echo "Aguardando servicos ficarem healthy..."
 for _ in $(seq 1 30); do
-  unhealthy=$("${COMPOSE[@]}" ps --format '{{.Service}} {{.Health}}' | grep -v ' healthy$' || true)
+  # Health vazio = servico sem healthcheck (coturn): conta como ok se estiver rodando.
+  unhealthy=$("${COMPOSE[@]}" ps --format '{{.Service}} {{.Health}}' | grep -vE ' (healthy)?$' || true)
   [[ -z "$unhealthy" ]] && break
   sleep 5
 done
