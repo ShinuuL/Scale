@@ -449,7 +449,19 @@ function RoomPageInner({ roomId }: { roomId: string }) {
   );
 
   // Sala apagada por outra pessoa: limpa a midia e volta para a home com aviso.
-  const deletingByMeRef = useRoomDeleted(socket, roomId, webrtc.cleanupMedia);
+  const navigateFromDeletedRoom = useCallback(
+    (href: string) => {
+      allowNavigation();
+      window.location.href = href;
+    },
+    [allowNavigation],
+  );
+  const deletingByMeRef = useRoomDeleted(
+    socket,
+    roomId,
+    webrtc.cleanupMedia,
+    navigateFromDeletedRoom,
+  );
 
   // ─── Insecure context actions ───────────────────────────────
   const chromeFlagCommand = 'chrome://flags/#unsafely-treat-insecure-origin-as-secure';

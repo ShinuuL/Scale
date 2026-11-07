@@ -110,3 +110,30 @@ esperadas nesses estados. Áudio/hardware real, permissões de microfone e TURN
 não foram validados; nenhuma captura de tela foi salva. Preview atualizado em
 **http://localhost:18480**, backend e proxy saudáveis; o projeto de validação
 original permanece em execução, com seus dados preservados.
+
+
+## 2026-11-07 — conciliação do redesign com main para o PR #4
+
+A branch `feat/scale-interface` incorporou a `main` por merge, preservando o
+redesign e os recursos já existentes na base: chamadas entre amigos e convites
+para a sala, login por @nome, Google/GitHub e vinculação de contas, seleção
+global de microfone/saída nas Configurações e indicadores de fala. Os seletores
+de áudio participam do foco preso do diálogo; erros de ligação permanecem
+visíveis no conteúdo principal em telas pequenas. Sala apagada remotamente
+encerra a mídia e volta à home com aviso, liberando a guarda de navegação.
+
+Validação do código conciliado em worktree descartável, sem sobrescrever o
+export/CSP do preview ativo: **192 testes frontend aprovados**, lint global sem
+erros (dois avisos `no-console` preexistentes), build global shared/backend/web
+aprovado e `git diff --check` sem achados. O cliente Prisma foi gerado somente
+na worktree para refletir o schema atual, sem conexão ou migração de banco.
+Compose base e overlay de produção validados com entradas sintéticas e sem
+resolver arquivos de ambiente reais. Export: 10 páginas e 29 hashes CSP.
+
+Smoke em Chrome headless, servidor estático temporário e API mockada: login
+por e-mail/@nome e links Google, cadastro com @nome e Google, erro 429 de
+ligação visível em 390 px e navegação em 1280 px; nenhum `pageerror`. Não houve
+login OAuth real, chamada em rede ou teste adicional de hardware/áudio/TURN.
+A instância anterior de preview, seus volumes e serviços foram preservados.
+A pendência preexistente da imagem Docker autocontida do proxy continua aberta;
+esta etapa não realizou deploy nem merge do PR na main.

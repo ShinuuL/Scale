@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import type { RoomDeletedEvent } from '@scale/shared';
 import { useRoomDeleted, ROOM_DELETED_NOTICE } from '@/hooks/useRoomDeleted';
+import { useRoomNavigation } from '@/components/room/useRoomNavigation';
 import { takeFlash } from '@/lib/flash';
 
 const ROOM_ID = '22222222-2222-4222-8222-222222222222';
@@ -20,6 +21,30 @@ function fakeSocket() {
 }
 
 describe('useRoomDeleted (room:deleted)', () => {
+  it('exclusão remota libera a navegação de uma chamada ativa após encerrar a mídia', () => {
+    const socket = fakeSocket();
+    const cleanup = vi.fn();
+    const navigate = vi.fn(() => {
+      const unload = new Event('beforeunload', { cancelable: true });
+      window.dispatchEvent(unload);
+      expect(unload.defaultPrevented).toBe(false);
+      expect(cleanup).toHaveBeenCalledOnce();
+    });
+    renderHook(() => {
+      const navigation = useRoomNavigation(true);
+      return useRoomDeleted(socket, ROOM_ID, cleanup, (href) => {
+        navigation.allowNavigation();
+        navigate(href);
+      });
+    });
+    const before = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(before);
+    expect(before.defaultPrevented).toBe(true);
+    socket.fire({ roomId: ROOM_ID });
+    expect(navigate).toHaveBeenCalledWith('/');
+    expect(takeFlash()).toEqual({ message: ROOM_DELETED_NOTICE, variant: 'info' });
+  });
+
   beforeEach(() => {
     window.sessionStorage.clear();
   });
