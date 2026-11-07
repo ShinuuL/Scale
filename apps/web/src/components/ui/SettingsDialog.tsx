@@ -7,6 +7,7 @@ import { AudioSettings } from '@/components/ui/AudioSettings';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { Input } from '@/components/ui/Input';
+import { LinkedAccounts } from '@/components/ui/LinkedAccounts';
 import { ThemePicker } from '@/components/ui/ThemePicker';
 import { api, avatarUrl, type MeUser } from '@/lib/api';
 
@@ -299,6 +300,8 @@ export function SettingsDialog({ user, onClose, onUserChange }: SettingsDialogPr
             {error ?? saved}
           </p>
         )}
+
+        {user && <LinkedAccounts />}
 
         <AudioSettings />
 

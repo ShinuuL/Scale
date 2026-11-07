@@ -7,9 +7,9 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } 
 import Fastify, { type FastifyInstance } from 'fastify';
 import cookie from '@fastify/cookie';
 import { prisma } from '../lib/prisma.js';
-import { googleAuthRoutes } from '../routes/googleAuth.js';
-import { githubAuthRoutes } from '../routes/githubAuth.js';
-import { verifyToken } from '../lib/auth.js';
+import { googleAuthRoutes } from '../routes/oauthAuth.js';
+import { githubAuthRoutes } from '../routes/oauthAuth.js';
+import { signToken, verifyToken } from '../lib/auth.js';
 import { resetEnv } from '../lib/env.js';
 import { resetGoogleOAuthRateLimit, resetRegisterRateLimit } from '../lib/rateLimit.js';
 
@@ -140,13 +140,22 @@ describe('login com Google', () => {
     expect(res.headers.location).toBe('/login?google=sem_email');
   });
 
-  it('e-mail ja cadastrado sem vinculo NAO e vinculado sozinho', async () => {
+  it('e-mail ja cadastrado: vincula automaticamente pelo e-mail verificado e entra', async () => {
     stubGoogle({ sub: `${SUB_NEW}-x`, email: TAKEN_EMAIL.toUpperCase(), emailVerified: true });
     const state = await start();
     const res = await callback(`code=ok&state=${state}`, state);
-    expect(res.headers.location).toBe('/login?google=email_em_uso');
+    expect(res.headers.location).toBe('/');
+    const owner = await prisma.user.findUnique({ where: { email: TAKEN_EMAIL }, include: { googleAccount: true } });
+    expect(verifyToken(res.cookies.find((c) => c.name === 'token')!.value).userId).toBe(owner?.id);
+    expect(owner?.googleAccount?.googleId).toBe(`${SUB_NEW}-x`);
+  });
+
+  it('e-mail de conta que ja tem OUTRO Google vinculado -> outra_conta', async () => {
+    stubGoogle({ sub: `${SUB_NEW}-y`, email: TAKEN_EMAIL, emailVerified: true });
+    const state = await start();
+    const res = await callback(`code=ok&state=${state}`, state);
+    expect(res.headers.location).toBe('/login?google=outra_conta');
     expect(res.cookies.find((c) => c.name === 'token')).toBeUndefined();
-    expect(await prisma.googleAccount.count({ where: { googleId: `${SUB_NEW}-x` } })).toBe(0);
   });
 
   it('conta nova: cria usuario vinculado e emite a sessao', async () => {
@@ -172,6 +181,61 @@ describe('login com Google', () => {
     const user = await prisma.user.findUnique({ where: { email: NEW_EMAIL } });
     expect(verifyToken(res.cookies.find((c) => c.name === 'token')!.value).userId).toBe(user?.id);
     expect(user?.name).toBe('Nova Pessoa');
+  });
+
+  describe('vinculo pela sessao (Configuracoes)', () => {
+    const LINK_EMAIL = `go-link-${STAMP}@exemplo.com`;
+    let linkUserId = '';
+    let session = '';
+
+    beforeAll(async () => {
+      const u = await prisma.user.create({ data: { email: LINK_EMAIL, passwordHash: 'x', name: 'Logado' } });
+      linkUserId = u.id;
+      session = signToken({ userId: u.id, email: u.email, name: u.name });
+    });
+    afterAll(async () => {
+      await prisma.user.deleteMany({ where: { email: LINK_EMAIL } });
+    });
+
+    async function startLink(): Promise<string> {
+      const res = await app.inject({ method: 'GET', url: '/api/auth/google/link', headers: { cookie: `token=${session}` } });
+      expect(new URL(res.headers.location as string).origin).toBe('https://accounts.google.com');
+      return res.cookies.find((x) => x.name === STATE_COOKIE)!.value;
+    }
+
+    it('sem sessao manda para o login', async () => {
+      const res = await app.inject({ method: 'GET', url: '/api/auth/google/link' });
+      expect(res.headers.location).toBe('/login');
+    });
+
+    it('vincula conta Google com e-mail DIFERENTE ao usuario logado', async () => {
+      stubGoogle({ sub: `${SUB_NEW}-link`, email: `pessoal-${STAMP}@gmail.test`, emailVerified: true });
+      const state = await startLink();
+      const res = await callback(`code=ok&state=${state}`, state);
+      expect(res.headers.location).toBe('/?vinculo=google.ok');
+      expect(await prisma.googleAccount.findUnique({ where: { googleId: `${SUB_NEW}-link` } })).toMatchObject({ userId: linkUserId });
+      // Vinculo nao troca a sessao.
+      expect(res.cookies.find((c) => c.name === 'token')).toBeUndefined();
+      const links = await app.inject({ method: 'GET', url: '/api/me/links', headers: { cookie: `token=${session}` } });
+      expect(links.json()).toEqual({ github: null, google: true });
+    });
+
+    it('Google ja vinculado a OUTRO usuario -> outra_conta, sem mudar dono', async () => {
+      stubGoogle({ sub: SUB_NEW, email: NEW_EMAIL, emailVerified: true });
+      const state = await startLink();
+      const res = await callback(`code=ok&state=${state}`, state);
+      expect(res.headers.location).toBe('/?vinculo=google.outra_conta');
+      const owner = await prisma.user.findUnique({ where: { email: NEW_EMAIL } });
+      expect(await prisma.googleAccount.findUnique({ where: { googleId: SUB_NEW } })).toMatchObject({ userId: owner?.id });
+    });
+
+    it('intencao de vinculo nao vale com state forjado', async () => {
+      const fake = stubGoogle({ sub: `${SUB_NEW}-z`, email: 'x@exemplo.com', emailVerified: true });
+      const state = await startLink();
+      const res = await callback(`code=ok&state=${state}`, 'outro-cookie');
+      expect(res.headers.location).toBe('/login?google=falhou');
+      expect(fake).not.toHaveBeenCalled();
+    });
   });
 
   it('recurso desligado sem configuracao', async () => {

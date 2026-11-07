@@ -7,7 +7,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } 
 import Fastify, { type FastifyInstance } from 'fastify';
 import cookie from '@fastify/cookie';
 import { prisma } from '../lib/prisma.js';
-import { githubAuthRoutes } from '../routes/githubAuth.js';
+import { githubAuthRoutes } from '../routes/oauthAuth.js';
 import { verifyToken } from '../lib/auth.js';
 import { resetEnv } from '../lib/env.js';
 import { redactUrl } from '../lib/logger.js';
@@ -147,16 +147,29 @@ describe('login com GitHub', () => {
     expect(res.headers.location).toBe('/login?github=sem_email');
   });
 
-  it('e-mail ja cadastrado sem vinculo NAO e vinculado sozinho', async () => {
+  it('e-mail ja cadastrado: vincula automaticamente pelo e-mail verificado e entra', async () => {
     stubGithub({
-      id: GH_ID_NEW + 1, login: 'intruso', name: null,
+      id: GH_ID_NEW + 1, login: 'dono-gh', name: null,
       emails: [{ email: TAKEN_EMAIL.toUpperCase(), primary: true, verified: true }],
     });
     const state = await start();
     const res = await callback(`code=ok&state=${state}`, state);
-    expect(res.headers.location).toBe('/login?github=email_em_uso');
+    expect(res.headers.location).toBe('/');
+    const owner = await prisma.user.findUnique({ where: { email: TAKEN_EMAIL }, include: { githubAccount: true } });
+    expect(verifyToken(res.cookies.find((c) => c.name === 'token')!.value).userId).toBe(owner?.id);
+    expect(owner?.githubAccount?.githubId).toBe(String(GH_ID_NEW + 1));
+    expect(owner?.name).toBe('Dono');
+  });
+
+  it('e-mail de conta que ja tem OUTRO GitHub vinculado -> outra_conta', async () => {
+    stubGithub({
+      id: GH_ID_NEW + 2, login: 'segundo', name: null,
+      emails: [{ email: TAKEN_EMAIL, primary: true, verified: true }],
+    });
+    const state = await start();
+    const res = await callback(`code=ok&state=${state}`, state);
+    expect(res.headers.location).toBe('/login?github=outra_conta');
     expect(res.cookies.find((c) => c.name === 'token')).toBeUndefined();
-    expect(await prisma.githubAccount.count({ where: { githubId: String(GH_ID_NEW + 1) } })).toBe(0);
   });
 
   it('conta nova: cria usuario vinculado e emite a sessao', async () => {

@@ -14,7 +14,7 @@ function errorMessage(provider: Provider, code: string): string {
   const messages: Record<string, string> = {
     cancelado: `Login com ${name} cancelado.`,
     falhou: `Não foi possível entrar com o ${name}. Tente de novo.`,
-    email_em_uso: `Já existe uma conta com o e-mail do seu ${name}. Entre com e-mail e senha.`,
+    outra_conta: `Sua conta do Scale já está vinculada a outra conta ${name}. Entre com ela ou com e-mail e senha.`,
     sem_email: `Seu ${name} não tem e-mail verificado. Verifique um e-mail no ${name} e tente de novo.`,
     limite: 'Muitas tentativas. Aguarde alguns minutos e tente de novo.',
     desligado: `Login com ${name} não está disponível neste servidor.`,

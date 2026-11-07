@@ -245,6 +245,14 @@ class ApiClient {
     return z.object({ github: z.boolean(), google: z.boolean().default(false) }).parse(data);
   }
 
+  /** Contas de login externo vinculadas a conta logada. */
+  async getLinkedAccounts(): Promise<{ github: { login: string } | null; google: boolean }> {
+    const data = await this.request<unknown>('/api/me/links');
+    return z
+      .object({ github: z.object({ login: z.string() }).nullable(), google: z.boolean() })
+      .parse(data);
+  }
+
   async getMe(): Promise<{ user: MeUser }> {
     return this.request('/api/auth/me');
   }

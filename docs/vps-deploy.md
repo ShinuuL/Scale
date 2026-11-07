@@ -93,8 +93,9 @@ Editar configuração (admins, TURN...): `nano /opt/scale/.env` e depois `./depl
    ```
 4. Rode `./deploy/deploy.sh`. O botão "Entrar com Google" aparece no login.
 
-Regra de conta igual à do GitHub: o vínculo é pelo `sub` do Google; um e-mail
-já cadastrado por senha **não** é vinculado sozinho (`/login?google=email_em_uso`).
+Regra de conta igual à do GitHub: quem entra com um e-mail verificado que já
+tem conta no Scale é vinculado automaticamente. Para vincular uma conta com
+e-mail diferente: Configurações > Contas vinculadas > Vincular.
 
 ## Backup e restauração
 
