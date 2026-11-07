@@ -13,6 +13,7 @@ import { usePeerAvatars } from '@/hooks/usePeerAvatars';
 import { ChatPanel } from '@/components/ChatPanel';
 import { VideoGrid, LOCAL_ID } from '@/components/room/VideoGrid';
 import { RoomControls } from '@/components/room/RoomControls';
+import { InviteFriendsDialog } from '@/components/calls/InviteFriendsDialog';
 import { ParticipantList } from '@/components/room/ParticipantList';
 import { DeleteRoomDialog } from '@/components/room/DeleteRoomDialog';
 import { Badge } from '@/components/ui/Badge';
@@ -133,6 +134,8 @@ function RoomPageInner({ roomId }: { roomId: string }) {
   chatRef.current = chat;
 
   const [chatOpen, setChatOpen] = useState(false);
+  // Lista de amigos para chamar alguem para esta sala (so conta logada).
+  const [inviteFriendsOpen, setInviteFriendsOpen] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   // Nome do cadastro quando logado; senão o Guest-xxxx do socket. O backend já
   // identifica o usuário pelo cookie no handshake — este é o nome LOCAL (tile
@@ -745,8 +748,13 @@ function RoomPageInner({ roomId }: { roomId: string }) {
           chatUnread={chat.unread}
           showChat={chatOpen}
           onToggleChat={() => setChatOpen((prev) => !prev)}
+          onInviteFriend={currentUserId !== null ? () => setInviteFriendsOpen(true) : undefined}
         />
       </div>
+
+      {inviteFriendsOpen && (
+        <InviteFriendsDialog roomId={roomId} onClose={() => setInviteFriendsOpen(false)} />
+      )}
 
       {confirmDelete && (
         <DeleteRoomDialog

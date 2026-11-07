@@ -18,6 +18,11 @@ export const CALL_RING_TIMEOUT_MS = 45_000;
 
 export const startCallSchema = z.object({
   friendId: z.string().min(1).max(64),
+  /**
+   * Chamar para uma sala em que quem liga ja esta (adicionar na chamada).
+   * Ausente = cria uma sala privada nova para os dois.
+   */
+  roomId: z.string().uuid().optional(),
 });
 
 export const callInviteSchema = z.object({
@@ -27,6 +32,8 @@ export const callInviteSchema = z.object({
   inviteToken: z.string().optional(),
   /** Do ponto de vista de quem recebe o evento: a outra pessoa. */
   peer: publicUserSchema,
+  /** Nome da sala quando o convite e para uma chamada ja em andamento. */
+  roomName: z.string().optional(),
   /** ISO do fim do toque. */
   expiresAt: z.string(),
 });

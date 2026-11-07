@@ -27,6 +27,8 @@ interface RoomControlsProps {
   showChat?: boolean;
   /** Toggle chat panel open/close. */
   onToggleChat?: () => void;
+  /** Abre a lista de amigos para chamar alguem para a sala (so conta logada). */
+  onInviteFriend?: () => void;
 }
 
 export function RoomControls({
@@ -44,6 +46,7 @@ export function RoomControls({
   chatUnread = 0,
   showChat = false,
   onToggleChat,
+  onInviteFriend,
 }: RoomControlsProps) {
   const [copied, setCopied] = useState(false);
 
@@ -132,6 +135,20 @@ export function RoomControls({
         >
           <span aria-hidden="true">{copied ? <Icon name="check" /> : <Icon name="link" />}</span>
           <span className="hidden sm:inline">{copied ? 'Copiado' : 'Link'}</span>
+        </Button>
+      )}
+
+      {/* Chamar amigo para a sala */}
+      {onInviteFriend && (
+        <Button
+          className="max-sm:px-3.5"
+          variant="ghost"
+          onClick={onInviteFriend}
+          aria-label="Chamar amigo para a chamada"
+          title="Chamar amigo para a chamada"
+        >
+          <span aria-hidden="true"><Icon name="users" /></span>
+          <span className="hidden sm:inline">Chamar</span>
         </Button>
       )}
 

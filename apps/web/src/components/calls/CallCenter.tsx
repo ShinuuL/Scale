@@ -9,6 +9,13 @@ import { getWsUrl } from '@/hooks/useSocket';
 import { Icon } from '@/components/ui/Icon';
 import { UserAvatar } from '@/components/friends/UserAvatar';
 
+/** Evento de janela disparado quando uma chamada FEITA por esta conta termina. */
+export const OUTGOING_CALL_ENDED_EVENT = 'scale:outgoing-call-ended';
+export interface OutgoingCallEndedDetail {
+  peerId: string;
+  reason: CallEndReason;
+}
+
 /** Paginas sem sessao: nem tenta conectar. */
 const SKIP_PATHS = ['/login', '/register'];
 
@@ -119,8 +126,15 @@ function IncomingCallScreen({
           <h2 id="incoming-call-title" className="truncate text-2xl font-semibold text-white">
             {invite.peer.name}
           </h2>
-          <p id="incoming-call-desc" className="mt-1 truncate text-sm text-slate-300">
-            {invite.peer.username ? `@${invite.peer.username}` : 'Amigo'} está te ligando…
+          <p id="incoming-call-desc" className="mt-1 line-clamp-2 text-sm text-slate-300">
+            {invite.peer.username ? `@${invite.peer.username}` : 'Amigo'}{' '}
+            {invite.roomName ? (
+              <>
+                está te chamando para <span className="font-medium text-white">{invite.roomName}</span>
+              </>
+            ) : (
+              'está te ligando…'
+            )}
           </p>
         </div>
         {error && (
@@ -247,6 +261,14 @@ export function CallCenter() {
       if (!p.success) return;
       const mine = outgoingRef.current.find((c) => c.callId === p.data.callId);
       if (mine && p.data.reason !== 'cancelled') setNotice(`${mine.peer.name} ${OUTGOING_END_TEXT[p.data.reason]}`);
+      if (mine) {
+        // Avisa a tela que chamou (ex.: lista "Chamar para a chamada").
+        window.dispatchEvent(
+          new CustomEvent<OutgoingCallEndedDetail>(OUTGOING_CALL_ENDED_EVENT, {
+            detail: { peerId: mine.peer.id, reason: p.data.reason },
+          }),
+        );
+      }
       setIncoming((prev) => prev.filter((c) => c.callId !== p.data.callId));
       setOutgoing((prev) => prev.filter((c) => c.callId !== p.data.callId));
     });

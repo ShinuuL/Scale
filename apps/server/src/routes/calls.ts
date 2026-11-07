@@ -13,7 +13,8 @@ import {
 } from '@scale/shared';
 import { prisma } from '../lib/prisma.js';
 import { isCallRateLimited } from '../lib/rateLimit.js';
-import { userRoom } from '../socket/handler.js';
+import { getRoomPeerCount, isUserInRoom, userRoom } from '../socket/handler.js';
+import { isRoomOpen } from '../lib/roomAccess.js';
 import { areFriends, publicUserSelect, toPublicUser } from './social.js';
 
 /**
@@ -29,6 +30,8 @@ interface PendingCall {
   id: string;
   roomId: string;
   inviteToken: string;
+  /** Sala ja existente (adicionar na chamada); null = sala nova da ligacao. */
+  roomName: string | null;
   caller: PublicUser;
   callee: PublicUser;
   expiresAt: number;
@@ -54,6 +57,7 @@ function inviteFor(call: PendingCall, side: 'caller' | 'callee'): CallInvite {
     // So quem recebe precisa do convite (quem liga e o dono da sala).
     inviteToken: side === 'callee' ? call.inviteToken : undefined,
     peer: side === 'callee' ? call.caller : call.callee,
+    roomName: call.roomName ?? undefined,
     expiresAt: new Date(call.expiresAt).toISOString(),
   };
 }
@@ -94,7 +98,7 @@ export async function callRoutes(fastify: FastifyInstance): Promise<void> {
     if (!parsed.success) {
       return reply.code(400).send({ error: 'Validation failed', details: parsed.error.flatten().fieldErrors });
     }
-    const { friendId } = parsed.data;
+    const { friendId, roomId } = parsed.data;
     if (friendId === me) return reply.code(400).send({ error: 'Cannot call yourself' });
 
     const limit = isCallRateLimited(me);
@@ -115,28 +119,50 @@ export async function callRoutes(fastify: FastifyInstance): Promise<void> {
     const caller = toPublicUser(callerRow);
     const callee = toPublicUser(calleeRow);
 
+    // Adicionar na chamada: so quem esta AGORA na sala chama alguem para ela,
+    // e a sala precisa estar aberta e com vaga. O convite vai so para o amigo
+    // (participante que nao e dono nunca ve o convite na tela).
+    let room: { id: string; inviteToken: string };
+    let roomName: string | null = null;
+    if (roomId) {
+      const existing = await prisma.room.findUnique({
+        where: { id: roomId },
+        select: { id: true, name: true, inviteToken: true, ownerId: true, status: true, expiresAt: true, maxParticipants: true },
+      });
+      if (!existing || !isRoomOpen(existing) || !isUserInRoom(roomId, me)) {
+        return reply.code(403).send({ error: 'Not in room' });
+      }
+      if (isUserInRoom(roomId, friendId)) return reply.code(409).send({ error: 'Already in room' });
+      if (getRoomPeerCount(roomId) >= Math.min(existing.maxParticipants, MAX_PARTICIPANTS)) {
+        return reply.code(409).send({ error: 'Room is full' });
+      }
+      room = existing;
+      roomName = existing.name;
+    } else {
+      room = await prisma.room.create({
+        data: {
+          name: `Chamada de ${caller.name}`.slice(0, ROOM_NAME_MAX),
+          isPersistent: false,
+          isPrivate: true,
+          maxParticipants: MAX_PARTICIPANTS,
+          inviteToken: uuidv4(),
+          expiresAt: new Date(Date.now() + CALL_ROOM_TTL_MS),
+          ownerId: me,
+        },
+        select: { id: true, inviteToken: true },
+      });
+    }
+
     // Ligar de novo para a mesma pessoa substitui o toque anterior.
     for (const old of pending.values()) {
       if (old.caller.id === me && old.callee.id === friendId) endCall(fastify, old, 'cancelled');
     }
 
-    const room = await prisma.room.create({
-      data: {
-        name: `Chamada de ${caller.name}`.slice(0, ROOM_NAME_MAX),
-        isPersistent: false,
-        isPrivate: true,
-        maxParticipants: MAX_PARTICIPANTS,
-        inviteToken: uuidv4(),
-        expiresAt: new Date(Date.now() + CALL_ROOM_TTL_MS),
-        ownerId: me,
-      },
-      select: { id: true, inviteToken: true },
-    });
-
     const call: PendingCall = {
       id: uuidv4(),
       roomId: room.id,
       inviteToken: room.inviteToken,
+      roomName,
       caller,
       callee,
       expiresAt: Date.now() + CALL_RING_TIMEOUT_MS,

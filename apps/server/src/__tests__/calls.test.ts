@@ -153,6 +153,59 @@ describe('ligacao entre amigos', () => {
     expect((await ended).reason).toBe('cancelled');
   });
 
+  describe('adicionar na chamada (sala ja existente)', () => {
+    let roomId = '';
+    let ana: Socket;
+
+    function join(s: Socket, id: string, inviteToken?: string): Promise<Record<string, unknown>> {
+      return new Promise((resolve) => s.emit('join-room', { roomId: id, inviteToken }, resolve));
+    }
+
+    beforeAll(async () => {
+      const room = await prisma.room.create({
+        data: {
+          name: 'Sala do grupo',
+          isPersistent: true,
+          isPrivate: true,
+          maxParticipants: 8,
+          inviteToken: crypto.randomUUID(),
+          ownerId: users.ana.id,
+        },
+      });
+      roomId = room.id;
+      ana = await connect('ana');
+      const joined = await join(ana, roomId, room.inviteToken);
+      expect(joined.error).toBeUndefined();
+    });
+
+    it('quem esta na sala chama um amigo para ela, com o nome e o convite da sala', async () => {
+      const bia = await connect('bia');
+      const ringing = next<{ roomId: string; roomName?: string; inviteToken: string }>(bia, 'call:incoming');
+      const res = await inject('ana', 'POST', '/api/calls', { friendId: users.bia.id, roomId });
+      expect(res.statusCode).toBe(201);
+      expect(res.json().roomId).toBe(roomId);
+      const invite = await ringing;
+      expect(invite).toMatchObject({ roomId, roomName: 'Sala do grupo' });
+
+      // O convite recebido deixa a amiga entrar na sala privada.
+      const joined = await join(bia, roomId, invite.inviteToken);
+      expect(joined.error).toBeUndefined();
+    });
+
+    it('nao chama quem ja esta na sala', async () => {
+      const res = await inject('ana', 'POST', '/api/calls', { friendId: users.bia.id, roomId });
+      expect(res.statusCode).toBe(409);
+    });
+
+    it('quem nao esta na sala nao chama ninguem para ela', async () => {
+      const outsider = await prisma.room.create({
+        data: { name: 'Outra', isPersistent: true, isPrivate: true, maxParticipants: 8, inviteToken: crypto.randomUUID(), ownerId: users.bia.id },
+      });
+      const res = await inject('ana', 'POST', '/api/calls', { friendId: users.bia.id, roomId: outsider.id });
+      expect(res.statusCode).toBe(403);
+    });
+  });
+
   it('ligar de novo substitui o toque anterior', async () => {
     const first = (await inject('ana', 'POST', '/api/calls', { friendId: users.bia.id })).json();
     const second = (await inject('ana', 'POST', '/api/calls', { friendId: users.bia.id })).json();

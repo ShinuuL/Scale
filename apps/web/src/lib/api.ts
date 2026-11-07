@@ -197,11 +197,14 @@ class ApiClient {
   }
 
   // ─── Ligacoes ───────────────────────────────────────────────
-  /** Liga para um amigo: cria a sala privada e faz a tela dele tocar. */
-  async startCall(friendId: string): Promise<{ callId: string; roomId: string; expiresAt: string }> {
+  /**
+   * Liga para um amigo e faz a tela dele tocar. Sem `roomId` cria uma sala
+   * privada nova; com `roomId` chama para a sala em que voce ja esta.
+   */
+  async startCall(friendId: string, roomId?: string): Promise<{ callId: string; roomId: string; expiresAt: string }> {
     const data = await this.request<unknown>('/api/calls', {
       method: 'POST',
-      body: JSON.stringify({ friendId }),
+      body: JSON.stringify(roomId ? { friendId, roomId } : { friendId }),
     });
     return startCallResponseSchema.parse(data);
   }

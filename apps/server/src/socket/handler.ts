@@ -97,6 +97,19 @@ export function getRoomPeerUserId(roomId: string, peerId: string): string | null
   return roomPeers.get(roomId)?.get(peerId)?.userId ?? null;
 }
 
+/** O usuario logado tem algum peer (aba) AGORA na sala? */
+export function isUserInRoom(roomId: string, userId: string): boolean {
+  const peers = roomPeers.get(roomId);
+  if (!peers) return false;
+  for (const peer of peers.values()) if (peer.userId === userId) return true;
+  return false;
+}
+
+/** Quantos peers estao conectados agora na sala. */
+export function getRoomPeerCount(roomId: string): number {
+  return roomPeers.get(roomId)?.size ?? 0;
+}
+
 /** Valor de um cookie no header `Cookie` do handshake (undefined se ausente). */
 export function readCookie(header: string | undefined, name: string): string | undefined {
   if (!header) return undefined;
