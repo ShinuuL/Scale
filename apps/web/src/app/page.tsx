@@ -195,6 +195,7 @@ function HomePageInner() {
   const [nameTouched, setNameTouched] = useState(false);
   const [isPersistent, setIsPersistent] = useState(false);
   const [isPrivate, setIsPrivate] = useState(false);
+  const [showRoomOptions, setShowRoomOptions] = useState(false);
   const [creating, setCreating] = useState(false);
   // Attempt number of the retry currently in flight, or null (1 = first retry, i.e. "2/3")
   const [createRetry, setCreateRetry] = useState<number | null>(null);
@@ -407,7 +408,6 @@ function HomePageInner() {
       <Link href="/login" className="mt-3 inline-flex min-h-11 items-center gap-2 text-sm font-medium text-accent">Entrar na conta <Icon name="arrowRight" /></Link>
     </div>
   );
-  const optionClass = 'flex min-h-11 cursor-pointer items-start gap-3 rounded-md py-2';
   return (
     <AppShell activeSection="rooms" title="Salas" accountSlot={authChecked ? <ProfileMenu name={account?.name ?? 'Convidado'} email={account?.email} isAuthenticated={isAuthenticated} user={account} onUserChange={setAccount} /> : authState === 'error' ? <span className="text-xs text-ink-muted">Conta indisponível</span> : <Skeleton className="h-10 w-10" />}
       actions={<Button size="sm" onClick={openCreate}><Icon name="phone" /><span className="hidden sm:inline">Nova sala</span><span className="sr-only sm:hidden">Nova sala</span></Button>}
@@ -453,14 +453,14 @@ function HomePageInner() {
           </section>
           <section className="room-form" aria-labelledby="create-title">
             <div className="mb-6 flex items-start gap-3"><span className="room-row-icon"><Icon name="phone" size={21} /></span><div><h2 id="create-title" className="text-xl font-semibold leading-7">Nova sala</h2><p className="mt-1 text-sm leading-5 text-ink-secondary">Dê um nome e mande o convite.</p></div></div>
-            <form onSubmit={(event) => { event.preventDefault(); void handleCreateRoom(); }} className="space-y-5">
+            <form onSubmit={(event) => { event.preventDefault(); if (!showRoomOptions) { setNameTouched(true); if (!nameError) setShowRoomOptions(true); return; } void handleCreateRoom(); }} className="space-y-5">
               <Input id="room-name" label="Nome da sala" placeholder="Ex.: Partida de hoje ou Equipe" value={roomName} onChange={(event) => setRoomName(event.target.value)} onBlur={() => setNameTouched(true)} maxLength={ROOM_NAME_MAX} required error={nameTouched && nameError ? nameError : undefined} />
-              <fieldset className="space-y-3"><legend className="mb-2 text-sm font-medium text-ink-secondary">Preferências da sala</legend>
-                <label className={optionClass}><input type="checkbox" checked={isPersistent} onChange={(event) => handleTogglePersistent(event.target.checked)} className="mt-1 h-4 w-4 shrink-0" /><span><span className="block text-sm font-medium">Sala persistente</span><span className="mt-1 block text-xs leading-5 text-ink-secondary">Fica disponível até você encerrar.</span></span></label>
-                <label className={optionClass}><input type="checkbox" checked={isPrivate} onChange={(event) => setIsPrivate(event.target.checked)} className="mt-1 h-4 w-4 shrink-0" /><span><span className="block text-sm font-medium">Sala privada</span><span className="mt-1 block text-xs leading-5 text-ink-secondary">Acesso somente pelo link de convite.</span></span></label>
-              </fieldset>
+              {showRoomOptions && <fieldset className="space-y-3"><legend className="mb-2 text-sm font-medium text-ink-secondary">Preferências da sala</legend>
+                <CheckOption checked={isPersistent} onChange={handleTogglePersistent} label="Sala persistente" hint="Fica disponível até você encerrar." />
+                <CheckOption checked={isPrivate} onChange={setIsPrivate} label="Sala privada" hint="Acesso somente pelo link de convite." />
+              </fieldset>}
               {authWarning && <div role="alert" className="text-sm text-amber-200">Entre na sua conta para criar uma sala. <Link href="/login" className="underline underline-offset-4">Entrar</Link></div>}
-              <Button type="submit" className="w-full" disabled={creating || !authChecked}>{creating ? createRetry !== null ? `Tentando novamente (${createRetry + 1}/${FETCH_RETRY_MAX_ATTEMPTS})...` : 'Criando sala...' : 'Criar sala'}<Icon name="arrowRight" /></Button>
+              <Button type="submit" className="w-full" disabled={creating || !authChecked}>{creating ? createRetry !== null ? `Tentando novamente (${createRetry + 1}/${FETCH_RETRY_MAX_ATTEMPTS})...` : 'Criando sala...' : showRoomOptions ? 'Confirmar e criar sala' : 'Criar sala'}<Icon name="arrowRight" /></Button>
               {!isAuthenticated && authChecked && <p className="text-xs leading-5 text-ink-muted">Para criar uma sala, <Link href="/login" className="text-accent underline underline-offset-4">entre na sua conta</Link> ou <Link href="/register" className="text-accent underline underline-offset-4">cadastre-se</Link>.</p>}
             </form>
             <div className="mt-7 flex items-start gap-2 border-t border-line pt-5 text-xs leading-5 text-ink-muted"><Icon name="lock" size={16} className="mt-0.5 shrink-0" /><p>Voz e tela conectadas entre os participantes. Sem gravação de chamadas.</p></div>
@@ -470,5 +470,25 @@ function HomePageInner() {
       {roomToDelete && <DeleteRoomDialog roomId={roomToDelete.id} roomName={roomToDelete.name} onCancel={() => setRoomToDelete(null)} onDeleted={() => handleRoomDeleted(roomToDelete.id)} />}
       {createdInvite && <InviteModal roomId={createdInvite.roomId} inviteToken={createdInvite.inviteToken} onClose={() => setCreatedInvite(null)} />}
     </AppShell>
+  );
+}
+
+function CheckOption({ checked, onChange, label, hint }: { checked: boolean; onChange: (value: boolean) => void; label: string; hint: string }) {
+  return (
+    <label className="group flex min-h-11 cursor-pointer items-start gap-3 rounded-md py-2">
+      <span className="relative mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(event) => onChange(event.target.checked)}
+          className="peer h-5 w-5 cursor-pointer appearance-none rounded-[6px] border border-line-strong bg-surface-tertiary transition-colors duration-150 group-hover:border-accent checked:border-accent-solid checked:bg-accent-solid focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface-base"
+        />
+        <Icon name="check" size={14} className="pointer-events-none absolute scale-50 text-white opacity-0 transition-[opacity,transform] duration-150 peer-checked:scale-100 peer-checked:opacity-100" />
+      </span>
+      <span>
+        <span className="block text-sm font-medium">{label}</span>
+        {checked && <span className="mt-1 block text-xs leading-5 text-ink-secondary">{hint}</span>}
+      </span>
+    </label>
   );
 }
