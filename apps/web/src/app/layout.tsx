@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
 import './globals.css';
 import { PALETTE_BOOT_SRC } from '@/lib/theme';
+import { RoomHost } from '@/components/room/RoomHost';
 import { CallCenter } from '@/components/calls/CallCenter';
 import { ApplicationFeatures } from '@/components/pwa/ApplicationFeatures';
 
@@ -40,6 +41,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         </a>
         <div id="app-root">
           {children}
+          {/* Sessao da sala fora da rota: navegar pelo app nao derruba a chamada. */}
+          <RoomHost />
         </div>
         {/* Chamadas entre amigos: tela tocando e "Chamando…" em qualquer pagina. */}
         <CallCenter />
