@@ -239,32 +239,27 @@ export function ChatPanel({
       data-testid="chat-panel"
     >
       {/* Header */}
-      <header className="flex items-center justify-between gap-2 px-3 py-2 border-b border-line flex-shrink-0">
-        <h2 className="text-sm font-semibold text-white">Chat</h2>
+      <header className="flex items-center gap-2.5 px-4 py-3 border-b border-line flex-shrink-0">
+        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-accent-subtle text-accent">
+          <Icon name="chat" size={16} />
+        </span>
+        <h2 className="text-sm font-semibold text-ink-primary">Chat</h2>
         {chat.unread > 0 && (
-          <span className="badge bg-accent-solid text-white" data-testid="unread-badge">
+          <span
+            className="rounded-full bg-accent-solid px-2 py-0.5 text-[11px] font-semibold text-white"
+            data-testid="unread-badge"
+          >
             {chat.unread > 99 ? '99+' : chat.unread}
           </span>
         )}
         <button
           onClick={onClose}
           aria-label="Fechar chat"
-          className="ml-auto flex h-10 w-10 items-center justify-center rounded-md text-ink-secondary hover:bg-surface-hover hover:text-ink-primary"
+          className="ml-auto flex h-9 w-9 items-center justify-center rounded-full text-ink-secondary transition-colors hover:bg-surface-hover hover:text-ink-primary"
         >
           <Icon name="close" />
         </button>
       </header>
-
-      {/* Paginação */}
-      {chat.hasMore && (
-        <button
-          onClick={() => void chat.loadMore()}
-          disabled={chat.isLoadingHistory}
-          className="text-xs text-accent hover:text-accent text-left px-3 py-1.5 border-b border-line disabled:opacity-50"
-        >
-          {chat.isLoadingHistory ? 'Carregando...' : 'Carregar mais'}
-        </button>
-      )}
 
       {/* Lista */}
       <div
@@ -272,8 +267,28 @@ export function ChatPanel({
         role="log"
         aria-live="polite"
         aria-label="Mensagens do chat"
-        className="flex-1 overflow-y-auto flex flex-col gap-1 p-2 min-h-0"
+        className="flex-1 overflow-y-auto flex flex-col gap-1.5 px-3 py-3 min-h-0"
       >
+        {chat.hasMore && (
+          <button
+            onClick={() => void chat.loadMore()}
+            disabled={chat.isLoadingHistory}
+            className="mx-auto mb-2 rounded-full border border-line px-3 py-1 text-xs text-ink-secondary transition-colors hover:bg-surface-hover hover:text-ink-primary disabled:opacity-50"
+          >
+            {chat.isLoadingHistory ? 'Carregando...' : 'Carregar mais'}
+          </button>
+        )}
+        {chat.messages.length === 0 && !chat.isLoadingHistory && (
+          <div className="m-auto flex max-w-[220px] flex-col items-center gap-3 text-center">
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-surface-tertiary text-ink-muted">
+              <Icon name="chat" size={22} />
+            </span>
+            <p className="text-sm font-medium text-ink-primary">Nenhuma mensagem ainda</p>
+            <p className="text-xs leading-5 text-ink-muted">
+              Comece a conversa. Use @ para mencionar alguém da sala.
+            </p>
+          </div>
+        )}
         {chat.messages.map((message: ChatMessage) => (
           <ChatMessageItem
             key={message.id}
@@ -361,62 +376,67 @@ export function ChatPanel({
       )}
 
       {/* Input */}
-      <div className="p-3 border-t border-line flex flex-col gap-2 flex-shrink-0">
-        {/* `aria-expanded` so e valido em `role="combobox"`: o autocomplete de
+      <div className="p-3 flex-shrink-0">
+        <div className="flex flex-col rounded-2xl border border-line bg-surface-tertiary transition-colors focus-within:border-accent">
+          {/* `aria-expanded` so e valido em `role="combobox"`: o autocomplete de
             mencoes e exatamente esse padrao (combobox + listbox de opcoes). */}
-        <textarea
-          ref={inputRef}
-          value={input}
-          onChange={(e) => handleInputChange(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Escreva uma mensagem..."
-          aria-label="Mensagem"
-          role="combobox"
-          aria-autocomplete="list"
-          aria-haspopup="listbox"
-          aria-controls={showMention && filtered.length > 0 ? 'chat-mention-options' : undefined}
-          aria-expanded={showMention && filtered.length > 0}
-          aria-activedescendant={
-            showMention && activeOption >= 0 ? `chat-mention-option-${activeOption}` : undefined
-          }
-          rows={2}
-          maxLength={600}
-          className="input-base max-h-24 min-h-11 resize-none"
-          disabled={uploading}
-        />
-        <div className="flex items-center justify-between gap-2">
-          <span
-            data-testid="char-counter"
-            className={`text-xs ${charOverflow ? 'text-red-400 font-medium' : 'text-ink-muted'}`}
-          >
-            {input.length}/{CHAT_MESSAGE_MAX}
-          </span>
-          <div className="flex items-center gap-2">
-            <label className="relative flex min-h-10 cursor-pointer items-center gap-2 rounded-md border border-line px-3 text-sm text-ink-secondary hover:bg-surface-hover focus-within:ring-2 focus-within:ring-accent">
-              <span aria-hidden="true">
-                <Icon name="paperclip" size={14} />
-              </span>{' '}
-              Anexar
-              <input
-                type="file"
-                multiple
-                className="sr-only"
-                disabled={uploading}
-                onChange={(e) => {
-                  handleFiles(e.target.files);
-                  e.target.value = '';
-                }}
-                accept={CHAT_FILE_ACCEPT}
-              />
-            </label>
-            <button
-              onClick={send}
-              disabled={!canSend}
-              className="btn-primary min-h-10 text-sm"
-              aria-busy={uploading}
+          <textarea
+            ref={inputRef}
+            value={input}
+            onChange={(e) => handleInputChange(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Escreva uma mensagem..."
+            aria-label="Mensagem"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-haspopup="listbox"
+            aria-controls={showMention && filtered.length > 0 ? 'chat-mention-options' : undefined}
+            aria-expanded={showMention && filtered.length > 0}
+            aria-activedescendant={
+              showMention && activeOption >= 0 ? `chat-mention-option-${activeOption}` : undefined
+            }
+            rows={2}
+            maxLength={600}
+            className="max-h-28 min-h-11 w-full resize-none bg-transparent px-4 pt-3 pb-1 text-sm text-ink-primary placeholder:text-ink-muted focus:outline-none"
+            disabled={uploading}
+          />
+          <div className="flex items-center justify-between gap-2 px-2 pb-2">
+            <span
+              data-testid="char-counter"
+              className={`pl-2 text-[11px] tabular-nums ${charOverflow ? 'text-red-400 font-medium' : 'text-ink-muted'}`}
             >
-              Enviar
-            </button>
+              {input.length}/{CHAT_MESSAGE_MAX}
+            </span>
+            <div className="flex items-center gap-2">
+              <label
+                title="Anexar arquivo"
+                className="relative flex h-9 w-9 cursor-pointer items-center justify-center rounded-full text-ink-secondary transition-colors hover:bg-surface-hover hover:text-ink-primary focus-within:ring-2 focus-within:ring-accent"
+              >
+                <Icon name="paperclip" size={18} />
+                <span className="sr-only">Anexar</span>
+                <input
+                  type="file"
+                  multiple
+                  className="sr-only"
+                  disabled={uploading}
+                  onChange={(e) => {
+                    handleFiles(e.target.files);
+                    e.target.value = '';
+                  }}
+                  accept={CHAT_FILE_ACCEPT}
+                />
+              </label>
+              <button
+                onClick={send}
+                disabled={!canSend}
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-accent-solid text-white transition-[opacity,transform] hover:brightness-110 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+                aria-busy={uploading}
+                aria-label="Enviar"
+                title="Enviar"
+              >
+                <Icon name="arrowRight" size={18} />
+              </button>
+            </div>
           </div>
         </div>
       </div>
