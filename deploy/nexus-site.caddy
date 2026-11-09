@@ -1,0 +1,16 @@
+# Site do Scale servido pelo Caddy do NEXUS (portas 80/443, endereco sem porta).
+#
+# Montado no container do Caddy do Nexus em /etc/caddy/scale.caddy e incluido
+# pelo `import /etc/caddy/scale.caddy` do Caddyfile dele (ver docs/vps-deploy.md).
+# NAO apague nem renomeie: sem este arquivo o Caddy do Nexus nao sobe e o
+# Nexus inteiro cai. Aplicar mudanca (como usuario scale):
+#   docker exec nexus-caddy-caddy-1 caddy reload --config /etc/caddy/Caddyfile
+#
+# O Caddy do Nexus entra na rede scale_scale com IP fixo 172.28.0.7 (confiado
+# no Caddyfile do proxy e no TRUST_PROXY). Sem trusted_proxies aqui: ele
+# descarta X-Forwarded-For de fora e grava o IP real do cliente.
+scale.nexushosts.tech {
+	encode zstd gzip
+	header Strict-Transport-Security "max-age=31536000"
+	reverse_proxy 172.28.0.4:8080
+}
