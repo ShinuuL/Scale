@@ -24,7 +24,7 @@ describe('useRoomDeleted (room:deleted)', () => {
   it('exclusão remota libera a navegação de uma chamada ativa após encerrar a mídia', () => {
     const socket = fakeSocket();
     const cleanup = vi.fn();
-    const navigate = vi.fn(() => {
+    const navigate = vi.fn<(href: string) => void>(() => {
       const unload = new Event('beforeunload', { cancelable: true });
       window.dispatchEvent(unload);
       expect(unload.defaultPrevented).toBe(false);

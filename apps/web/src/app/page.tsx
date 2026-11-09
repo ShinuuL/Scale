@@ -453,7 +453,7 @@ function HomePageInner() {
           </section>
           <section className="room-form" aria-labelledby="create-title">
             <div className="mb-6 flex items-start gap-3"><span className="room-row-icon"><Icon name="phone" size={21} /></span><div><h2 id="create-title" className="text-xl font-semibold leading-7">Nova sala</h2><p className="mt-1 text-sm leading-5 text-ink-secondary">Dê um nome e mande o convite.</p></div></div>
-            <form onSubmit={(event) => { event.preventDefault(); if (!showRoomOptions) { setNameTouched(true); if (!nameError) setShowRoomOptions(true); return; } void handleCreateRoom(); }} className="space-y-5">
+            <form onSubmit={(event) => { event.preventDefault(); if (!showRoomOptions && isAuthenticated) { setNameTouched(true); if (!nameError) setShowRoomOptions(true); return; } void handleCreateRoom(); }} className="space-y-5">
               <Input id="room-name" label="Nome da sala" placeholder="Ex.: Partida de hoje ou Equipe" value={roomName} onChange={(event) => setRoomName(event.target.value)} onBlur={() => setNameTouched(true)} maxLength={ROOM_NAME_MAX} required error={nameTouched && nameError ? nameError : undefined} />
               {showRoomOptions && <fieldset className="space-y-3"><legend className="mb-2 text-sm font-medium text-ink-secondary">Preferências da sala</legend>
                 <CheckOption checked={isPersistent} onChange={handleTogglePersistent} label="Sala persistente" hint="Fica disponível até você encerrar." />

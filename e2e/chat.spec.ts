@@ -17,7 +17,7 @@ import { registerAndCreateRoom } from './auth';
  *                       [role="listbox"][aria-label="Participantes para mencionar"]
  *   ChatMessageItem  -> [data-testid="chat-message"], [data-testid="message-content"],
  *                       botões Editar/Salvar/Cancelar/Deletar, selos "(editado)"
- *                       e "[apagada]", menção destacada em span.bg-amber-200
+ *                       e "[apagada]", menção destacada em span.bg-accent-subtle
  *   ParticipantList  -> [aria-label="Participantes"] li  -> "Nome (você)"
  *   room/[id]/page   -> "Conectado" (indicador único de socket.connected)
  */
@@ -109,6 +109,9 @@ test.describe('chat da sala', () => {
     const a = await peer(browser);
     const roomId = await createRoom(a.page, { isPersistent: true });
     await joinAndOpenChat(a.page, roomId);
+    // A está logado: espera o nome da conta substituir o Guest-xxxx provisório
+    // (GET /api/auth/me pode responder depois do join sob carga).
+    await expect.poll(() => localName(a.page), { timeout: 15_000 }).not.toMatch(/^Guest-/);
     const nameA = await localName(a.page);
 
     const b = await peer(browser);
@@ -192,7 +195,7 @@ test.describe('chat da sala', () => {
 
     const received = messageWith(b.page, 'vem ca');
     await expect(received).toBeVisible({ timeout: 10_000 });
-    await expect(received.locator('span.bg-amber-200')).toHaveText(`@${nameB}`);
+    await expect(received.locator('span.bg-accent-subtle')).toHaveText(`@${nameB}`);
   });
 
   test('autor edita e exclui a propria mensagem', async ({ browser }) => {
@@ -218,13 +221,13 @@ test.describe('chat da sala', () => {
 
     // Excluir
     await message.hover();
-    await message.getByRole('button', { name: 'Deletar' }).click();
+    await message.getByRole('button', { name: 'Apagar' }).click();
     await expect(message).toContainText('[mensagem apagada]');
     await expect(message).toContainText('[apagada]');
     // acoes somem depois de apagada
     await message.hover();
     await expect(message.getByRole('button', { name: 'Editar' })).toBeHidden();
-    await expect(message.getByRole('button', { name: 'Deletar' })).toBeHidden();
+    await expect(message.getByRole('button', { name: 'Apagar' })).toBeHidden();
   });
 
   test('upload de .zip vira link baixavel para o outro peer', async ({ browser }) => {
@@ -358,9 +361,11 @@ test.describe('chat da sala', () => {
     // so declara a conexao morta depois de pingInterval + pingTimeout
     // (25000 + 60000 no backend, handler.ts:72-73) — medido na pratica: 85s.
     // Fechar o WebSocket routeado derruba na hora e de forma deterministica.
-    let socketDeA: { close: () => Promise<void> } | null = null;
+    // A pagina abre mais de um socket (sala, eventos do usuario logado e, no
+    // dev, o remount do StrictMode): guarda todos e derruba todos de uma vez.
+    const socketsDeA: { close: () => Promise<void> }[] = [];
     await a.page.routeWebSocket(/socket\.io/, (ws) => {
-      socketDeA = ws;
+      socketsDeA.push(ws);
       ws.connectToServer(); // mensagens seguem sendo encaminhadas normalmente
     });
 
@@ -373,9 +378,9 @@ test.describe('chat da sala', () => {
 
     // Derruba o socket de A: o servidor perde o peer (handler.ts:628 ->
     // handleLeaveRoom -> room:peer-left) e o cliente entra em reconexao.
-    expect(socketDeA, 'websocket de A nao foi roteado').not.toBeNull();
-    await socketDeA!.close();
-    await expect(a.page.getByText('Desconectado', { exact: true })).toBeVisible({ timeout: 15_000 });
+    expect(socketsDeA.length, 'websocket de A nao foi roteado').toBeGreaterThan(0);
+    await Promise.all(socketsDeA.splice(0).map((ws) => ws.close().catch(() => undefined)));
+    await expect(a.page.getByText(/^Reconectando$|^Desconectado/).first()).toBeVisible({ timeout: 15_000 });
     await expect(participants(b.page)).toHaveCount(1, { timeout: 15_000 });
 
     // O cliente reconecta com OUTRO socketId: o servidor nao tem mais este peer

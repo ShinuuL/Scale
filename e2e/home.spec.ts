@@ -20,7 +20,9 @@ test.describe('criar sala na home', () => {
     await page.getByLabel('Nome da sala').fill('Sala anonima');
     await createButton(page).click();
 
-    await expect(page.getByText('Faça login para criar uma sala')).toBeVisible();
+    // Sem sessão o primeiro clique já avisa (não abre as opções da sala).
+    await expect(page.getByRole('alert').filter({ hasText: 'Entre na sua conta para criar uma sala' })).toBeVisible();
+    await expect(page.getByRole('checkbox', { name: /Sala persistente/ })).toHaveCount(0);
     // Continua na home: nenhuma navegação para /room?id=...
     await expect(page).toHaveURL('http://localhost:3000/');
   });
