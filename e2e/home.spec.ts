@@ -45,10 +45,12 @@ test.describe('criar sala na home', () => {
 
     await page.getByLabel('Nome da sala').fill('Reuniao E2E');
     await createButton(page).click();
+    // Primeiro clique abre as opções da sala; o segundo confirma.
+    await page.getByRole('button', { name: 'Confirmar e criar sala' }).click();
 
     await expect(page).toHaveURL(/\/room\?id=[0-9a-f-]{36}$/, { timeout: 15_000 });
     // A sala carregou com o nome que foi digitado (header do room).
-    await expect(page.getByRole('heading', { name: 'Reuniao E2E' })).toBeVisible({
+    await expect(page.getByRole('heading', { name: 'Reuniao E2E', level: 1 })).toBeVisible({
       timeout: 15_000,
     });
   });
