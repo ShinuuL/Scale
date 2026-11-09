@@ -7,6 +7,7 @@ import type { ChatApi, ChatMessage } from '@/hooks/useChat';
 import { CHAT_FILE_ACCEPT, CHAT_MESSAGE_MAX, MAX_FILES_PER_MESSAGE } from '@scale/shared';
 import { chatMessageClientSchema, fileClientSchema } from '@/lib/validation';
 import { ChatMessageItem } from '@/components/ChatMessageItem';
+import { Tooltip } from '@/components/ui/Tooltip';
 import { Icon, type IconName } from '@/components/ui/Icon';
 
 const MENTION_TOKEN_RE = /@(\w[\w .-]{0,49})/g;
@@ -252,13 +253,15 @@ export function ChatPanel({
             {chat.unread > 99 ? '99+' : chat.unread}
           </span>
         )}
-        <button
-          onClick={onClose}
-          aria-label="Fechar chat"
-          className="ml-auto flex h-9 w-9 items-center justify-center rounded-full text-ink-secondary transition-colors hover:bg-surface-hover hover:text-ink-primary"
-        >
-          <Icon name="close" />
-        </button>
+        <Tooltip label="Fechar chat" placement="bottom">
+          <button
+            onClick={onClose}
+            aria-label="Fechar chat"
+            className="ml-auto flex h-9 w-9 items-center justify-center rounded-full text-ink-secondary transition-colors hover:bg-surface-hover hover:text-ink-primary"
+          >
+            <Icon name="close" />
+          </button>
+        </Tooltip>
       </header>
 
       {/* Lista */}
@@ -348,36 +351,37 @@ export function ChatPanel({
       )}
 
       {/* Autocomplete de menções */}
-      {showMention && filtered.length > 0 && (
-        <ul
-          id="chat-mention-options"
-          role="listbox"
-          aria-label="Participantes para mencionar"
-          className="mx-3 mb-1 border border-line rounded bg-surface-secondary shadow-xl overflow-hidden flex-shrink-0 max-h-40 overflow-y-auto"
-        >
-          {filtered.map((name, index) => (
-            <li
-              key={name}
-              id={`chat-mention-option-${index}`}
-              role="option"
-              aria-selected={index === activeOption}
-              className={`px-2 py-1.5 text-xs cursor-pointer ${
-                index === activeOption
-                  ? 'bg-accent-solid text-white'
-                  : 'text-ink-primary hover:bg-surface-tertiary'
-              }`}
-              onMouseEnter={() => setActiveOption(index)}
-              onClick={() => selectOption(name)}
-            >
-              {name}
-            </li>
-          ))}
-        </ul>
-      )}
 
       {/* Input */}
       <div className="p-3 flex-shrink-0">
-        <div className="flex flex-col rounded-2xl border border-line bg-surface-tertiary transition-colors focus-within:border-accent">
+        <div className="relative flex flex-col rounded-2xl border border-line bg-surface-tertiary transition-colors focus-within:border-accent">
+          {showMention && filtered.length > 0 && (
+            <ul
+              id="chat-mention-options"
+              role="listbox"
+              aria-label="Participantes para mencionar"
+              className="absolute inset-x-0 bottom-full z-50 mb-1.5 max-h-60 overflow-y-auto rounded-xl border border-line bg-surface-secondary p-1 shadow-2xl"
+            >
+              {filtered.map((name, index) => (
+                <li
+                  key={name}
+                  id={`chat-mention-option-${index}`}
+                  role="option"
+                  aria-selected={index === activeOption}
+                  className={`cursor-pointer rounded-lg px-2.5 py-1.5 text-sm ${
+                    index === activeOption
+                      ? 'bg-accent-solid text-white'
+                      : 'text-ink-primary hover:bg-surface-tertiary'
+                  }`}
+                  onMouseEnter={() => setActiveOption(index)}
+                  onClick={() => selectOption(name)}
+                >
+                  {name}
+                </li>
+              ))}
+            </ul>
+          )}
+
           {/* `aria-expanded` so e valido em `role="combobox"`: o autocomplete de
             mencoes e exatamente esse padrao (combobox + listbox de opcoes). */}
           <textarea
@@ -408,34 +412,34 @@ export function ChatPanel({
               {input.length}/{CHAT_MESSAGE_MAX}
             </span>
             <div className="flex items-center gap-2">
-              <label
-                title="Anexar arquivo"
-                className="relative flex h-9 w-9 cursor-pointer items-center justify-center rounded-full text-ink-secondary transition-colors hover:bg-surface-hover hover:text-ink-primary focus-within:ring-2 focus-within:ring-accent"
-              >
-                <Icon name="paperclip" size={18} />
-                <span className="sr-only">Anexar</span>
-                <input
-                  type="file"
-                  multiple
-                  className="sr-only"
-                  disabled={uploading}
-                  onChange={(e) => {
-                    handleFiles(e.target.files);
-                    e.target.value = '';
-                  }}
-                  accept={CHAT_FILE_ACCEPT}
-                />
-              </label>
-              <button
-                onClick={send}
-                disabled={!canSend}
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-accent-solid text-white transition-[opacity,transform] hover:brightness-110 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
-                aria-busy={uploading}
-                aria-label="Enviar"
-                title="Enviar"
-              >
-                <Icon name="arrowRight" size={18} />
-              </button>
+              <Tooltip label="Anexar arquivo">
+                <label className="relative flex h-9 w-9 cursor-pointer items-center justify-center rounded-full text-ink-secondary transition-colors hover:bg-surface-hover hover:text-ink-primary focus-within:ring-2 focus-within:ring-accent">
+                  <Icon name="paperclip" size={18} />
+                  <span className="sr-only">Anexar</span>
+                  <input
+                    type="file"
+                    multiple
+                    className="sr-only"
+                    disabled={uploading}
+                    onChange={(e) => {
+                      handleFiles(e.target.files);
+                      e.target.value = '';
+                    }}
+                    accept={CHAT_FILE_ACCEPT}
+                  />
+                </label>
+              </Tooltip>
+              <Tooltip label="Enviar">
+                <button
+                  onClick={send}
+                  disabled={!canSend}
+                  className="flex h-9 w-9 items-center justify-center rounded-full bg-accent-solid text-white transition-[opacity,transform] hover:brightness-110 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+                  aria-busy={uploading}
+                  aria-label="Enviar"
+                >
+                  <Icon name="arrowRight" size={18} />
+                </button>
+              </Tooltip>
             </div>
           </div>
         </div>

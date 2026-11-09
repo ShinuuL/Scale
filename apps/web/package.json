@@ -9,6 +9,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@floating-ui/react-dom": "2.1.9",
     "@scale/shared": "*",
     "autoprefixer": "^10.5.5",
     "clsx": "^2.1.1",

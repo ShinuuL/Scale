@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { Icon } from '@/components/ui/Icon';
+import { Tooltip } from '@/components/ui/Tooltip';
 
 export interface MiniCallBarProps {
   roomId: string;
@@ -52,37 +53,40 @@ export function MiniCallBar({
         </p>
       </div>
       <div className="ml-1 flex items-center gap-1">
-        <button
-          type="button"
-          onClick={onToggleMute}
-          aria-pressed={isMuted}
-          aria-label={isMuted ? 'Ativar microfone' : 'Silenciar microfone'}
-          title={isMuted ? 'Ativar microfone' : 'Silenciar microfone'}
-          className={`flex h-9 w-9 items-center justify-center rounded-full transition-colors ${
-            isMuted
-              ? 'bg-red-500/15 text-red-300 hover:bg-red-500/25'
-              : 'text-ink-secondary hover:bg-surface-hover hover:text-ink-primary'
-          }`}
-        >
-          <Icon name={isMuted ? 'micOff' : 'mic'} size={18} />
-        </button>
-        <Link
-          href={`/room?id=${encodeURIComponent(roomId)}`}
-          aria-label="Voltar para a sala"
-          title="Voltar para a sala"
-          className="flex h-9 w-9 items-center justify-center rounded-full text-ink-secondary transition-colors hover:bg-surface-hover hover:text-ink-primary"
-        >
-          <Icon name="maximize" size={18} />
-        </Link>
-        <button
-          type="button"
-          onClick={onLeave}
-          aria-label="Sair da chamada"
-          title="Sair da chamada"
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-red-500 text-white transition-colors hover:bg-red-600"
-        >
-          <Icon name="phone" size={18} className="rotate-[135deg]" />
-        </button>
+        <Tooltip label={isMuted ? 'Ativar microfone' : 'Silenciar microfone'}>
+          <button
+            type="button"
+            onClick={onToggleMute}
+            aria-pressed={isMuted}
+            aria-label={isMuted ? 'Ativar microfone' : 'Silenciar microfone'}
+            className={`flex h-9 w-9 items-center justify-center rounded-full transition-colors ${
+              isMuted
+                ? 'bg-red-500/15 text-red-300 hover:bg-red-500/25'
+                : 'text-ink-secondary hover:bg-surface-hover hover:text-ink-primary'
+            }`}
+          >
+            <Icon name={isMuted ? 'micOff' : 'mic'} size={18} />
+          </button>
+        </Tooltip>
+        <Tooltip label="Voltar para a sala">
+          <Link
+            href={`/room?id=${encodeURIComponent(roomId)}`}
+            aria-label="Voltar para a sala"
+            className="flex h-9 w-9 items-center justify-center rounded-full text-ink-secondary transition-colors hover:bg-surface-hover hover:text-ink-primary"
+          >
+            <Icon name="maximize" size={18} />
+          </Link>
+        </Tooltip>
+        <Tooltip label="Sair da chamada">
+          <button
+            type="button"
+            onClick={onLeave}
+            aria-label="Sair da chamada"
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-red-500 text-white transition-colors hover:bg-red-600"
+          >
+            <Icon name="phone" size={18} className="rotate-[135deg]" />
+          </button>
+        </Tooltip>
       </div>
     </section>
   );
