@@ -57,6 +57,13 @@ Sistema de videochamadas P2P (mesh) com escamas de dragão — sala de voz e tel
 - Ícone decorativo: `aria-hidden`. Ícone que carrega informação: prop `title`
   (o componente renderiza `role="img"` com `aria-label`). Botão só-ícone
   precisa de nome acessível próprio, em qualquer breakpoint.
+- Primitivos interativos: `react-aria-components` (menu de perfil, diálogos de
+  confirmação, seletores) e `@floating-ui/react-dom` (`ui/Tooltip.tsx`), ambos
+  com versão exata. Links do react-aria navegam pelo roteador do Next via
+  `components/AriaRouter.tsx` (sem recarregar a página: a chamada não cai).
+  Estados de animação pelo atributo: `data-[entering]:`, `data-[focused]:`.
+- Chamada persistente: a sessão da sala vive no `RoomHost` do layout raiz;
+  fora de `/room` a tela fica oculta e a `MiniCallBar` mostra a chamada.
 
 ## Desktop (Electron)
 
@@ -238,7 +245,7 @@ docker compose up --build -d
     direto ao proxy (localhost/LAN)
 - Upload bloqueado em sala temporária (apenas persistente aceita arquivos)
 - Sistema de ícones internos: UI sem emojis, `apps/web/src/components/ui/Icon.tsx`
-  com 31 ícones (SVG vetorial, `stroke="currentColor"`), sem dependência externa
+  com 37 ícones (SVG vetorial, `stroke="currentColor"`), sem dependência externa
 - Configurações (menu de perfil, ícone `settings`): nome de usuário
   (`PATCH /api/me`, reemite o JWT), foto de perfil (`PUT|GET|DELETE
   /api/me/avatar`, até 32 MB, PNG/JPEG/WebP por magic bytes, em

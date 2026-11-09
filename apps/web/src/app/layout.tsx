@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
 import './globals.css';
 import { PALETTE_BOOT_SRC } from '@/lib/theme';
+import { AriaRouter } from '@/components/AriaRouter';
 import { RoomHost } from '@/components/room/RoomHost';
 import { CallCenter } from '@/components/calls/CallCenter';
 import { ApplicationFeatures } from '@/components/pwa/ApplicationFeatures';
@@ -39,14 +40,16 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <a href="#main-content" className="skip-link">
           Pular para o conteúdo
         </a>
-        <div id="app-root">
-          {children}
-          {/* Sessao da sala fora da rota: navegar pelo app nao derruba a chamada. */}
-          <RoomHost />
-        </div>
-        {/* Chamadas entre amigos: tela tocando e "Chamando…" em qualquer pagina. */}
-        <CallCenter />
-        <ApplicationFeatures />
+        <AriaRouter>
+          <div id="app-root">
+            {children}
+            {/* Sessao da sala fora da rota: navegar pelo app nao derruba a chamada. */}
+            <RoomHost />
+          </div>
+          {/* Chamadas entre amigos: tela tocando e "Chamando…" em qualquer pagina. */}
+          <CallCenter />
+          <ApplicationFeatures />
+        </AriaRouter>
       </body>
     </html>
   );

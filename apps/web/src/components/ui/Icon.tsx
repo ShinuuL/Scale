@@ -28,6 +28,7 @@ export type IconName =
   | 'chat'
   | 'check'
   | 'checkCircle'
+  | 'chevronDown'
   | 'clock'
   | 'close'
   | 'document'
@@ -195,6 +196,7 @@ export const ICONS: Record<IconName, IconShape[]> = {
   close: [{ d: 'M6 6 18 18' }, { d: 'M18 6 6 18' }],
   arrowLeft: [{ d: 'M19.2 12H4.8' }, { d: 'M11 5.4 4.4 12l6.6 6.6' }],
   arrowRight: [{ d: 'M4.8 12h14.4' }, { d: 'M13 5.4 19.6 12 13 18.6' }],
+  chevronDown: [{ d: 'M6 9.5 12 15.5 18 9.5' }],
   search: [
     { d: 'M10.8 4a6.8 6.8 0 1 0 0 13.6 6.8 6.8 0 0 0 0-13.6Z' },
     { d: 'M15.7 15.7 20.4 20.4' },

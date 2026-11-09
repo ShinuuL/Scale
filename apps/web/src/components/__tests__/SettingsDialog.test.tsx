@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
+import { getSavedDeviceId } from '@/lib/audioDevices';
 import { SettingsDialog } from '@/components/ui/SettingsDialog';
 
 beforeEach(() => {
@@ -62,5 +63,20 @@ describe('SettingsDialog: seção Áudio', () => {
     await screen.findByRole('button', { name: /Permitir acesso ao microfone/ });
     expect(screen.queryByLabelText('Saída de áudio')).toBeNull();
     expect(screen.getByText(/Seu navegador não permite escolher a saída de áudio/)).toBeInTheDocument();
+  });
+
+  it('escolher o microfone na lista salva o aparelho', async () => {
+    (navigator.mediaDevices.enumerateDevices as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { kind: 'audioinput', deviceId: 'mic-1', label: 'Headset', groupId: '' },
+      { kind: 'audioinput', deviceId: 'mic-2', label: 'Webcam', groupId: '' },
+    ]);
+    render(<SettingsDialog user={null} onClose={() => {}} />);
+    const mic = await screen.findByRole('button', { name: /Microfone/ });
+    fireEvent.click(mic);
+    fireEvent.click(await screen.findByRole('option', { name: 'Webcam' }));
+    expect(getSavedDeviceId('input')).toBe('mic-2');
+    expect(screen.queryByRole('listbox')).toBeNull();
+    // A lista fechou, o diálogo continua aberto.
+    expect(screen.getByRole('dialog', { name: 'Configurações' })).toBeInTheDocument();
   });
 });

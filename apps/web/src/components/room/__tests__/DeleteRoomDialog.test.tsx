@@ -48,14 +48,14 @@ describe('DeleteRoomDialog', () => {
     expect(screen.getByRole('button', { name: 'Cancelar' })).toHaveFocus();
   });
 
-  it('Cancelar fecha sem chamar a API e devolve o foco ao gatilho', () => {
+  it('Cancelar fecha sem chamar a API e devolve o foco ao gatilho', async () => {
     const spy = vi.spyOn(api, 'deleteRoom');
     render(<Harness />);
     const trigger = openDialog();
     fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
     expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(spy).not.toHaveBeenCalled();
-    expect(trigger).toHaveFocus();
+    await waitFor(() => expect(trigger).toHaveFocus());
   });
 
   it('Esc cancela', () => {
