@@ -78,18 +78,16 @@ O Scale não pode abrir as portas 80/443 (são do Nexus). Quem atende
 `http -> https`. Mudanças, feitas como usuário `nexus` em `/opt/manga-engine`
 (e no repositório do Nexus, para não se perderem no próximo deploy dele):
 
-1. `deploy/Caddyfile`, novo bloco:
-   ```
-   scale.nexushosts.tech {
-   	encode zstd gzip
-   	header Strict-Transport-Security "max-age=31536000"
-   	reverse_proxy 172.28.0.4:8080
-   }
-   ```
-   Sem `trusted_proxies`: o Caddy do Nexus descarta qualquer `X-Forwarded-For`
-   de fora e grava o IP real do cliente.
+O bloco do site fica **no repositório do Scale** (`deploy/nexus-site.caddy`) e o
+Caddy do Nexus só o inclui. Assim o Scale muda o próprio site sem mexer nos
+arquivos do Nexus. Configuração única no Nexus (já versionada no repositório
+`manga-engine`):
+
+1. `deploy/Caddyfile`, no fim: `import /etc/caddy/scale.caddy`
 2. `docker-compose.caddy.yml`, no serviço `caddy`:
    ```yaml
+       volumes:
+         - /opt/scale/deploy/nexus-site.caddy:/etc/caddy/scale.caddy:ro
        networks:
          default: {}
          scale:
@@ -104,9 +102,26 @@ O Scale não pode abrir as portas 80/443 (são do Nexus). Quem atende
    ```
 3. `docker compose -f docker-compose.caddy.yml up -d caddy`.
 
-Cuidados: a rede `scale_scale` precisa existir para o Caddy do Nexus subir
-(o `deploy.sh` do Scale só faz `up`, nunca `down`). Se o Scale estiver fora do
-ar, só `scale.nexushosts.tech` dá 502; o Nexus segue normal.
+Mudar o site do Scale (como usuário `scale`): edite `deploy/nexus-site.caddy`,
+faça commit, rode `.\deploy\enviar.ps1` e depois, na VPS:
+```bash
+docker exec nexus-caddy-caddy-1 caddy reload --config /etc/caddy/Caddyfile
+```
+Sem `trusted_proxies` nesse bloco: o Caddy do Nexus descarta qualquer
+`X-Forwarded-For` de fora e grava o IP real do cliente.
+
+Cuidados:
+- **Nunca apague nem renomeie `deploy/nexus-site.caddy`.** Sem ele o Caddy do
+  Nexus não sobe (o Docker cria uma pasta no lugar e o `import` falha) e o
+  Nexus inteiro cai. O `enviar.ps1` remove da VPS o que sai do repositório.
+- Erro de sintaxe no arquivo: o `reload` falha e o Caddy segue com a config
+  anterior. Só um restart com o arquivo quebrado derruba o Nexus. Valide antes:
+  `docker exec nexus-caddy-caddy-1 caddy validate --config /etc/caddy/Caddyfile`.
+- A rede `scale_scale` precisa existir para o Caddy do Nexus subir (o
+  `deploy.sh` do Scale só faz `up`, nunca `down`). Se o Scale estiver fora do
+  ar, só `scale.nexushosts.tech` dá 502; o Nexus segue normal.
+- `/opt/scale` é `750`: o usuário `nexus` não lê a pasta, mas o Docker (root)
+  monta o arquivo normalmente.
 
 No `/opt/scale/.env` do Scale:
 ```
