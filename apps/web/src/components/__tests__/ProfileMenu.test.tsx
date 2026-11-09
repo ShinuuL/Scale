@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ProfileMenu } from '@/components/ui/ProfileMenu';
 import { PALETTE_STORAGE_KEY } from '@/lib/theme';
 
@@ -9,19 +9,21 @@ describe('ProfileMenu', () => {
     document.documentElement.removeAttribute('data-palette');
   });
 
-  it('abre pelo gatilho e fecha com Esc devolvendo o foco', () => {
+  it('abre pelo gatilho e fecha com Esc devolvendo o foco', async () => {
     render(<ProfileMenu name="Ana" isAuthenticated={false} />);
     const trigger = screen.getByRole('button', { name: 'Perfil de Ana' });
-    expect(trigger.getAttribute('aria-haspopup')).toBe('menu');
+    // react-aria marca o botão de menu com aria-haspopup="true" (equivale a menu).
+    expect(trigger.getAttribute('aria-haspopup')).toBe('true');
     expect(trigger.getAttribute('aria-expanded')).toBe('false');
 
     fireEvent.click(trigger);
     expect(trigger.getAttribute('aria-expanded')).toBe('true');
-    const menu = screen.getByRole('menu', { name: 'Menu do perfil' });
+    // react-aria nomeia o menu pelo gatilho (aria-labelledby).
+    const menu = screen.getByRole('menu', { name: /Perfil de Ana/ });
 
     fireEvent.keyDown(menu, { key: 'Escape' });
     expect(screen.queryByRole('menu')).toBeNull();
-    expect(document.activeElement).toBe(trigger);
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
   });
 
   it('fecha com clique fora', () => {
@@ -32,7 +34,11 @@ describe('ProfileMenu', () => {
       </div>,
     );
     fireEvent.click(screen.getByRole('button', { name: 'Perfil de Ana' }));
-    fireEvent.pointerDown(screen.getByText('fora'));
+    expect(screen.getByRole('menu')).toBeTruthy();
+    // react-aria fecha no par mousedown/mouseup fora do menu (jsdom sem PointerEvent).
+    const outside = screen.getByText('fora');
+    fireEvent.mouseDown(outside, { button: 0 });
+    fireEvent.mouseUp(outside, { button: 0 });
     expect(screen.queryByRole('menu')).toBeNull();
   });
 
@@ -82,11 +88,16 @@ describe('ProfileMenu', () => {
     expect(screen.getByRole('button', { name: 'Enviar foto' })).toBeTruthy();
   });
 
-  it('setas navegam entre os itens', () => {
+  it('setas navegam entre os itens', async () => {
     render(<ProfileMenu name="Ana" isAuthenticated={false} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Perfil de Ana' }));
+    const trigger = screen.getByRole('button', { name: 'Perfil de Ana' });
+    // Aberto pelo teclado, o foco vai para o primeiro item.
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: 'ArrowDown' });
     const menu = screen.getByRole('menu');
-    expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Configurações' }));
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Configurações' })),
+    );
     fireEvent.keyDown(menu, { key: 'ArrowDown' });
     expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Entrar' }));
     fireEvent.keyDown(menu, { key: 'End' });

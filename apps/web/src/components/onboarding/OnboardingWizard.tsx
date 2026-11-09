@@ -94,8 +94,8 @@ export function OnboardingWizard({ onComplete, onSkip, isAuthenticated }: Onboar
   const prevStep = () => setStep((s) => Math.max(s - 1, 1));
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
-      <Card variant="glass" className="w-full max-w-lg animate-fade-in">
+    <div className="min-h-[100dvh] flex items-center justify-center bg-surface-secondary p-4">
+      <Card variant="glass" className="w-full max-w-lg">
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
@@ -110,7 +110,7 @@ export function OnboardingWizard({ onComplete, onSkip, isAuthenticated }: Onboar
           </div>
 
           {/* Progress bar */}
-          <div className="mt-4 flex gap-1" role="progressbar" aria-valuenow={step} aria-valuemin={1} aria-valuemax={STEPS.length}>
+          <div className="mt-4 flex gap-1" role="progressbar" aria-label="Progresso do guia" aria-valuenow={step} aria-valuemin={1} aria-valuemax={STEPS.length}>
             {STEPS.map((s, i) => (
               <div
                 key={s.id}
@@ -125,9 +125,9 @@ export function OnboardingWizard({ onComplete, onSkip, isAuthenticated }: Onboar
         <CardContent>
           {/* Step 1: Intro */}
           {step === 1 && (
-            <div className="space-y-4 animate-slide-up">
+            <div className="space-y-4">
               <div className="text-center space-y-3 py-4">
-                <div className="text-5xl"><Icon name="mic" size={48} /></div>
+                <div className="flex justify-center text-accent"><Icon name="mic" size={48} /></div>
                 <p className="text-slate-300 text-sm leading-relaxed">
                   O Scale faz chamadas de voz com compartilhamento de tela direto no
                   navegador, de 2 a 8 participantes na mesma sala. O áudio e o vídeo
@@ -135,15 +135,15 @@ export function OnboardingWizard({ onComplete, onSkip, isAuthenticated }: Onboar
                 </p>
                 <ul className="text-left text-sm text-slate-300 space-y-1.5 inline-block">
                   <li className="flex gap-2">
-                    <span className="text-brand-400">•</span>
+                    <Icon name="check" size={16} className="mt-0.5 shrink-0 text-accent" />
                     <span>Criar conta ou entrar com sua conta</span>
                   </li>
                   <li className="flex gap-2">
-                    <span className="text-brand-400">•</span>
+                    <Icon name="check" size={16} className="mt-0.5 shrink-0 text-accent" />
                     <span>Criar uma sala e compartilhar o link</span>
                   </li>
                   <li className="flex gap-2">
-                    <span className="text-brand-400">•</span>
+                    <Icon name="check" size={16} className="mt-0.5 shrink-0 text-accent" />
                     <span>Falar e mostrar a tela durante a chamada</span>
                   </li>
                 </ul>
@@ -156,7 +156,7 @@ export function OnboardingWizard({ onComplete, onSkip, isAuthenticated }: Onboar
 
           {/* Step 2: Account */}
           {step === 2 && (
-            <div className="space-y-4 animate-slide-up">
+            <div className="space-y-4">
               <div className="glass-subtle p-4 rounded-xl space-y-3">
                 <p className="text-sm text-slate-300 leading-relaxed">
                   Você precisa de uma conta para <strong className="text-white">criar</strong> uma
@@ -189,7 +189,7 @@ export function OnboardingWizard({ onComplete, onSkip, isAuthenticated }: Onboar
 
           {/* Step 3: Create/Join room */}
           {step === 3 && (
-            <div className="space-y-4 animate-slide-up">
+            <div className="space-y-4">
               {/* Create room */}
               <div className="glass-subtle p-4 rounded-xl space-y-3">
                 <h4 className="text-sm font-medium text-white">Criar Nova Sala</h4>
@@ -275,7 +275,7 @@ export function OnboardingWizard({ onComplete, onSkip, isAuthenticated }: Onboar
 
           {/* Step 4: Share the room link */}
           {step === 4 && (
-            <div className="space-y-4 animate-slide-up">
+            <div className="space-y-4">
               <div className="glass-subtle p-4 rounded-xl space-y-3">
                 <p className="text-sm text-slate-300 leading-relaxed">
                   Toda sala tem um link próprio. Dentro da sala, use o botão de convite
@@ -298,7 +298,7 @@ export function OnboardingWizard({ onComplete, onSkip, isAuthenticated }: Onboar
 
           {/* Step 5: Mic + screen */}
           {step === 5 && (
-            <div className="space-y-4 animate-slide-up">
+            <div className="space-y-4">
               {isInsecureContext && (
                 <Banner
                   variant="warning"
@@ -315,15 +315,15 @@ export function OnboardingWizard({ onComplete, onSkip, isAuthenticated }: Onboar
                 </p>
                 <ul className="space-y-2 text-sm text-slate-300">
                   <li className="flex gap-2">
-                    <span className="text-brand-400">•</span>
+                    <Icon name="check" size={16} className="mt-0.5 shrink-0 text-accent" />
                     <span>Permissão de microfone: pedida ao entrar na sala</span>
                   </li>
                   <li className="flex gap-2">
-                    <span className="text-brand-400">•</span>
+                    <Icon name="check" size={16} className="mt-0.5 shrink-0 text-accent" />
                     <span>Compartilhar tela: botão dentro da sala, cancelavel a qualquer momento</span>
                   </li>
                   <li className="flex gap-2">
-                    <span className="text-brand-400">•</span>
+                    <Icon name="check" size={16} className="mt-0.5 shrink-0 text-accent" />
                     <span>Fora do localhost, o navegador exige HTTPS para liberar microfone e tela</span>
                   </li>
                 </ul>

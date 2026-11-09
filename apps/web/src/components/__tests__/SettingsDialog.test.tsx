@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { getSavedDeviceId } from '@/lib/audioDevices';
 import { SettingsDialog } from '@/components/ui/SettingsDialog';
 
 beforeEach(() => {
@@ -24,6 +25,30 @@ afterEach(() => {
 });
 
 describe('SettingsDialog: seção Áudio', () => {
+  it('inclui os seletores de áudio no ciclo de foco e restaura o gatilho ao fechar', async () => {
+    Object.defineProperty(HTMLMediaElement.prototype, 'setSinkId', { value: vi.fn(), configurable: true });
+    const trigger = document.createElement('button');
+    document.body.append(trigger);
+    trigger.focus();
+    const onClose = vi.fn();
+    const { unmount } = render(<SettingsDialog user={null} onClose={onClose} />);
+    await screen.findByRole('button', { name: /Permitir acesso ao microfone/ });
+    const close = screen.getByRole('button', { name: 'Fechar configurações' });
+    const speaker = screen.getByLabelText('Saída de áudio');
+    // Escape funciona também a partir dos seletores; Shift+Tab mantém o foco no diálogo.
+    const mic = screen.getByLabelText('Microfone');
+    mic.focus();
+    fireEvent.keyDown(mic, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(speaker).toBeInTheDocument();
+    close.focus();
+    fireEvent.keyDown(close, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).not.toBe(close);
+    unmount();
+    expect(document.activeElement).toBe(trigger);
+    trigger.remove();
+  });
+
   it('convidado vê Áudio com selects rotulados e o botão de permissão', async () => {
     Object.defineProperty(HTMLMediaElement.prototype, 'setSinkId', { value: vi.fn(), configurable: true });
     render(<SettingsDialog user={null} onClose={() => {}} />);
@@ -38,5 +63,20 @@ describe('SettingsDialog: seção Áudio', () => {
     await screen.findByRole('button', { name: /Permitir acesso ao microfone/ });
     expect(screen.queryByLabelText('Saída de áudio')).toBeNull();
     expect(screen.getByText(/Seu navegador não permite escolher a saída de áudio/)).toBeInTheDocument();
+  });
+
+  it('escolher o microfone na lista salva o aparelho', async () => {
+    (navigator.mediaDevices.enumerateDevices as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { kind: 'audioinput', deviceId: 'mic-1', label: 'Headset', groupId: '' },
+      { kind: 'audioinput', deviceId: 'mic-2', label: 'Webcam', groupId: '' },
+    ]);
+    render(<SettingsDialog user={null} onClose={() => {}} />);
+    const mic = await screen.findByRole('button', { name: /Microfone/ });
+    fireEvent.click(mic);
+    fireEvent.click(await screen.findByRole('option', { name: 'Webcam' }));
+    expect(getSavedDeviceId('input')).toBe('mic-2');
+    expect(screen.queryByRole('listbox')).toBeNull();
+    // A lista fechou, o diálogo continua aberto.
+    expect(screen.getByRole('dialog', { name: 'Configurações' })).toBeInTheDocument();
   });
 });

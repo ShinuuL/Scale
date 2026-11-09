@@ -8,15 +8,13 @@ import { ChatPanel } from '@/components/ChatPanel';
 
 // ─── Mocks globais ─────────────────────────────────────────────
 beforeEach(() => {
-  globalThis.Audio = vi
-    .fn()
-    .mockImplementation(
-      () =>
-        ({
-          volume: 0,
-          play: vi.fn().mockResolvedValue(undefined),
-        }) as unknown as typeof Audio,
-    ) as unknown as typeof Audio;
+  globalThis.Audio = vi.fn().mockImplementation(
+    () =>
+      ({
+        volume: 0,
+        play: vi.fn().mockResolvedValue(undefined),
+      }) as unknown as typeof Audio,
+  ) as unknown as typeof Audio;
 });
 
 afterEach(() => {
@@ -97,7 +95,9 @@ describe('validation cliente (Task 9)', () => {
     const big = bigFile();
     expect(fileClientSchema.safeParse({ file: big }).success).toBe(false);
 
-    const exe = new File([new ArrayBuffer(10)], 'malware.exe', { type: 'application/x-msdownload' });
+    const exe = new File([new ArrayBuffer(10)], 'malware.exe', {
+      type: 'application/x-msdownload',
+    });
     expect(fileClientSchema.safeParse({ file: exe }).success).toBe(false);
 
     const ok = new File([new ArrayBuffer(10)], 'doc.pdf', { type: 'application/pdf' });
@@ -114,10 +114,26 @@ describe('useChat (Task 9/10)', () => {
     act(() => result.current.sendMessage('a'.repeat(501), []));
     expect(socket.emit).not.toHaveBeenCalled();
 
-    act(() => result.current.sendMessage('  ola @Bob  ', ['Bob', 'Alice', 'x', 'y', 'z', 'w', 'v', 'u', 't']));
+    act(() =>
+      result.current.sendMessage('  ola @Bob  ', [
+        'Bob',
+        'Alice',
+        'x',
+        'y',
+        'z',
+        'w',
+        'v',
+        'u',
+        't',
+      ]),
+    );
     expect(socket.emit).toHaveBeenCalledWith(
       'chat:message',
-      { roomId: ROOM_ID, content: 'ola @Bob', mentions: ['Bob', 'Alice', 'x', 'y', 'z', 'w', 'v', 'u'] },
+      {
+        roomId: ROOM_ID,
+        content: 'ola @Bob',
+        mentions: ['Bob', 'Alice', 'x', 'y', 'z', 'w', 'v', 'u'],
+      },
       expect.any(Function),
     );
 
@@ -151,15 +167,31 @@ describe('useChat (Task 9/10)', () => {
     const { socket, emitSocket } = createMockSocket();
     const { result } = renderHook(() => useChat(ROOM_ID, socket));
 
-    emitSocket('chat:message', baseMessage({ id: 'm1', content: 'original', files: [{ id: 'f1', filename: 'a.txt', mime: 'text/plain', size: 10 }] }));
+    emitSocket(
+      'chat:message',
+      baseMessage({
+        id: 'm1',
+        content: 'original',
+        files: [{ id: 'f1', filename: 'a.txt', mime: 'text/plain', size: 10 }],
+      }),
+    );
 
     act(() => result.current.editMessage('m1', '   '));
     expect(socket.emit).not.toHaveBeenCalledWith('chat:edit', expect.anything());
 
     act(() => result.current.editMessage('m1', 'editado'));
-    expect(socket.emit).toHaveBeenCalledWith('chat:edit', { roomId: ROOM_ID, messageId: 'm1', content: 'editado' });
+    expect(socket.emit).toHaveBeenCalledWith('chat:edit', {
+      roomId: ROOM_ID,
+      messageId: 'm1',
+      content: 'editado',
+    });
 
-    emitSocket('chat:edit', { messageId: 'm1', content: 'editado', editedAt: '2026-09-11T12:00:00.000Z', edited: true });
+    emitSocket('chat:edit', {
+      messageId: 'm1',
+      content: 'editado',
+      editedAt: '2026-09-11T12:00:00.000Z',
+      edited: true,
+    });
     expect(result.current.messages[0].content).toBe('editado');
     expect(result.current.messages[0].edited).toBe(true);
     expect(result.current.messages[0]).not.toHaveProperty('prevContent');
@@ -180,7 +212,10 @@ describe('useChat (Task 9/10)', () => {
 
     const MockAudio = globalThis.Audio as unknown as ReturnType<typeof vi.fn>;
     expect(MockAudio).toHaveBeenCalledWith('/sounds/mention.mp3');
-    const instance = MockAudio.mock.results[0].value as { volume: number; play: () => Promise<void> };
+    const instance = MockAudio.mock.results[0].value as {
+      volume: number;
+      play: () => Promise<void>;
+    };
     expect(instance.volume).toBe(0.6);
     expect(instance.play).toHaveBeenCalled();
   });
@@ -211,7 +246,10 @@ describe('useChat (Task 9/10)', () => {
       })
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ messages: [baseMessage({ id: 'old-0', content: 'mais antiga' })], nextCursor: null }),
+        json: async () => ({
+          messages: [baseMessage({ id: 'old-0', content: 'mais antiga' })],
+          nextCursor: null,
+        }),
       });
     vi.stubGlobal('fetch', fetchMock);
 
@@ -219,10 +257,10 @@ describe('useChat (Task 9/10)', () => {
     const { result } = renderHook(() => useChat(ROOM_ID, socket));
 
     await act(() => result.current.loadMore());
-    expect(fetchMock).toHaveBeenCalledWith(
-      `/api/rooms/${ROOM_ID}/messages?limit=50`,
-      { credentials: 'include', headers: {} },
-    );
+    expect(fetchMock).toHaveBeenCalledWith(`/api/rooms/${ROOM_ID}/messages?limit=50`, {
+      credentials: 'include',
+      headers: {},
+    });
     expect(result.current.messages.map((m) => m.id)).toEqual(['old-1', 'old-2']);
     expect(result.current.nextCursor).toBe('cur-2');
     expect(result.current.hasMore).toBe(true);
@@ -250,7 +288,10 @@ describe('useChat (Task 9/10)', () => {
     const { socket } = createMockSocket();
     const { result } = renderHook(() => useChat(ROOM_ID, socket));
 
-    const files = [new File(['a'], 'a.txt', { type: 'text/plain' }), new File(['b'], 'b.txt', { type: 'text/plain' })];
+    const files = [
+      new File(['a'], 'a.txt', { type: 'text/plain' }),
+      new File(['b'], 'b.txt', { type: 'text/plain' }),
+    ];
     await act(() => result.current.uploadFiles(files, 'legenda'));
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -283,7 +324,9 @@ describe('useChat (Task 9/10)', () => {
       headers: { 'X-Room-Ticket': 'ticket-da-sala' },
     });
 
-    await act(() => result.current.uploadFiles([new File(['a'], 'a.txt', { type: 'text/plain' })], 'leg'));
+    await act(() =>
+      result.current.uploadFiles([new File(['a'], 'a.txt', { type: 'text/plain' })], 'leg'),
+    );
     const [url, init] = fetchMock.mock.calls[1] as [string, RequestInit];
     expect(url).toBe(`/api/rooms/${ROOM_ID}/files`);
     expect(init.headers).toEqual({ 'X-Room-Ticket': 'ticket-da-sala' });
@@ -304,7 +347,10 @@ describe('ChatMessageItem (Task 10)', () => {
 
   it('linkify transforma https:// em anchor com rel noopener', () => {
     const { container } = render(
-      <ChatMessageItem message={baseMessage({ content: 'veja https://ex.com/abc' })} {...itemProps} />,
+      <ChatMessageItem
+        message={baseMessage({ content: 'veja https://ex.com/abc' })}
+        {...itemProps}
+      />,
     );
     const link = container.querySelector('a[href="https://ex.com/abc"]');
     expect(link).toBeTruthy();
@@ -312,7 +358,7 @@ describe('ChatMessageItem (Task 10)', () => {
     expect(link?.getAttribute('rel')).toBe('noopener');
   });
 
-  it('mentionHighlight só peers atuais com bg-amber-200', () => {
+  it('destaca somente menções aos participantes atuais', () => {
     const { container } = render(
       <ChatMessageItem
         message={baseMessage({ content: 'oi @Bob @Carlos' })}
@@ -322,44 +368,53 @@ describe('ChatMessageItem (Task 10)', () => {
     );
     expect(container.textContent).toContain('@Bob');
     expect(container.textContent).toContain('@Carlos');
-    expect(container.querySelectorAll('.bg-amber-200')).toHaveLength(1);
+    expect(container.querySelector('[data-testid="message-content"] span')?.textContent).toBe(
+      '@Bob',
+    );
+    expect(container.querySelectorAll('[data-testid="message-content"] span')).toHaveLength(1);
   });
 
   it('escapa HTML injetado antes do dangerouslySetInnerHTML', () => {
     const { container } = render(
-      <ChatMessageItem message={baseMessage({ content: '<img src=x onerror=alert(1)>' })} {...itemProps} />,
+      <ChatMessageItem
+        message={baseMessage({ content: '<img src=x onerror=alert(1)>' })}
+        {...itemProps}
+      />,
     );
     expect(container.querySelector('img')).toBeNull();
     expect(container.textContent).toContain('<img src=x onerror=alert(1)>');
   });
 
-  it('botões Editar só isOwn dentro de 15min; Deletar se isOwn ou isOwner', () => {
+  it('botões Editar só isOwn dentro de 15min; Apagar se isOwn ou isOwner', () => {
     const { container, rerender } = render(
-      <ChatMessageItem message={baseMessage({ content: 'msg' })} {...itemProps} isOwn />
+      <ChatMessageItem message={baseMessage({ content: 'msg' })} {...itemProps} isOwn />,
     );
     expect(container.textContent).toContain('Editar');
-    expect(container.textContent).toContain('Deletar');
+    expect(container.textContent).toContain('Apagar');
 
-    // fora da janela de 15min → sem Editar, mas Deletar continua
+    // fora da janela de 15min → sem Editar, mas Apagar continua
     rerender(
       <ChatMessageItem
-        message={baseMessage({ content: 'msg', createdAt: new Date(Date.now() - 16 * 60 * 1000).toISOString() })}
+        message={baseMessage({
+          content: 'msg',
+          createdAt: new Date(Date.now() - 16 * 60 * 1000).toISOString(),
+        })}
         {...itemProps}
         isOwn
-      />
+      />,
     );
     expect(container.textContent).not.toContain('Editar');
-    expect(container.textContent).toContain('Deletar');
+    expect(container.textContent).toContain('Apagar');
 
     // não autor e não dono → sem ações
     rerender(<ChatMessageItem message={baseMessage({ content: 'msg' })} {...itemProps} />);
     expect(container.textContent).not.toContain('Editar');
-    expect(container.textContent).not.toContain('Deletar');
+    expect(container.textContent).not.toContain('Apagar');
 
-    // dono mesmo sem ser autor → Deletar
+    // dono mesmo sem ser autor → Apagar
     rerender(<ChatMessageItem message={baseMessage({ content: 'msg' })} {...itemProps} isOwner />);
     expect(container.textContent).not.toContain('Editar');
-    expect(container.textContent).toContain('Deletar');
+    expect(container.textContent).toContain('Apagar');
   });
 
   it('deleted mostra placeholder [mensagem apagada] e esconde ações', () => {
@@ -368,11 +423,11 @@ describe('ChatMessageItem (Task 10)', () => {
         message={baseMessage({ id: 'del', content: 'x', deletedAt: new Date().toISOString() })}
         {...itemProps}
         isOwn
-      />
+      />,
     );
     expect(container.textContent).toContain('[mensagem apagada]');
     expect(container.textContent).not.toContain('Editar');
-    expect(container.textContent).not.toContain('Deletar');
+    expect(container.textContent).not.toContain('Apagar');
   });
 
   it('inline edit: Salvar chama onEdit e Cancelar fecha sem chamar', () => {
@@ -383,7 +438,7 @@ describe('ChatMessageItem (Task 10)', () => {
         {...itemProps}
         isOwn
         onEdit={onEdit}
-      />
+      />,
     );
 
     fireEvent.click(getByText('Editar'));
@@ -409,7 +464,7 @@ describe('ChatMessageItem (Task 10)', () => {
           files: [{ id: 'f-1', filename: 'doc.pdf', mime: 'application/pdf', size: 2048 }],
         })}
         {...itemProps}
-      />
+      />,
     );
     const link = container.querySelector('a[href="/api/files/f-1"]');
     expect(link).toBeTruthy();
@@ -430,7 +485,7 @@ describe('ChatMessageItem (Task 10)', () => {
         })}
         {...itemProps}
         roomTicket="ticket-segredo"
-      />
+      />,
     );
     const link = container.querySelector('a[href="/api/files/f-pw"]') as HTMLAnchorElement;
     expect(link).toBeTruthy();
@@ -449,8 +504,20 @@ describe('ChatPanel (Task 10)', () => {
   it('isMine do servidor habilita Editar; mensagem alheia nao', () => {
     const chat = createChatMock({
       messages: [
-        baseMessage({ id: 'm-mine', content: 'minha', guestName: 'Registrada', isMine: true, isGuest: false }),
-        baseMessage({ id: 'm-other', content: 'alheia', guestName: 'Outro', isMine: false, isGuest: false }),
+        baseMessage({
+          id: 'm-mine',
+          content: 'minha',
+          guestName: 'Registrada',
+          isMine: true,
+          isGuest: false,
+        }),
+        baseMessage({
+          id: 'm-other',
+          content: 'alheia',
+          guestName: 'Outro',
+          isMine: false,
+          isGuest: false,
+        }),
         baseMessage({ id: 'm-guest', content: 'convidado', guestName: 'Me', isGuest: true }),
       ],
     });
@@ -464,7 +531,7 @@ describe('ChatPanel (Task 10)', () => {
         onClose={vi.fn()}
         isOwner={false}
         guestName="Me"
-      />
+      />,
     );
     const items = screen.getAllByTestId('chat-message');
     expect(items[0].textContent).toContain('Editar');
@@ -474,7 +541,9 @@ describe('ChatPanel (Task 10)', () => {
     expect(items[2].textContent).not.toContain('Editar');
   });
 
-  function renderChatPanel(overrides: { chat?: Partial<ChatApi>; open?: boolean; currentPeers?: string[] } = {}) {
+  function renderChatPanel(
+    overrides: { chat?: Partial<ChatApi>; open?: boolean; currentPeers?: string[] } = {},
+  ) {
     const chat = createChatMock(overrides.chat);
     const onClose = vi.fn();
     const utils = render(
@@ -487,7 +556,7 @@ describe('ChatPanel (Task 10)', () => {
         onClose={onClose}
         isOwner={false}
         guestName="Me"
-      />
+      />,
     );
     return { chat, onClose, ...utils };
   }
@@ -501,7 +570,10 @@ describe('ChatPanel (Task 10)', () => {
   it('renderiza role=log, badge unread e mensagens', () => {
     const { chat } = renderChatPanel({
       chat: {
-        messages: [baseMessage({ id: 'm1', content: 'oi' }), baseMessage({ id: 'm2', content: 'tudo bem?' })],
+        messages: [
+          baseMessage({ id: 'm1', content: 'oi' }),
+          baseMessage({ id: 'm2', content: 'tudo bem?' }),
+        ],
         unread: 3,
       },
     });
@@ -588,7 +660,7 @@ describe('ChatPanel (Task 10)', () => {
     expect(chat.sendMessage).toHaveBeenCalledWith('@Bo', []);
   });
 
-  it('preview chips com filename/size e remover', () => {
+  it('preview chips com filename/size e remover', async () => {
     const { chat } = renderChatPanel();
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
     const pdf = new File(['%PDF-'], 'doc.pdf', { type: 'application/pdf' });
@@ -606,7 +678,9 @@ describe('ChatPanel (Task 10)', () => {
 
     // envia: uploadFiles recebe o restante
     typeMessage('com arquivos');
-    fireEvent.keyDown(screen.getByPlaceholderText('Escreva uma mensagem...'), { key: 'Enter' });
+    await act(async () => {
+      fireEvent.keyDown(screen.getByPlaceholderText('Escreva uma mensagem...'), { key: 'Enter' });
+    });
     expect(chat.uploadFiles).toHaveBeenCalledWith(
       [expect.objectContaining({ name: 'dados.zip' })],
       'com arquivos',
@@ -620,7 +694,11 @@ describe('ChatPanel (Task 10)', () => {
   it('upload que falha mostra o motivo (antes era engolido em silêncio)', async () => {
     const { chat } = renderChatPanel({
       chat: {
-        uploadFiles: vi.fn().mockRejectedValue(new Error(uploadErrorMessage(400, 'Temporary rooms do not support files'))),
+        uploadFiles: vi
+          .fn()
+          .mockRejectedValue(
+            new Error(uploadErrorMessage(400, 'Temporary rooms do not support files')),
+          ),
       },
     });
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
@@ -631,7 +709,9 @@ describe('ChatPanel (Task 10)', () => {
       fireEvent.keyDown(screen.getByPlaceholderText('Escreva uma mensagem...'), { key: 'Enter' });
     });
     expect(chat.uploadFiles).toHaveBeenCalled();
-    expect(screen.getByTestId('file-error').textContent).toMatch(/Sala temporária não aceita arquivos/);
+    expect(screen.getByTestId('file-error').textContent).toMatch(
+      /Sala temporária não aceita arquivos/,
+    );
   });
 
   it('arquivo recusado no anexo informa nome e motivo', () => {
@@ -682,9 +762,64 @@ describe('ChatPanel (Task 10)', () => {
   it('mobile renderiza drawer com role=dialog', () => {
     Object.defineProperty(window, 'innerWidth', { value: 375, configurable: true, writable: true });
     renderChatPanel();
-    const drawer = screen.getByRole('dialog', { name: 'Chat' });
+    const drawer = screen.getByRole('dialog', { name: 'Chat da sala' });
     expect(drawer).toBeTruthy();
     expect(drawer.getAttribute('aria-modal')).toBe('true');
-    delete (window as { innerWidth?: number }).innerWidth;
+    Object.defineProperty(window, 'innerWidth', {
+      value: 1024,
+      configurable: true,
+      writable: true,
+    });
+  });
+  it('upload em andamento bloqueia duplicação; falha preserva rascunho e anexos para tentar novamente', async () => {
+    let rejectUpload: (reason: Error) => void = () => {};
+    const upload = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((_resolve, reject) => {
+            rejectUpload = reject;
+          }),
+      )
+      .mockResolvedValueOnce(undefined);
+    renderChatPanel({ chat: { uploadFiles: upload } });
+    const input = screen.getByRole('combobox', { name: 'Mensagem' });
+    fireEvent.change(input, { target: { value: 'Segue o documento' } });
+    const file = new File(['conteúdo'], 'notas.txt', { type: 'text/plain' });
+    fireEvent.change(screen.getByLabelText('Anexar'), { target: { files: [file] } });
+    const send = screen.getByRole('button', { name: 'Enviar' });
+    fireEvent.click(send);
+    expect(send).toBeDisabled();
+    expect(screen.getByRole('status')).toHaveTextContent('Enviando arquivos');
+    fireEvent.click(send);
+    expect(upload).toHaveBeenCalledTimes(1);
+    await act(async () => rejectUpload(new Error('A quota da sala foi atingida.')));
+    expect(await screen.findByRole('alert')).toHaveTextContent('A quota da sala foi atingida.');
+    expect(input).toHaveValue('Segue o documento');
+    expect(screen.getByTestId('file-chip')).toHaveTextContent('notas.txt');
+    fireEvent.click(send);
+    await waitFor(() => expect(upload).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByTestId('file-chip')).toBeNull());
+  });
+
+  it('dialog móvel cancela com Escape e restaura o foco quando fecha', () => {
+    Object.defineProperty(window, 'innerWidth', { value: 375, configurable: true, writable: true });
+    const trigger = document.createElement('button');
+    document.body.append(trigger);
+    trigger.focus();
+    const { onClose, unmount } = renderChatPanel();
+    fireEvent(
+      screen.getByRole('dialog', { name: 'Chat da sala' }),
+      new Event('cancel', { cancelable: true }),
+    );
+    expect(onClose).toHaveBeenCalledOnce();
+    unmount();
+    expect(document.activeElement).toBe(trigger);
+    trigger.remove();
+    Object.defineProperty(window, 'innerWidth', {
+      value: 1024,
+      configurable: true,
+      writable: true,
+    });
   });
 });

@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
+import { Card, CardHeader, CardDescription, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { Logo } from '@/components/ui/Logo';
 import { Icon } from '@/components/ui/Icon';
 import Link from 'next/link';
 import { OAuthLoginButtons, readOAuthError } from '@/components/auth/OAuthLogin';
@@ -43,16 +44,17 @@ export default function LoginPage() {
   };
 
   return (
-    <main id="main-content" className="min-h-screen flex items-center justify-center p-4">
-      <Card variant="glass" className="w-full max-w-md animate-fade-in">
+    <main id="main-content" className="auth-page">
+      <Link href="/" className="auth-brand" aria-label="Scale — voltar às salas"><Logo variant="full" size={36} priority /></Link>
+      <Card variant="glass" className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>Entrar</CardTitle>
+          <h1 className="text-[28px] font-semibold tracking-tight">Entrar no Scale</h1>
           <CardDescription>
-            Acesse sua conta para gerenciar salas
+            Volte para suas salas e conversas.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+          <form onSubmit={handleSubmit} className="space-y-4">
             <Input
               id="login"
               label="E-mail ou nome de usuário"
@@ -102,7 +104,7 @@ export default function LoginPage() {
               href="/"
               className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-slate-200 transition-colors"
             >
-              <Icon name="arrowLeft" size={12} /> Voltar ao início
+              <Icon name="arrowLeft" size={12} /> Voltar às salas
             </Link>
           </div>
         </CardContent>

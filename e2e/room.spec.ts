@@ -46,7 +46,9 @@ test('sala conecta e mostra Conectado', async ({ page }) => {
   await expect(page.getByText('Conectado')).toBeVisible({ timeout: 15000 });
 
   // Verifica Sair navega de volta ao início mesmo com mídia indisponível
+  // Sair pede confirmação; o botão do diálogo encerra e volta ao início.
   await page.getByRole('button', { name: 'Sair da sala' }).click();
+  await page.getByRole('dialog', { name: 'Sair da sala?' }).getByRole('button', { name: 'Sair da sala' }).click();
   await expect(page).toHaveURL(`${FRONTEND_URL}/`, { timeout: 5000 });
 
   // O peer agora está autenticado (register), então /api/auth/me responde 200.

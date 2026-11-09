@@ -1,8 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { Button } from '@/components/ui/Button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
+import { AppShell } from '@/components/layout/AppShell';
+import { HelpSidebar } from '@/components/layout/HelpSidebar';
 import { Icon, type IconName } from '@/components/ui/Icon';
 
 interface DocSection {
@@ -28,7 +29,7 @@ const SECTIONS: DocSection[] = [
     title: 'Criar uma sala',
     description: 'Criar sala exige estar logado.',
     items: [
-      'Na tela inicial, digite um nome de 3 a 50 caracteres e clique em “Criar Sala”',
+      'Na tela inicial, digite um nome de 3 a 50 caracteres e clique em “Criar sala”',
       'Sala temporária: expira sozinha depois da chamada',
       'Sala persistente: fica na sua lista, aceita arquivos no chat e tem código de convite',
       'De 2 a 8 participantes por sala',
@@ -40,7 +41,7 @@ const SECTIONS: DocSection[] = [
     description: 'Duas formas: pelo link ou pelo código da sala.',
     items: [
       'Abra o link /room?id=<ID> que alguém enviou',
-      'Ou cole o ID da sala no campo “Entrar numa Sala” da tela inicial',
+      'Ou cole o ID da sala no campo “Código da sala” da tela inicial',
       'Seu nome aparece para os outros participantes assim que você entra',
     ],
   },
@@ -68,21 +69,21 @@ const SECTIONS: DocSection[] = [
 
 export default function DocsPage() {
   return (
-    <main id="main-content" className="min-h-screen">
+    <AppShell activeSection="help" title="Documentação" contextSidebar={<HelpSidebar active="docs" />}>
+      <div className="min-h-0 flex-1 overflow-y-auto">
       <section className="relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-b from-brand-600/10 via-transparent to-transparent pointer-events-none" />
         <div className="relative max-w-3xl mx-auto px-4 pt-12 pb-8">
           <Link
             href="/tutorial"
-            className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-white transition-colors mb-6"
+            className="inline-flex items-center gap-2 text-sm text-ink-muted hover:text-ink-primary transition-colors mb-6"
           >
             <Icon name="arrowLeft" /> Voltar ao tutorial
           </Link>
-          <h1 className="text-3xl font-bold text-white mb-2">Documentação do Scale</h1>
-          <p className="text-slate-400 text-sm">
+          <h2 className="text-[28px] font-semibold leading-9 tracking-tight text-ink-primary mb-2">Documentação do Scale</h2>
+          <p className="text-ink-muted text-sm">
             Guia de uso do Scale: conta, criação e entrada em salas, compartilhamento do
             link e permissões de microfone e tela. Para o passo a passo visual, abra o{' '}
-            <Link href="/tutorial" className="text-brand-300 hover:text-white underline">
+            <Link href="/tutorial" className="text-brand-300 hover:text-ink-primary underline">
               tutorial
             </Link>
             .
@@ -92,7 +93,7 @@ export default function DocsPage() {
 
       <section className="max-w-3xl mx-auto px-4 pb-12 space-y-6">
         {SECTIONS.map((section) => (
-          <Card variant="glass" key={section.title}>
+          <Card variant="glass" key={section.title} className="!rounded-none !border-0 !border-b !border-line !bg-transparent !px-0">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Icon name={section.icon} size={20} />
@@ -101,10 +102,10 @@ export default function DocsPage() {
               <CardDescription>{section.description}</CardDescription>
             </CardHeader>
             <CardContent>
-              <ul className="space-y-1.5 text-sm text-slate-300">
+              <ul className="space-y-1.5 text-sm text-ink-secondary">
                 {section.items.map((item) => (
                   <li key={item} className="flex gap-2">
-                    <span className="text-brand-400">•</span>
+                    <Icon name="check" className="mt-0.5 shrink-0 text-accent" />
                     <span>{item}</span>
                   </li>
                 ))}
@@ -113,7 +114,7 @@ export default function DocsPage() {
           </Card>
         ))}
 
-        <Card variant="glass">
+        <Card variant="glass" className="!rounded-none !border-0 !bg-transparent !px-0">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Icon name="globe" size={20} />
@@ -123,7 +124,7 @@ export default function DocsPage() {
               Para usar fora da sua máquina, publique o app por um túnel HTTPS.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4 text-sm text-slate-300 leading-relaxed">
+          <CardContent className="space-y-4 text-sm text-ink-secondary leading-relaxed">
             <p>
               O Scale roda localmente (frontend em <code className="bg-white/10 px-1.5 py-0.5 rounded text-brand-300">:3000</code>,
               backend em <code className="bg-white/10 px-1.5 py-0.5 rounded text-brand-300">:4000</code>).
@@ -131,7 +132,7 @@ export default function DocsPage() {
               (por exemplo cloudflared ou ngrok) e compartilhe a URL gerada no lugar de
               um link local.
             </p>
-            <p className="text-slate-400">
+            <p className="text-ink-muted">
               O guia completo de configuração do túnel está versionado em{' '}
               <code className="bg-white/10 px-1.5 py-0.5 rounded text-brand-300 text-xs">docs/tunnel-setup.md</code>{' '}
               no repositório.
@@ -139,13 +140,13 @@ export default function DocsPage() {
             <div className="flex flex-wrap gap-2">
               <Link
                 href="/tutorial"
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-700 text-white text-sm font-medium hover:bg-brand-800 transition-colors"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-700 text-ink-primary text-sm font-medium hover:bg-brand-800 transition-colors"
               >
                 <Icon name="book" /> Abrir tutorial interativo
               </Link>
               <Link
                 href="/"
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-300 hover:bg-white/10 transition-colors"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-ink-secondary hover:bg-white/10 transition-colors"
               >
                 <Icon name="mic" /> Ir para o Scale
               </Link>
@@ -153,12 +154,8 @@ export default function DocsPage() {
           </CardContent>
         </Card>
 
-        <div className="text-center">
-          <Link href="/">
-            <Button variant="ghost" size="sm"><Icon name="arrowLeft" /> Voltar ao Scale</Button>
-          </Link>
-        </div>
       </section>
-    </main>
+      </div>
+    </AppShell>
   );
 }

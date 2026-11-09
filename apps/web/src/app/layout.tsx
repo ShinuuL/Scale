@@ -2,12 +2,14 @@ import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
 import './globals.css';
 import { PALETTE_BOOT_SRC } from '@/lib/theme';
+import { AriaRouter } from '@/components/AriaRouter';
+import { RoomHost } from '@/components/room/RoomHost';
 import { CallCenter } from '@/components/calls/CallCenter';
 import { ApplicationFeatures } from '@/components/pwa/ApplicationFeatures';
 
 export const metadata: Metadata = {
-  title: 'Scale — P2P Video Calls',
-  description: 'Scale — escamas de dragão, videochamadas P2P mesh powered by WebRTC',
+  title: 'Scale — Voz, tela e conversa',
+  description: 'Salas de voz, compartilhamento de tela e conversa para amigos e equipes.',
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'),
   manifest: '/manifest.webmanifest',
   icons: {
@@ -25,7 +27,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className="dark" suppressHydrationWarning>
+    <html lang="pt-BR" className="dark" suppressHydrationWarning>
       <head>
         {/* Tema salvo aplicado antes da 1a pintura. Sincrono de proposito (precisa
             rodar antes do body pintar) e arquivo estatico para a CSP nao exigir
@@ -34,16 +36,20 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <script src={PALETTE_BOOT_SRC} />
       </head>
       <body className="min-h-screen bg-forest-950 text-slate-100 antialiased">
-        {/* Skip to content link for accessibility */}
+        {/* Pular para o conteúdo link for accessibility */}
         <a href="#main-content" className="skip-link">
-          Skip to content
+          Pular para o conteúdo
         </a>
-        <div id="app-root">
-          {children}
-        </div>
-        {/* Chamadas entre amigos: tela tocando e "Chamando…" em qualquer pagina. */}
-        <CallCenter />
-        <ApplicationFeatures />
+        <AriaRouter>
+          <div id="app-root">
+            {children}
+            {/* Sessao da sala fora da rota: navegar pelo app nao derruba a chamada. */}
+            <RoomHost />
+          </div>
+          {/* Chamadas entre amigos: tela tocando e "Chamando…" em qualquer pagina. */}
+          <CallCenter />
+          <ApplicationFeatures />
+        </AriaRouter>
       </body>
     </html>
   );

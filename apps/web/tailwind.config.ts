@@ -6,6 +6,10 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        surface: { base: 'var(--bg-base)', secondary: 'var(--bg-secondary)', tertiary: 'var(--bg-tertiary)', hover: 'var(--bg-hover)' },
+        ink: { primary: 'var(--text-primary)', secondary: 'var(--text-secondary)', muted: 'var(--text-muted)' },
+        line: { DEFAULT: 'var(--border)', strong: 'var(--border-strong)' },
+        accent: { DEFAULT: 'var(--accent)', solid: 'var(--accent-solid)', subtle: 'var(--accent-subtle)' },
         // Cores do TEMA: valores em src/app/globals.css (variáveis por data-palette).
         // moss é sinônimo histórico de brand.
         moss: {
@@ -38,15 +42,8 @@ const config: Config = {
         },
       },
       fontFamily: {
-        sans: [
-          'Geist',
-          'Inter',
-          '-apple-system',
-          'BlinkMacSystemFont',
-          'Segoe UI',
-          'sans-serif',
-        ],
-        mono: ['Geist Mono', 'JetBrains Mono', 'monospace'],
+        sans: ['system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
+        mono: ['ui-monospace', 'SFMono-Regular', 'Consolas', 'monospace'],
       },
       animation: {
         'fade-in': 'fadeIn 0.3s ease-in-out',

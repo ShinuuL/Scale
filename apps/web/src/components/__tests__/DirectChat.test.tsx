@@ -50,4 +50,16 @@ describe('DirectChat', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Desfazer' }));
     expect(onRemove).toHaveBeenCalledOnce();
   });
+  it('falha de histórico não vira conversa vazia e permite tentar novamente', async () => {
+    const history = vi
+      .spyOn(api, 'getDirectMessages')
+      .mockRejectedValueOnce(new Error('rede'))
+      .mockResolvedValueOnce({ messages: [], hasMore: false });
+    render(<DirectChat meId="ana" friend={friend} incoming={[]} onRemoveFriend={() => {}} />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('A conversa não carregou');
+    expect(screen.queryByText(/Nenhuma mensagem ainda/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar novamente' }));
+    expect(await screen.findByText(/Nenhuma mensagem ainda/)).toBeTruthy();
+    expect(history).toHaveBeenCalledTimes(2);
+  });
 });

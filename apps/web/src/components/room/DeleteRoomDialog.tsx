@@ -1,11 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
+import { Dialog, Heading, Modal, ModalOverlay } from 'react-aria-components';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { api } from '@/lib/api';
-
-const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 export interface DeleteRoomDialogProps {
   roomId: string;
@@ -32,8 +31,8 @@ function errorMessage(err: unknown): string {
 }
 
 /**
- * Confirmacao de exclusao definitiva de sala (role="alertdialog"): foco preso,
- * Esc cancela e o foco volta ao elemento que abriu o dialogo. Nunca usa
+ * Confirmacao de exclusao definitiva de sala (react-aria, role="alertdialog"):
+ * foco preso, Esc e clique fora cancelam e o foco volta ao elemento que abriu. Nunca usa
  * window.confirm (o desktop Electron e o padrao do projeto pedem UI propria).
  */
 export function DeleteRoomDialog({
@@ -44,49 +43,12 @@ export function DeleteRoomDialog({
   onDeleteStart,
   onDeleteError,
 }: DeleteRoomDialogProps) {
-  const dialogRef = useRef<HTMLDivElement>(null);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    // Foco inicial no "Cancelar": acao destrutiva nunca e o default.
-    dialogRef.current?.querySelector<HTMLButtonElement>('[data-autofocus]')?.focus();
-    return () => {
-      if (trigger && document.contains(trigger)) trigger.focus();
-    };
-  }, []);
 
   const cancel = useCallback(() => {
     if (!deleting) onCancel();
   }, [deleting, onCancel]);
-
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        cancel();
-        return;
-      }
-      if (e.key === 'Tab' && dialogRef.current) {
-        const focusable = dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE);
-        if (focusable.length === 0) {
-          e.preventDefault();
-          return;
-        }
-        const first = focusable[0];
-        const last = focusable[focusable.length - 1];
-        if (e.shiftKey && document.activeElement === first) {
-          e.preventDefault();
-          last.focus();
-        } else if (!e.shiftKey && document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
-    },
-    [cancel],
-  );
 
   const confirm = async () => {
     setDeleting(true);
@@ -103,53 +65,62 @@ export function DeleteRoomDialog({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-forest-950/80 p-4 backdrop-blur-sm animate-fade-in"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) cancel();
+    <ModalOverlay
+      isOpen
+      isDismissable={!deleting}
+      isKeyboardDismissDisabled={deleting}
+      onOpenChange={(open) => {
+        if (!open) cancel();
       }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 data-[entering]:animate-fade-in"
     >
-      <div
-        ref={dialogRef}
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="delete-room-title"
-        aria-describedby="delete-room-desc"
-        onKeyDown={handleKeyDown}
-        className="w-full max-w-md space-y-4 rounded-2xl border border-white/10 bg-forest-900 p-6 shadow-2xl shadow-black/40"
-      >
-        <div className="flex items-start gap-3">
-          <span
-            aria-hidden="true"
-            className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-red-500/10 text-red-400"
-          >
-            <Icon name="trash" size={20} />
-          </span>
-          <div className="min-w-0">
-            <h2 id="delete-room-title" className="break-words text-base font-semibold text-white">
-              Apagar a sala {roomName}?
-            </h2>
-            <p id="delete-room-desc" className="mt-1 text-sm text-slate-400">
-              Todos saem da chamada e as mensagens e arquivos são apagados para sempre.
-            </p>
+      <Modal className="w-full max-w-md rounded-2xl border border-line bg-surface-secondary p-6 shadow-2xl shadow-black/40 data-[entering]:animate-menu-in">
+        <Dialog
+          role="alertdialog"
+          aria-describedby="delete-room-desc"
+          className="space-y-4 outline-none"
+        >
+          <div className="flex items-start gap-3">
+            <span
+              aria-hidden="true"
+              className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-red-500/10 text-red-400"
+            >
+              <Icon name="trash" size={20} />
+            </span>
+            <div className="min-w-0">
+              <Heading slot="title" className="break-words text-base font-semibold text-white">
+                Apagar a sala {roomName}?
+              </Heading>
+              <p id="delete-room-desc" className="mt-1 text-sm text-ink-muted">
+                Todos saem da chamada e as mensagens e arquivos são apagados para sempre.
+              </p>
+            </div>
           </div>
-        </div>
 
-        {error && (
-          <p role="alert" className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
-            {error}
-          </p>
-        )}
+          {error && (
+            <p
+              role="alert"
+              className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300"
+            >
+              {error}
+            </p>
+          )}
 
-        <div className="flex justify-end gap-2">
-          <Button data-autofocus variant="secondary" onClick={cancel} disabled={deleting}>
-            Cancelar
-          </Button>
-          <Button variant="danger" onClick={() => void confirm()} disabled={deleting} aria-busy={deleting}>
-            {deleting ? 'Apagando...' : 'Apagar sala'}
-          </Button>
-        </div>
-      </div>
-    </div>
+          <div className="flex justify-end gap-2">
+            <Button autoFocus variant="secondary" onClick={cancel} disabled={deleting}>
+              Cancelar
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() => void confirm()}
+              disabled={deleting}
+              aria-busy={deleting}
+            >
+              {deleting ? 'Apagando...' : 'Apagar sala'}
+            </Button>
+          </div>
+        </Dialog>
+      </Modal>
+    </ModalOverlay>
   );
 }
