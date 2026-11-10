@@ -413,6 +413,18 @@ export function RoomSession({ roomId, visible, onJoinedChange }: RoomSessionProp
     [socket, roomId, webrtc, allowNavigation],
   );
 
+  // Logoff (menu de perfil): encerra a chamada sem o aviso de "sair da página";
+  // quem disparou recarrega a página em seguida.
+  useEffect(() => {
+    const endCall = () => {
+      allowNavigation();
+      socket.leaveRoom(roomId).catch(() => {});
+      webrtc.cleanupMedia();
+    };
+    window.addEventListener('scale:end-call', endCall);
+    return () => window.removeEventListener('scale:end-call', endCall);
+  }, [allowNavigation, socket, roomId, webrtc]);
+
   // Sala apagada por outra pessoa: limpa a midia e volta para a home com aviso.
   const navigateFromDeletedRoom = useCallback(
     (href: string) => {

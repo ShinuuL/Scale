@@ -180,6 +180,12 @@ class ApiClient {
   }
 
   // ─── Auth ───────────────────────────────────────────────────
+  /** Encerra a sessão: o servidor apaga o cookie HttpOnly (204, sem corpo). */
+  async logout(): Promise<void> {
+    const res = await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  }
+
   async login(input: LoginInput): Promise<AuthResponse> {
     const data = await this.request<Record<string, unknown>>('/api/auth/login', {
       method: 'POST',
