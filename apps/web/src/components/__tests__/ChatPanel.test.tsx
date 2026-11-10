@@ -660,6 +660,16 @@ describe('ChatPanel (Task 10)', () => {
     expect(chat.sendMessage).toHaveBeenCalledWith('@Bo', []);
   });
 
+  it('Enviar vazio fica aria-disabled e o clique não envia', () => {
+    const { chat } = renderChatPanel();
+    const send = screen.getByRole('button', { name: 'Enviar' });
+    expect(send).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.click(send);
+    expect(chat.sendMessage).not.toHaveBeenCalled();
+    typeMessage('oi');
+    expect(send).toHaveAttribute('aria-disabled', 'false');
+  });
+
   it('preview chips com filename/size e remover', async () => {
     const { chat } = renderChatPanel();
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
@@ -789,7 +799,8 @@ describe('ChatPanel (Task 10)', () => {
     fireEvent.change(screen.getByLabelText('Anexar'), { target: { files: [file] } });
     const send = screen.getByRole('button', { name: 'Enviar' });
     fireEvent.click(send);
-    expect(send).toBeDisabled();
+    // aria-disabled (nao `disabled`): continua recebendo ponteiro para a dica.
+    expect(send).toHaveAttribute('aria-disabled', 'true');
     expect(screen.getByRole('status')).toHaveTextContent('Enviando arquivos');
     fireEvent.click(send);
     expect(upload).toHaveBeenCalledTimes(1);
