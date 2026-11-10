@@ -172,6 +172,21 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
   });
 
   // POST /api/auth/login
+  // Logoff: o JWT mora num cookie HttpOnly, entao so o servidor consegue
+  // apaga-lo. Mesmos atributos da criacao (senao o navegador mantem o cookie).
+  // Idempotente: sem sessao tambem responde 204. O JWT e stateless: uma copia
+  // vazada continua valida ate expirar (7 dias) — o logoff encerra ESTE
+  // navegador, nao revoga tokens.
+  fastify.post('/api/auth/logout', async (_request, reply) => {
+    reply.clearCookie('token', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      path: '/',
+    });
+    return reply.code(204).send();
+  });
+
   fastify.post('/api/auth/login', async (request, reply) => {
     const ip = getClientIp(request);
 
