@@ -6,6 +6,8 @@ export const joinRoomSchema = z.object({
   inviteToken: z.string().uuid().optional(),
   guestName: z.string().min(1).max(50).optional(),
   password: z.string().min(8).max(128).optional(),
+  /** Microfone desligado (ou indisponivel) no momento da entrada. */
+  muted: z.boolean().optional(),
 });
 
 export const leaveRoomSchema = z.object({
@@ -55,6 +57,17 @@ export const screenShareStateSchema = z.object({
 
 export type ScreenShareStatePayload = z.infer<typeof screenShareStateSchema>;
 
+/**
+ * `peer:audio-state` (cliente -> servidor): o proprio microfone ligou/desligou.
+ * O servidor guarda o estado e repassa `room:peer-audio-state` para a sala.
+ */
+export const audioStateSchema = z.object({
+  roomId: z.string().uuid(),
+  muted: z.boolean(),
+});
+
+export type AudioStatePayload = z.infer<typeof audioStateSchema>;
+
 // --- Chat schemas (Opção A) — trim aplicado no handler (content.trim()) antes do safeParse ---
 
 export const chatMessageSchema = z.object({
@@ -96,6 +109,14 @@ export interface PeerInfo {
   isRegistered: boolean;
   name: string;
   guestName?: string;
+  /** Microfone desligado ou indisponivel. Ausente = ligado (clientes antigos). */
+  muted?: boolean;
+}
+
+/** Payload de `room:peer-audio-state`: um peer ligou/desligou o microfone. */
+export interface PeerAudioStateEvent {
+  peerId: string;
+  muted: boolean;
 }
 
 /** Payload de `room:peer-left`. */

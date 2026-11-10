@@ -30,6 +30,7 @@ import {
   answerSchema,
   iceCandidateSchema,
   screenShareStateSchema,
+  audioStateSchema,
   chatMessageSchema,
   chatEditSchema,
   chatDeleteSchema,
@@ -54,6 +55,8 @@ interface RoomPeer {
   name: string;
   guestName?: string;
   guestId?: string;
+  /** Microfone desligado ou indisponivel (informado pelo proprio cliente). */
+  muted: boolean;
 }
 
 const roomPeers = new Map<string, Map<string, RoomPeer>>();
@@ -324,6 +327,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
           name: user.name,
           guestName: user.guestName,
           guestId: user.guestId,
+          muted: parsed.data.muted ?? false,
         });
         roomPeers.set(roomId, peers);
 
@@ -337,6 +341,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
           isRegistered: user.userId !== null,
           name: user.name,
           guestName: user.guestName,
+          muted: parsed.data.muted ?? false,
         };
         // ICE servers (STUN + TURN com credencial temporaria) para QUEM ENTROU,
         // logado ou convidado — senha/convite ja foram validados acima. Emitido
@@ -362,6 +367,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
             isRegistered: p.userId !== null,
             name: p.name,
             guestName: p.guestName,
+            muted: p.muted,
           }));
 
         // Histórico de chat: 200 recentes se persistente (ASC), buffer FIFO se temporária
@@ -544,6 +550,31 @@ export function createSocketServer(httpServer: HttpServer): Server {
         fromPeerId: socket.id,
         isScreenSharing,
       });
+      callback?.({ success: true });
+    });
+
+    // Microfone ligou/desligou: guarda (para quem entrar depois) e avisa a sala.
+    socket.on('peer:audio-state', (data, callback) => {
+      if (isRateLimited(`socket:${socket.id}`)) {
+        callback?.({ error: 'Rate limit exceeded. Max 30 messages/second.' });
+        return;
+      }
+
+      const parsed = audioStateSchema.safeParse(data);
+      if (!parsed.success) {
+        callback?.({ error: 'Invalid payload', details: parsed.error.flatten() });
+        return;
+      }
+
+      const { roomId, muted } = parsed.data;
+      if (!senderInRoom(roomId)) {
+        callback?.({ error: 'Not in room' });
+        return;
+      }
+      const peer = roomPeers.get(roomId)?.get(socket.id);
+      if (peer) peer.muted = muted;
+
+      socket.to(roomId).emit('room:peer-audio-state', { peerId: socket.id, muted });
       callback?.({ success: true });
     });
 

@@ -53,7 +53,7 @@ test.describe('wizard de onboarding', () => {
     await page.getByRole('button', { name: 'Criar Sala' }).click();
 
     await expect(page).toHaveURL(/\/room\?id=[0-9a-f-]{36}$/, { timeout: 15_000 });
-    await expect(page.getByRole('heading', { name: 'Wizard E2E' })).toBeVisible({
+    await expect(page.getByRole('heading', { name: 'Wizard E2E', level: 1 })).toBeVisible({
       timeout: 15_000,
     });
   });

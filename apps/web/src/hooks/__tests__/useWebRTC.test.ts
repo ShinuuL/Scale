@@ -201,6 +201,7 @@ type EventName =
   | 'signalAnswer'
   | 'signalIceCandidate'
   | 'screenShareState'
+  | 'peerAudioState'
   | 'reconnect';
 
 let getUserMediaMock: ReturnType<typeof vi.fn>;
@@ -229,6 +230,8 @@ function createHookMock(myId: string) {
     onSignalIceCandidate: vi.fn(register<Payload<'onSignalIceCandidate'>>('signalIceCandidate')),
     emitScreenShareState: vi.fn().mockResolvedValue(undefined),
     onScreenShareState: vi.fn(register<Payload<'onScreenShareState'>>('screenShareState')),
+    emitAudioState: vi.fn(),
+    onPeerAudioState: vi.fn(register<Payload<'onPeerAudioState'>>('peerAudioState')),
     onReconnect: vi.fn(register<void>('reconnect')),
     onRoomDeleted: vi.fn(() => () => {}),
     guestName: 'Test',
@@ -1152,5 +1155,43 @@ describe('switchMicrophone (troca ao vivo)', () => {
     expect(result.current.localStream).toBe(oldStream);
     // A voz anterior segue viva: não é "microfone indisponível".
     expect(result.current.mediaError).toBeNull();
+  });
+});
+
+describe('estado de mudo entre peers', () => {
+  it('avisa a sala ao silenciar/ativar e expõe o estado atual', async () => {
+    const { hook } = createHookMock('me-100');
+    getUserMediaMock.mockResolvedValue(new MockMediaStream([createMockTrack('audio')]));
+    const { result } = renderHook(() => useWebRTC(hook, ROOM_ID));
+    await act(async () => { await result.current.initMedia(); });
+    expect(result.current.isMutedNow()).toBe(false);
+    act(() => { result.current.toggleMute(); });
+    expect(hook.emitAudioState).toHaveBeenLastCalledWith(ROOM_ID, true);
+    expect(result.current.isMutedNow()).toBe(true);
+    act(() => { result.current.toggleMute(); });
+    expect(hook.emitAudioState).toHaveBeenLastCalledWith(ROOM_ID, false);
+  });
+
+  it('sem microfone fica mudo e avisa', async () => {
+    const { hook } = createHookMock('me-100');
+    getUserMediaMock.mockRejectedValue(new DOMException('Negado', 'NotAllowedError'));
+    const { result } = renderHook(() => useWebRTC(hook, ROOM_ID));
+    await act(async () => { await result.current.initMedia(); });
+    expect(result.current.isMutedNow()).toBe(true);
+    expect(hook.emitAudioState).toHaveBeenLastCalledWith(ROOM_ID, true);
+  });
+
+  it('mudo informado antes da conexão vale ao criar o peer e muda com room:peer-audio-state', async () => {
+    const { hook, emit } = createHookMock('me-100');
+    getUserMediaMock.mockResolvedValue(new MockMediaStream([createMockTrack('audio')]));
+    const { result } = renderHook(() => useWebRTC(hook, ROOM_ID));
+    await act(async () => { await result.current.initMedia(); });
+    // me-050 < me-100: o outro lado inicia; o estado chega no peer-joined.
+    await emit('peerJoined', { peerId: 'me-050', name: 'Ana', isRegistered: false, muted: true });
+    await emit('signalOffer', { fromPeerId: 'me-050', name: 'Ana', isRegistered: false, offer: { type: 'offer' } });
+    expect(result.current.peers.get('me-050')?.audioMuted).toBe(true);
+
+    await emit('peerAudioState', { peerId: 'me-050', muted: false });
+    expect(result.current.peers.get('me-050')?.audioMuted).toBe(false);
   });
 });
