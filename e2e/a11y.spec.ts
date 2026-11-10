@@ -490,11 +490,7 @@ test.describe('contraste e legibilidade da sala', () => {
     expect(ratio, `"Enviar" no hover: ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(3);
   });
 
-  // FIXME: bug preexistente — o estado de mudo de um peer nao e sinalizado aos
-  // outros (audioMuted remoto sempre false) e a faixa de recepcao do WebRTC
-  // existe mesmo sem microfone do outro lado, entao o icone nunca aparece.
-  // Reativar quando o mute for propagado por socket.
-  test.fixme('o icone de microfone desligado do peer sem audio tambem passa', async ({ browser }) => {
+  test('o icone de microfone desligado do peer sem audio tambem passa', async ({ browser }) => {
     const a = await peer(browser);
     const roomId = await createRoom(a.page);
     await joinRoom(a.page, roomId);

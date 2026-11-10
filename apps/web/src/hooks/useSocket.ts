@@ -4,7 +4,14 @@ import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { io, Socket } from 'socket.io-client';
 import type { ChatMessage } from '@/hooks/useChat';
 import { roomDeletedEventSchema } from '@scale/shared';
-import type { JoinRoomPayload, PeerInfo, PeerLeftEvent, RoomDeletedEvent, ScreenShareStateEvent } from '@scale/shared';
+import type {
+  JoinRoomPayload,
+  PeerAudioStateEvent,
+  PeerInfo,
+  PeerLeftEvent,
+  RoomDeletedEvent,
+  ScreenShareStateEvent,
+} from '@scale/shared';
 
 /**
  * URL do signaling. Producao (frontend estatico servido pelo Caddy): SEMPRE o
@@ -44,6 +51,7 @@ export interface UseSocketReturn {
     guestName?: string,
     inviteToken?: string,
     password?: string,
+    muted?: boolean,
   ) => Promise<JoinRoomResult>;
   leaveRoom: (roomId: string) => Promise<void>;
   emitOffer: (roomId: string, targetPeerId: string, offer: RTCSessionDescriptionInit) => Promise<void>;
@@ -56,6 +64,9 @@ export interface UseSocketReturn {
   onSignalIceCandidate: (cb: (data: { fromPeerId: string; isRegistered: boolean; candidate: RTCIceCandidateInit }) => void) => () => void;
   emitScreenShareState: (roomId: string, targetPeerId: string, isScreenSharing: boolean) => Promise<void>;
   onScreenShareState: (cb: (data: ScreenShareStateEvent) => void) => () => void;
+  /** Avisa a sala que o proprio microfone ligou/desligou (sem esperar resposta). */
+  emitAudioState: (roomId: string, muted: boolean) => void;
+  onPeerAudioState: (cb: (data: PeerAudioStateEvent) => void) => () => void;
   onReconnect: (cb: () => void) => () => void;
   /** A sala foi apagada (dono ou admin): o servidor ja tirou este socket dela. */
   onRoomDeleted: (cb: (data: RoomDeletedEvent) => void) => () => void;
@@ -80,6 +91,7 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
     signalAnswer: [] as Array<(data: { fromPeerId: string; isRegistered: boolean; name: string; answer: RTCSessionDescriptionInit }) => void>,
     signalIceCandidate: [] as Array<(data: { fromPeerId: string; isRegistered: boolean; candidate: RTCIceCandidateInit }) => void>,
     screenShareState: [] as Array<(data: ScreenShareStateEvent) => void>,
+    peerAudioState: [] as Array<(data: PeerAudioStateEvent) => void>,
     reconnect: [] as Array<() => void>,
     roomDeleted: [] as Array<(data: RoomDeletedEvent) => void>,
   });
@@ -154,6 +166,11 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
       callbacksRef.current.screenShareState.forEach((cb) => cb(data));
     });
 
+    sock.on('room:peer-audio-state', (data: PeerAudioStateEvent) => {
+      if (typeof data?.peerId !== 'string' || typeof data.muted !== 'boolean') return;
+      callbacksRef.current.peerAudioState.forEach((cb) => cb(data));
+    });
+
     sock.on('room:deleted', (data: unknown) => {
       const parsed = roomDeletedEventSchema.safeParse(data);
       if (!parsed.success) return;
@@ -184,6 +201,7 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
       guestNameArg?: string,
       inviteToken?: string,
       password?: string,
+      muted?: boolean,
     ): Promise<JoinRoomResult> => {
       return new Promise((resolve, reject) => {
         const socket = socketRef.current;
@@ -197,6 +215,7 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
         };
         if (inviteToken) payload.inviteToken = inviteToken;
         if (password) payload.password = password;
+        if (muted !== undefined) payload.muted = muted;
         if (guestNameArg) payload.guestName = guestNameArg;
         else payload.guestName = guestName;
 
@@ -369,6 +388,20 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
     };
   }, []);
 
+  const emitAudioState = useCallback((roomId: string, muted: boolean): void => {
+    const socket = socketRef.current;
+    if (!socket || !socket.connected) return;
+    socket.emit('peer:audio-state', { roomId, muted }, () => undefined);
+  }, []);
+
+  const onPeerAudioState = useCallback((cb: (data: PeerAudioStateEvent) => void): (() => void) => {
+    callbacksRef.current.peerAudioState.push(cb);
+    return () => {
+      const idx = callbacksRef.current.peerAudioState.indexOf(cb);
+      if (idx >= 0) callbacksRef.current.peerAudioState.splice(idx, 1);
+    };
+  }, []);
+
   const onScreenShareState = useCallback((cb: (data: ScreenShareStateEvent) => void): (() => void) => {
     callbacksRef.current.screenShareState.push(cb);
     return () => {
@@ -414,6 +447,8 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
       onSignalIceCandidate,
       emitScreenShareState,
       onScreenShareState,
+      emitAudioState,
+      onPeerAudioState,
       onReconnect,
       onRoomDeleted,
       guestName,
@@ -436,6 +471,8 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
       onSignalIceCandidate,
       emitScreenShareState,
       onScreenShareState,
+      emitAudioState,
+      onPeerAudioState,
       onReconnect,
       onRoomDeleted,
       setGuestName,

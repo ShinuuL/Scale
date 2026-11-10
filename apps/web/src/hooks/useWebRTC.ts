@@ -60,6 +60,8 @@ export interface UseWebRTCHReturn {
    * pelos antigos — se esse evento se perder, o novato ainda conecta.
    */
   connectToPeers: (peers: PeerInfo[]) => Promise<void>;
+  /** Estado atual do proprio microfone (ref, sem esperar render). Vai no join-room. */
+  isMutedNow: () => boolean;
 }
 
 const DEFAULT_ICE_SERVERS: RTCConfiguration = {
@@ -290,6 +292,13 @@ export function useWebRTC(
   const isDeafenedRef = useRef(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [audioMuted, setAudioMuted] = useState(false);
+  // Mudo dos OUTROS peers (servidor: join-room/peer-joined/room:peer-audio-state).
+  // Guardado por peerId porque o estado pode chegar antes da RTCPeerConnection.
+  const remoteMutedRef = useRef<Map<string, boolean>>(new Map());
+  // Avisa a sala quando o proprio microfone muda. Atualizado a cada render para
+  // callbacks estaveis (useCallback []) usarem o socket/sala atuais.
+  const announceMutedRef = useRef<(muted: boolean) => void>(() => undefined);
+  announceMutedRef.current = (muted: boolean) => socketHook.emitAudioState(roomId, muted);
   const [mediaError, setMediaError] = useState<string | null>(null);
   const peersMetaRef = useRef<Map<string, PeerMeta>>(new Map());
   const iceConfigRef = useRef<RTCConfiguration>(DEFAULT_ICE_SERVERS);
@@ -744,7 +753,7 @@ export function useWebRTC(
         connection: pc,
         stream: null,
         screenStream: null,
-        audioMuted: false,
+        audioMuted: remoteMutedRef.current.get(peerId) ?? false,
         videoMuted: false,
         isScreenSharing: false,
       });
@@ -783,6 +792,7 @@ export function useWebRTC(
   const connectToPeers = useCallback(
     async (peerInfos: PeerInfo[]): Promise<void> => {
       for (const peer of peerInfos) {
+        if (peer.muted !== undefined) remoteMutedRef.current.set(peer.peerId, peer.muted);
         if (peersRef.current.has(peer.peerId)) {
           console.debug('[WebRTC] connectToPeers: already connected to', peer.peerId);
           continue;
@@ -823,6 +833,7 @@ export function useWebRTC(
       isMutedRef.current = true;
       setIsMuted(true);
       setAudioMuted(true);
+      announceMutedRef.current(true);
       return false;
     }
     const generation = ++mediaGenerationRef.current;
@@ -875,6 +886,7 @@ export function useWebRTC(
       setLocalStream(stream);
       setIsMuted(isMutedRef.current);
       setAudioMuted(isMutedRef.current);
+      announceMutedRef.current(isMutedRef.current);
       setMediaError(null);
       previous?.getTracks().forEach((item) => { item.onended = null; item.stop(); });
       // Desconexão física: tenta o dispositivo padrão sem reativar um mic mudo.
@@ -892,6 +904,7 @@ export function useWebRTC(
         isMutedRef.current = true;
         setIsMuted(true);
         setAudioMuted(true);
+        announceMutedRef.current(true);
       }
       return false;
     } finally {
@@ -953,6 +966,8 @@ export function useWebRTC(
     broadcastPeersUpdate();
   }, [broadcastPeersUpdate]);
 
+  const isMutedNow = useCallback(() => isMutedRef.current, []);
+
   // ─── Toggle mute ──────────────────────────────────────────────
   const toggleMute = useCallback((): boolean | null => {
     if (!localStreamRef.current) {
@@ -969,6 +984,7 @@ export function useWebRTC(
     isMutedRef.current = nowMuted;
     setIsMuted(nowMuted);
     setAudioMuted(nowMuted);
+    announceMutedRef.current(nowMuted);
 
     // Retorna o NOVO estado para a UI dar feedback sem ler estado stale.
     return nowMuted;
@@ -1077,8 +1093,9 @@ export function useWebRTC(
 
   // ─── Socket event handlers ────────────────────────────────────
   useEffect(() => {
-    const handlePeerJoined = async (peer: { peerId: string; isRegistered: boolean; name: string }) => {
+    const handlePeerJoined = async (peer: PeerInfo) => {
       console.debug('[WebRTC] room:peer-joined', peer.peerId, peer.name);
+      if (peer.muted !== undefined) remoteMutedRef.current.set(peer.peerId, peer.muted);
       if (peersRef.current.has(peer.peerId)) {
         console.debug('[WebRTC] room:peer-joined: peer already known — skipping duplicate offer', peer.peerId);
         return;
@@ -1117,6 +1134,7 @@ export function useWebRTC(
 
     const handlePeerLeft = (data: { peerId: string }) => {
       console.debug('[WebRTC] room:peer-left', data.peerId);
+      remoteMutedRef.current.delete(data.peerId);
       cleanupPeer(data.peerId, 'peer-left');
     };
 
@@ -1149,7 +1167,7 @@ export function useWebRTC(
           connection: createPeerConnection(data.fromPeerId, meta, 'answerer'),
           stream: null,
           screenStream: null,
-          audioMuted: false,
+          audioMuted: remoteMutedRef.current.get(data.fromPeerId) ?? false,
           videoMuted: false,
           isScreenSharing: false,
         };
@@ -1265,6 +1283,15 @@ export function useWebRTC(
 
     const unsubScreenShare = socketHook.onScreenShareState(handleScreenShareState);
 
+    const unsubAudioState = socketHook.onPeerAudioState(({ peerId, muted }) => {
+      remoteMutedRef.current.set(peerId, muted);
+      const existing = peersRef.current.get(peerId);
+      if (existing && existing.audioMuted !== muted) {
+        existing.audioMuted = muted;
+        broadcastPeersUpdate();
+      }
+    });
+
     return () => {
       unsubPeerJoined();
       unsubPeerLeft();
@@ -1272,6 +1299,7 @@ export function useWebRTC(
       unsubAnswer();
       unsubIce();
       unsubScreenShare();
+      unsubAudioState();
     };
   }, [roomId, socketHook, createPeerConnection, cleanupPeer, broadcastPeersUpdate, shouldInitiate, syncScreenTracks, requestNegotiation]);
 
@@ -1311,6 +1339,7 @@ export function useWebRTC(
       initMedia,
       cleanupMedia,
       connectToPeers,
+      isMutedNow,
     }),
     [
       peers,
@@ -1331,6 +1360,7 @@ export function useWebRTC(
       initMedia,
       cleanupMedia,
       connectToPeers,
+      isMutedNow,
     ],
   );
 }
