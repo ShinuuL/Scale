@@ -1,0 +1,40 @@
+[package]
+name = "scale-desktop"
+version = "0.1.0"
+edition = "2021"
+description = "Cliente desktop nativo do Scale: comunidades, canais de texto e mensagens diretas"
+publish = false
+
+[dependencies]
+egui = "0.37"
+eframe = "0.37"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+tokio-tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }
+futures-util = { version = "0.3", features = ["sink"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+keyring = "4"
+directories = "6"
+url = "2"
+thiserror = "2"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+
+[package.metadata.packager]
+product-name = "Scale"
+identifier = "br.com.codecoffee.scale"
+out-dir = "target/dist"
+binaries = [{ path = "scale-desktop", main = true }]
+icons = ["assets/icon-512.png"]
+category = "Utility"
+description = "Salas de voz, tela e conversa para amigos e equipes."
+long-description = "Cliente desktop nativo do Scale: comunidades, canais de texto e mensagens diretas."
+
+[package.metadata.packager.nsis]
+languages = ["PortugueseBR", "English"]
+installer-mode = "currentUser"
+
+[package.metadata.packager.deb]
+depends = ["libxcb1", "libxcb-render0", "libxcb-shape0", "libxcb-xfixes0", "libxkbcommon0", "libfontconfig1", "libfreetype6"]
+section = "net"
+
