@@ -193,8 +193,15 @@ function HomePageInner() {
         const me = await api.getMe();
         if (!cancelled) setAccount(me.user);
         authed = true;
+        const inviteReturn = Number(sessionStorage.getItem('scale:invite-oauth-return'));
+        sessionStorage.removeItem('scale:invite-oauth-return');
+        if (inviteReturn > 0 && Date.now() - inviteReturn >= 0 && Date.now() - inviteReturn < 10 * 60 * 1000) {
+          window.location.replace('/invite');
+          return;
+        }
       } catch (error: unknown) {
         if (cancelled) return;
+        sessionStorage.removeItem('scale:invite-oauth-return');
         const status = (error as { status?: number } | null)?.status;
         if (status !== 401 && status !== 403) {
           setAccount(null);

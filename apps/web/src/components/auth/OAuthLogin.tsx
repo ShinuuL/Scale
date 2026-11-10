@@ -73,7 +73,9 @@ export function OAuthLoginButtons({ mode = 'login' }: { mode?: 'login' | 'regist
       </div>
       <div className="flex flex-col gap-2">
         {enabled.map((provider) => (
-          <a key={provider} href={`/api/auth/${provider}`} className={BUTTON_CLASS}>
+          <a key={provider} href={`/api/auth/${provider}`} className={BUTTON_CLASS} onClick={() => {
+            if (new URLSearchParams(window.location.search).get('next') === '/invite') sessionStorage.setItem('scale:invite-oauth-return', String(Date.now()));
+          }}>
             <Icon name={provider satisfies IconName} size={18} />
             {verb} {PROVIDER_NAME[provider]}
           </a>
