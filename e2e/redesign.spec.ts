@@ -154,6 +154,8 @@ test.describe('redesign da interface', () => {
       // Silenciar pela barra.
       await bar.getByRole('button', { name: 'Silenciar microfone' }).click();
       await expect(bar.getByRole('button', { name: 'Ativar microfone' })).toBeVisible();
+      // O outro lado ve o icone de microfone desligado no cartao do dono.
+      await expect(guest.page.getByRole('img', { name: 'Microfone desligado' }).first()).toBeVisible();
 
       // Voltar restaura a sala com o mesmo estado (continua mudo, 2 pessoas).
       await bar.getByRole('link', { name: 'Voltar para a sala' }).click();
@@ -161,6 +163,10 @@ test.describe('redesign da interface', () => {
       await expect(bar).toHaveCount(0);
       await expect(participantCount(page)).toHaveAttribute('aria-label', /^2 de/);
       await expect(page.getByRole('button', { name: 'Ativar microfone' })).toBeVisible();
+
+      // Ativar de novo some com o icone no outro lado.
+      await page.getByRole('button', { name: 'Ativar microfone' }).click();
+      await expect(guest.page.getByRole('img', { name: 'Microfone desligado' })).toHaveCount(0);
 
       // Sair pela barra encerra a chamada para o outro lado.
       await page.getByRole('navigation', { name: 'Áreas do Scale' }).getByRole('link', { name: 'Ajuda' }).click();

@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { ProfileMenu } from '@/components/ui/ProfileMenu';
 import { PALETTE_STORAGE_KEY } from '@/lib/theme';
+import { api } from '@/lib/api';
 
 describe('ProfileMenu', () => {
   beforeEach(() => {
@@ -129,5 +130,72 @@ describe('ProfileMenu sem nome de convidado', () => {
     render(<ProfileMenu name="Convidado" isAuthenticated={false} />);
     fireEvent.click(screen.getByRole('button', { name: 'Perfil de Convidado' }));
     expect(screen.getByText('Sem conta conectada')).toBeTruthy();
+  });
+});
+
+describe('ProfileMenu: sair da conta', () => {
+  const assign = vi.fn();
+  const originalLocation = window.location;
+
+  beforeEach(() => {
+    assign.mockReset();
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { ...originalLocation, assign },
+    });
+    delete document.documentElement.dataset.scaleCallActive;
+  });
+
+  afterEach(() => {
+    Object.defineProperty(window, 'location', { configurable: true, value: originalLocation });
+    vi.restoreAllMocks();
+  });
+
+  function openMenu(authed = true) {
+    render(<ProfileMenu name="Ana" email="ana@exemplo.com" isAuthenticated={authed} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Perfil de Ana' }));
+  }
+
+  it('convidado não vê Sair da conta', () => {
+    openMenu(false);
+    expect(screen.queryByRole('menuitem', { name: 'Sair da conta' })).toBeNull();
+  });
+
+  it('fora de chamada sai direto: encerra a sessão e recarrega no início', async () => {
+    const logout = vi.spyOn(api, 'logout').mockResolvedValue();
+    const endCall = vi.fn();
+    window.addEventListener('scale:end-call', endCall);
+    openMenu();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Sair da conta' }));
+    await waitFor(() => expect(assign).toHaveBeenCalledWith('/'));
+    expect(logout).toHaveBeenCalledOnce();
+    expect(endCall).toHaveBeenCalledOnce();
+    window.removeEventListener('scale:end-call', endCall);
+  });
+
+  it('em chamada pede confirmação; continuar não sai', async () => {
+    document.documentElement.dataset.scaleCallActive = 'true';
+    const logout = vi.spyOn(api, 'logout').mockResolvedValue();
+    openMenu();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Sair da conta' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Sair da conta?' });
+    expect(dialog).toHaveTextContent('a chamada é encerrada');
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar na chamada' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(logout).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Perfil de Ana' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Sair da conta' }));
+    const again = await screen.findByRole('dialog', { name: 'Sair da conta?' });
+    fireEvent.click(within(again).getByRole('button', { name: 'Sair da conta' }));
+    await waitFor(() => expect(assign).toHaveBeenCalledWith('/'));
+  });
+
+  it('falha do servidor avisa e mantém na página', async () => {
+    vi.spyOn(api, 'logout').mockRejectedValue(new Error('HTTP 503'));
+    openMenu();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Sair da conta' }));
+    expect(await screen.findByRole('dialog', { name: 'Não foi possível sair' })).toBeInTheDocument();
+    expect(assign).not.toHaveBeenCalled();
   });
 });

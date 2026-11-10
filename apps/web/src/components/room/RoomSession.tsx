@@ -255,7 +255,7 @@ export function RoomSession({ roomId, visible, onJoinedChange }: RoomSessionProp
   // estáveis do useWebRTC — destruturados aqui para o effect não depender da
   // identidade do objeto `webrtc` (memoizado, mas muda quando peers/mídia
   // mudam, o que causaria re-execução/loop antes do join).
-  const { initMedia, connectToPeers, switchMicrophone } = webrtc;
+  const { initMedia, connectToPeers, switchMicrophone, isMutedNow } = webrtc;
 
   // Troca de microfone ao vivo (escolhido nas configurações).
   useEffect(
@@ -304,7 +304,14 @@ export function RoomSession({ roomId, visible, onJoinedChange }: RoomSessionProp
       void initMedia().then(() => {
         if (!socket.isConnected()) return;
         socket
-          .joinRoom(roomId, socket.guestName, inviteToken, roomPassword.trim() || undefined)
+          .joinRoom(
+            roomId,
+            socket.guestName,
+            inviteToken,
+            roomPassword.trim() || undefined,
+            // Mudo/sem microfone na entrada: os outros veem o icone desde o inicio.
+            isMutedNow(),
+          )
           .then(({ peers: existingPeers, history }) => {
             setJoined(true);
             // Limpa um erro anterior: a tela de erro tem precedência no render, e
@@ -350,7 +357,7 @@ export function RoomSession({ roomId, visible, onJoinedChange }: RoomSessionProp
           });
       });
     },
-    [socket, roomId, initMedia, connectToPeers, inviteToken, requiresPassword, roomPassword],
+    [socket, roomId, initMedia, connectToPeers, isMutedNow, inviteToken, requiresPassword, roomPassword],
   );
 
   useEffect(() => {
@@ -412,6 +419,18 @@ export function RoomSession({ roomId, visible, onJoinedChange }: RoomSessionProp
     },
     [socket, roomId, webrtc, allowNavigation],
   );
+
+  // Logoff (menu de perfil): encerra a chamada sem o aviso de "sair da página";
+  // quem disparou recarrega a página em seguida.
+  useEffect(() => {
+    const endCall = () => {
+      allowNavigation();
+      socket.leaveRoom(roomId).catch(() => {});
+      webrtc.cleanupMedia();
+    };
+    window.addEventListener('scale:end-call', endCall);
+    return () => window.removeEventListener('scale:end-call', endCall);
+  }, [allowNavigation, socket, roomId, webrtc]);
 
   // Sala apagada por outra pessoa: limpa a midia e volta para a home com aviso.
   const navigateFromDeletedRoom = useCallback(

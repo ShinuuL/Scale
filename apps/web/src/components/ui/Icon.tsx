@@ -44,6 +44,7 @@ export type IconName =
   | 'maximize'
   | 'minimize'
   | 'lock'
+  | 'logOut'
   | 'mic'
   | 'micOff'
   | 'monitor'
@@ -197,6 +198,11 @@ export const ICONS: Record<IconName, IconShape[]> = {
   arrowLeft: [{ d: 'M19.2 12H4.8' }, { d: 'M11 5.4 4.4 12l6.6 6.6' }],
   arrowRight: [{ d: 'M4.8 12h14.4' }, { d: 'M13 5.4 19.6 12 13 18.6' }],
   chevronDown: [{ d: 'M6 9.5 12 15.5 18 9.5' }],
+  logOut: [
+    { d: 'M9.5 20H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h3.5' },
+    { d: 'M15.5 16.5 20 12l-4.5-4.5' },
+    { d: 'M20 12H9.5' },
+  ],
   search: [
     { d: 'M10.8 4a6.8 6.8 0 1 0 0 13.6 6.8 6.8 0 0 0 0-13.6Z' },
     { d: 'M15.7 15.7 20.4 20.4' },

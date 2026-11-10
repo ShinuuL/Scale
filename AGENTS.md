@@ -116,6 +116,10 @@ docker compose up --build -d
 
 ### Autenticação
 - JWT em cookie HttpOnly com SameSite=Strict
+- Logoff: `POST /api/auth/logout` expira o cookie `token` (mesmos atributos da
+  criação; 204, idempotente). Menu de perfil > "Sair da conta"; em chamada pede
+  confirmação e encerra a chamada (`scale:end-call`). JWT é stateless: o logoff
+  encerra o navegador atual, não revoga cópias do token.
 - Tokens de sala: UUID v4
 - TTL de sala temporária: definido na criação
 
@@ -248,7 +252,7 @@ docker compose up --build -d
     direto ao proxy (localhost/LAN)
 - Upload bloqueado em sala temporária (apenas persistente aceita arquivos)
 - Sistema de ícones internos: UI sem emojis, `apps/web/src/components/ui/Icon.tsx`
-  com 37 ícones (SVG vetorial, `stroke="currentColor"`), sem dependência externa
+  com 38 ícones (SVG vetorial, `stroke="currentColor"`), sem dependência externa
 - Configurações (menu de perfil, ícone `settings`): nome de usuário
   (`PATCH /api/me`, reemite o JWT), foto de perfil (`PUT|GET|DELETE
   /api/me/avatar`, até 32 MB, PNG/JPEG/WebP por magic bytes, em

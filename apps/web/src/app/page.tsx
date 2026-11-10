@@ -577,7 +577,8 @@ function HomePageInner() {
             <form
               onSubmit={(event) => {
                 event.preventDefault();
-                if (!showRoomOptions) {
+                // Sem sessão o primeiro clique já mostra o aviso de login.
+                if (!showRoomOptions && isAuthenticated) {
                   setNameTouched(true);
                   if (!nameError) setShowRoomOptions(true);
                   return;
