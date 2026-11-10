@@ -1,8 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { AVATAR_FILE_ACCEPT, MAX_AVATAR_SIZE_BYTES, USER_NAME_MAX, USERNAME_MAX, usernameSchema } from '@scale/shared';
+import { useRef, useState } from 'react';
+import {
+  AVATAR_FILE_ACCEPT,
+  MAX_AVATAR_SIZE_BYTES,
+  USER_NAME_MAX,
+  USERNAME_MAX,
+  usernameSchema,
+} from '@scale/shared';
+import { AppModal } from '@/components/ui/AppModal';
 import { AudioSettings } from '@/components/ui/AudioSettings';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
@@ -10,8 +16,6 @@ import { Input } from '@/components/ui/Input';
 import { LinkedAccounts } from '@/components/ui/LinkedAccounts';
 import { ThemePicker } from '@/components/ui/ThemePicker';
 import { api, avatarUrl, type MeUser } from '@/lib/api';
-
-const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 export interface SettingsDialogProps {
   /** Conta logada; null = convidado (so audio e tema aparecem). */
@@ -35,49 +39,16 @@ function errorMessage(err: unknown, fallback: string): string {
 }
 
 /**
- * Configurações (role="dialog"): perfil (nome e foto, só com conta) e tema.
- * Foco preso, Esc fecha e o foco volta ao gatilho.
+ * Configurações (AppModal/react-aria): perfil (nome e foto, só com conta),
+ * áudio e tema. Foco preso, Esc e clique fora fecham, o foco volta ao gatilho.
  */
 export function SettingsDialog({ user, onClose, onUserChange }: SettingsDialogProps) {
-  const dialogRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState(user?.name ?? '');
   const [username, setUsername] = useState(user?.username ?? '');
   const [busy, setBusy] = useState<'name' | 'username' | 'avatar' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
-
-  useEffect(() => {
-    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    dialogRef.current?.querySelector<HTMLElement>(FOCUSABLE)?.focus();
-    return () => {
-      if (trigger && document.contains(trigger)) trigger.focus();
-    };
-  }, []);
-
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        onClose();
-        return;
-      }
-      if (e.key === 'Tab' && dialogRef.current) {
-        const focusable = dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE);
-        if (focusable.length === 0) return;
-        const first = focusable[0];
-        const last = focusable[focusable.length - 1];
-        if (e.shiftKey && document.activeElement === first) {
-          e.preventDefault();
-          last.focus();
-        } else if (!e.shiftKey && document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
-    },
-    [onClose],
-  );
 
   const trimmed = name.trim();
   const nameChanged = !!user && trimmed.length > 0 && trimmed !== user.name;
@@ -103,7 +74,9 @@ export function SettingsDialog({ user, onClose, onUserChange }: SettingsDialogPr
   const usernameChanged =
     !!user && usernameParsed.success && usernameParsed.data !== (user.username ?? '');
   const usernameHint =
-    username.trim() && !usernameParsed.success ? usernameParsed.error.issues[0]?.message : undefined;
+    username.trim() && !usernameParsed.success
+      ? usernameParsed.error.issues[0]?.message
+      : undefined;
 
   const saveUsername = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -163,39 +136,14 @@ export function SettingsDialog({ user, onClose, onUserChange }: SettingsDialogPr
 
   const photo = avatarUrl(user?.avatarUpdatedAt);
 
-  // Portal no <body>: o header usa backdrop-blur, que vira bloco de contencao
-  // de `fixed` — dentro dele o fundo nao cobria a tela (clique fora nao
-  // fechava) e o topo do dialogo (foto) ficava cortado.
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-forest-950/80 p-4 backdrop-blur-sm animate-fade-in"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+  return (
+    <AppModal
+      title="Configurações"
+      icon="settings"
+      closeLabel="Fechar configurações"
+      onClose={onClose}
     >
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="settings-title"
-        onKeyDown={handleKeyDown}
-        className="max-h-[calc(100dvh-2rem)] w-full max-w-md space-y-5 overflow-y-auto rounded-xl border border-line bg-surface-tertiary p-6 shadow-2xl shadow-black/40"
-      >
-        <div className="flex items-center justify-between gap-3">
-          <h2 id="settings-title" className="flex items-center gap-2 text-base font-semibold text-ink-primary">
-            <Icon name="settings" size={18} className="text-ink-muted" />
-            Configurações
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Fechar configurações"
-            className="flex h-11 w-11 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-white/[0.06] hover:text-ink-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-400"
-          >
-            <Icon name="close" />
-          </button>
-        </div>
-
+      <div className="space-y-5">
         {user ? (
           <section aria-labelledby="settings-profile" className="space-y-4">
             <h3 id="settings-profile" className="text-xs font-medium  text-ink-muted">
@@ -205,7 +153,11 @@ export function SettingsDialog({ user, onClose, onUserChange }: SettingsDialogPr
             <div className="flex items-center gap-4">
               {photo ? (
                 // eslint-disable-next-line @next/next/no-img-element -- export estatico, sem otimizador de imagem
-                <img src={photo} alt="Sua foto de perfil" className="h-16 w-16 flex-shrink-0 rounded-full object-cover" />
+                <img
+                  src={photo}
+                  alt="Sua foto de perfil"
+                  className="h-16 w-16 flex-shrink-0 rounded-full object-cover"
+                />
               ) : (
                 <span
                   aria-hidden="true"
@@ -235,7 +187,12 @@ export function SettingsDialog({ user, onClose, onUserChange }: SettingsDialogPr
                   {busy === 'avatar' ? 'Enviando...' : photo ? 'Trocar foto' : 'Enviar foto'}
                 </Button>
                 {photo && (
-                  <Button variant="ghost" size="sm" onClick={() => void removeAvatar()} disabled={busy !== null}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => void removeAvatar()}
+                    disabled={busy !== null}
+                  >
                     Remover
                   </Button>
                 )}
@@ -253,7 +210,12 @@ export function SettingsDialog({ user, onClose, onUserChange }: SettingsDialogPr
                 autoComplete="nickname"
               />
               <div className="flex justify-end">
-                <Button type="submit" size="sm" disabled={!nameChanged || busy !== null} aria-busy={busy === 'name'}>
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={!nameChanged || busy !== null}
+                  aria-busy={busy === 'name'}
+                >
                   {busy === 'name' ? 'Salvando...' : 'Salvar nome'}
                 </Button>
               </div>
@@ -285,7 +247,9 @@ export function SettingsDialog({ user, onClose, onUserChange }: SettingsDialogPr
             </form>
           </section>
         ) : (
-          <p className="text-sm text-ink-muted">Entre com sua conta para alterar nome e foto de perfil.</p>
+          <p className="text-sm text-ink-muted">
+            Entre com sua conta para alterar nome e foto de perfil.
+          </p>
         )}
 
         {(error || saved) && (
@@ -305,14 +269,16 @@ export function SettingsDialog({ user, onClose, onUserChange }: SettingsDialogPr
 
         <AudioSettings />
 
-        <section aria-labelledby="settings-theme" className="space-y-3 border-t border-white/[0.08] pt-4">
+        <section
+          aria-labelledby="settings-theme"
+          className="space-y-3 border-t border-white/[0.08] pt-4"
+        >
           <h3 id="settings-theme" className="text-xs font-medium  text-ink-muted">
             Tema
           </h3>
           <ThemePicker />
         </section>
       </div>
-    </div>,
-    document.body,
+    </AppModal>
   );
 }

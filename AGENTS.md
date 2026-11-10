@@ -57,11 +57,14 @@ Sistema de videochamadas P2P (mesh) com escamas de dragão — sala de voz e tel
 - Ícone decorativo: `aria-hidden`. Ícone que carrega informação: prop `title`
   (o componente renderiza `role="img"` com `aria-label`). Botão só-ícone
   precisa de nome acessível próprio, em qualquer breakpoint.
-- Primitivos interativos: `react-aria-components` (menu de perfil, diálogos de
-  confirmação, seletores) e `@floating-ui/react-dom` (`ui/Tooltip.tsx`), ambos
+- Primitivos interativos: `react-aria-components` (menu de perfil, diálogos,
+  seletores, tema) e `@floating-ui/react-dom` (`ui/Tooltip.tsx`), ambos
   com versão exata. Links do react-aria navegam pelo roteador do Next via
   `components/AriaRouter.tsx` (sem recarregar a página: a chamada não cai).
   Estados de animação pelo atributo: `data-[entering]:`, `data-[focused]:`.
+  Modal novo usa `components/ui/AppModal.tsx` (título, fechar, foco, Esc,
+  clique fora, `locked` enquanto salva). Botão que precisa de dica quando
+  inativo usa `aria-disabled`, não `disabled` (desabilitado não recebe ponteiro).
 - Chamada persistente: a sessão da sala vive no `RoomHost` do layout raiz;
   fora de `/room` a tela fica oculta e a `MiniCallBar` mostra a chamada.
 

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { getSavedDeviceId } from '@/lib/audioDevices';
+import { isBluetoothCallMic } from '@/components/ui/AudioSettings';
 import { SettingsDialog } from '@/components/ui/SettingsDialog';
 
 beforeEach(() => {
@@ -45,7 +46,8 @@ describe('SettingsDialog: seção Áudio', () => {
     fireEvent.keyDown(close, { key: 'Tab', shiftKey: true });
     expect(document.activeElement).not.toBe(close);
     unmount();
-    expect(document.activeElement).toBe(trigger);
+    // react-aria devolve o foco no frame seguinte.
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
     trigger.remove();
   });
 
@@ -78,5 +80,31 @@ describe('SettingsDialog: seção Áudio', () => {
     expect(screen.queryByRole('listbox')).toBeNull();
     // A lista fechou, o diálogo continua aberto.
     expect(screen.getByRole('dialog', { name: 'Configurações' })).toBeInTheDocument();
+  });
+
+  it('avisa quando o microfone escolhido é de fone Bluetooth em modo chamada', async () => {
+    (navigator.mediaDevices.enumerateDevices as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { kind: 'audioinput', deviceId: 'bt', label: 'Fone de ouvido (WH-1000XM4 Hands-Free AG Audio)', groupId: '' },
+      { kind: 'audioinput', deviceId: 'mic', label: 'Microfone (Realtek)', groupId: '' },
+    ]);
+    window.localStorage.clear();
+    render(<SettingsDialog user={null} onClose={() => {}} />);
+    const mic = await screen.findByRole('button', { name: /Microfone/ });
+    fireEvent.click(mic);
+    fireEvent.click(await screen.findByRole('option', { name: /Hands-Free/ }));
+    expect(await screen.findByRole('note')).toHaveTextContent('fone sem fio deixa o som metálico');
+
+    fireEvent.click(screen.getByRole('button', { name: /Microfone/ }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Microfone (Realtek)' }));
+    expect(screen.queryByRole('note')).toBeNull();
+  });
+});
+
+describe('isBluetoothCallMic', () => {
+  it('reconhece o modo chamada pelo nome do aparelho', () => {
+    expect(isBluetoothCallMic('Headset (Galaxy Buds Hands-Free AG Audio)')).toBe(true);
+    expect(isBluetoothCallMic('Microfone Bluetooth')).toBe(true);
+    expect(isBluetoothCallMic('Microfone (Realtek High Definition Audio)')).toBe(false);
+    expect(isBluetoothCallMic(undefined)).toBe(false);
   });
 });

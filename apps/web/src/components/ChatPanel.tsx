@@ -429,11 +429,16 @@ export function ChatPanel({
                   />
                 </label>
               </Tooltip>
-              <Tooltip label="Enviar">
+              {/* aria-disabled (e nao `disabled`): botao desabilitado nao recebe
+                  ponteiro, e a dica explica por que nao da para enviar. */}
+              <Tooltip label={canSend ? 'Enviar' : 'Escreva uma mensagem ou anexe um arquivo'}>
                 <button
-                  onClick={send}
-                  disabled={!canSend}
-                  className="flex h-9 w-9 items-center justify-center rounded-full bg-accent-solid text-white transition-[opacity,transform] hover:brightness-110 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+                  type="button"
+                  onClick={() => {
+                    if (canSend) send();
+                  }}
+                  aria-disabled={!canSend}
+                  className="flex h-9 w-9 items-center justify-center rounded-full bg-accent-solid text-white transition-[opacity,transform] hover:brightness-110 active:scale-95 aria-disabled:cursor-not-allowed aria-disabled:opacity-40 aria-disabled:hover:brightness-100 aria-disabled:active:scale-100"
                   aria-busy={uploading}
                   aria-label="Enviar"
                 >

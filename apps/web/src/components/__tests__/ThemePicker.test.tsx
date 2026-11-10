@@ -20,7 +20,8 @@ describe('temas de cor', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'Tema Safira' }));
     expect(document.documentElement.getAttribute('data-palette')).toBe('safira');
     expect(window.localStorage.getItem(PALETTE_STORAGE_KEY)).toBe('safira');
-    expect(screen.getByRole('radio', { name: 'Tema Safira' }).getAttribute('aria-checked')).toBe('true');
+    // react-aria usa <input type="radio"> nativo: o estado é `checked`.
+    expect((screen.getByRole('radio', { name: 'Tema Safira' }) as HTMLInputElement).checked).toBe(true);
 
     fireEvent.click(screen.getByRole('radio', { name: 'Tema Íris' }));
     expect(document.documentElement.hasAttribute('data-palette')).toBe(false);

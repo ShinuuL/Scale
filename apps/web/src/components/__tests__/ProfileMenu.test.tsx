@@ -66,11 +66,15 @@ describe('ProfileMenu', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Perfil de Ana' }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Configurações' }));
     const dialog = screen.getByRole('dialog', { name: 'Configurações' });
-    // Portal no body: o fundo nao fica preso dentro do header.
-    expect(dialog.parentElement?.parentElement).toBe(document.body);
-    fireEvent.mouseDown(dialog);
+    // Portal no body (overlay > modal > dialogo): o fundo nao fica preso no header.
+    const overlay = dialog.parentElement!.parentElement!;
+    expect(overlay.parentElement).toBe(document.body);
+    fireEvent.mouseDown(dialog, { button: 0 });
+    fireEvent.mouseUp(dialog, { button: 0 });
     expect(screen.getByRole('dialog')).toBeTruthy();
-    fireEvent.mouseDown(dialog.parentElement!);
+    // react-aria fecha no par mousedown/mouseup fora do modal (jsdom sem PointerEvent).
+    fireEvent.mouseDown(overlay, { button: 0 });
+    fireEvent.mouseUp(overlay, { button: 0 });
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 

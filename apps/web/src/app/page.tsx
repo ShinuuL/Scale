@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { Card, CardContent } from '@/components/ui/Card';
+import { AppModal } from '@/components/ui/AppModal';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Logo } from '@/components/ui/Logo';
@@ -24,9 +25,7 @@ import { roomPath } from '@/lib/roomLink';
 const STORAGE_KEY = 'scale.onboardingDone';
 const RECENT_ROOMS_KEY = 'scale.recentRooms';
 
-// ─── Focus trap helper ──────────────────────────────────────────
-const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])';
-
+/** Sala privada criada: link de convite (AppModal/react-aria cuida de foco e Esc). */
 function InviteModal({
   roomId,
   inviteToken,
@@ -36,95 +35,30 @@ function InviteModal({
   inviteToken?: string;
   onClose: () => void;
 }) {
-  const dialogRef = useRef<HTMLDivElement>(null);
-  const previousFocusRef = useRef<HTMLElement | null>(null);
-
-  useEffect(() => {
-    // Save previously focused element
-    previousFocusRef.current = document.activeElement as HTMLElement;
-
-    // Focus the first focusable element inside the dialog
-    const timer = setTimeout(() => {
-      if (dialogRef.current) {
-        const first = dialogRef.current.querySelector<HTMLElement>(FOCUSABLE);
-        first?.focus();
-      }
-    }, 50);
-
-    return () => {
-      clearTimeout(timer);
-      previousFocusRef.current?.focus();
-    };
-  }, []);
-
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-        return;
-      }
-      if (e.key === 'Tab' && dialogRef.current) {
-        const focusable = dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE);
-        if (focusable.length === 0) return;
-        const first = focusable[0];
-        const last = focusable[focusable.length - 1];
-
-        if (e.shiftKey) {
-          if (document.activeElement === first) {
-            e.preventDefault();
-            last.focus();
-          }
-        } else {
-          if (document.activeElement === last) {
-            e.preventDefault();
-            first.focus();
-          }
-        }
-      }
-    },
-    [onClose],
-  );
-
   return (
-    <div
-      ref={dialogRef}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="invite-modal-title"
-      onKeyDown={handleKeyDown}
-    >
-      <Card variant="glass" className="w-full max-w-md">
-        <CardContent className="space-y-4">
-          <div>
-            <h3 id="invite-modal-title" className="text-lg font-semibold text-white">
-              Sala privada criada
-            </h3>
-            <p className="text-sm text-slate-400 mt-1">
-              Compartilhe este link com quem você quer chamar.
-            </p>
-          </div>
-          <InviteLinkCard
-            roomId={roomId}
-            inviteToken={inviteToken}
-          />
-          <div className="flex gap-2">
-            <Button
-              onClick={() => {
-                addRecentRoom(roomId);
-                window.location.href = roomPath(roomId, inviteToken);
-              }}
-              className="flex-1"
-            >
-              Entrar na sala
-            </Button>
-            <Button variant="secondary" onClick={onClose}>
-              Fechar
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+    <AppModal title="Sala privada criada" onClose={onClose} describedBy="invite-modal-desc">
+      <div className="space-y-4">
+        <p id="invite-modal-desc" className="-mt-3 text-sm text-ink-secondary">
+          Compartilhe este link com quem você quer chamar.
+        </p>
+        <InviteLinkCard roomId={roomId} inviteToken={inviteToken} />
+        <div className="flex gap-2">
+          <Button
+            autoFocus
+            onClick={() => {
+              addRecentRoom(roomId);
+              window.location.href = roomPath(roomId, inviteToken);
+            }}
+            className="flex-1"
+          >
+            Entrar na sala
+          </Button>
+          <Button variant="secondary" onClick={onClose}>
+            Fechar
+          </Button>
+        </div>
+      </div>
+    </AppModal>
   );
 }
 
@@ -157,7 +91,10 @@ function SkeletonCard() {
 function EmptyRooms({ onCreate }: { onCreate: () => void }) {
   return (
     <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-white/10 px-6 py-8 text-center">
-      <span aria-hidden="true" className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-500/15 text-brand-300">
+      <span
+        aria-hidden="true"
+        className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-500/15 text-brand-300"
+      >
         <Icon name="speaker" size={20} />
       </span>
       <div className="space-y-1">
@@ -172,7 +109,6 @@ function EmptyRooms({ onCreate }: { onCreate: () => void }) {
     </div>
   );
 }
-
 
 export default function HomePage() {
   return (
@@ -201,7 +137,10 @@ function HomePageInner() {
   const [createRetry, setCreateRetry] = useState<number | null>(null);
   // Aviso de que criar sala exige login (qualquer sala, temp ou persistente).
   const [authWarning, setAuthWarning] = useState(false);
-  const [createdInvite, setCreatedInvite] = useState<{ roomId: string; inviteToken?: string } | null>(null);
+  const [createdInvite, setCreatedInvite] = useState<{
+    roomId: string;
+    inviteToken?: string;
+  } | null>(null);
 
   // ─── Auth + rooms ───────────────────────────────────────────
   const [authState, setAuthState] = useState<'loading' | 'guest' | 'ready' | 'error'>('loading');
@@ -373,8 +312,14 @@ function HomePageInner() {
   };
 
   const handleShowGuide = () => setShowWizard(true);
-  const handleWizardComplete = () => { setShowWizard(false); setOnboardingDone(true); };
-  const handleWizardSkip = () => { setShowWizard(false); setOnboardingDone(true); };
+  const handleWizardComplete = () => {
+    setShowWizard(false);
+    setOnboardingDone(true);
+  };
+  const handleWizardSkip = () => {
+    setShowWizard(false);
+    setOnboardingDone(true);
+  };
 
   if (!mounted) {
     return (
@@ -396,84 +341,350 @@ function HomePageInner() {
     );
   }
 
-  const visibleRooms = isAuthenticated
-    ? rooms.filter((r) => r.isPersistent)
-    : rooms;
+  const visibleRooms = isAuthenticated ? rooms.filter((r) => r.isPersistent) : rooms;
 
-  const listedRooms = visibleRooms.filter((room) => room.name.toLocaleLowerCase('pt-BR').includes(roomSearch.trim().toLocaleLowerCase('pt-BR')));
+  const listedRooms = visibleRooms.filter((room) =>
+    room.name.toLocaleLowerCase('pt-BR').includes(roomSearch.trim().toLocaleLowerCase('pt-BR')),
+  );
   const openCreate = () => document.getElementById('room-name')?.focus();
   const authNotice = (text: string) => (
     <div className="rounded-lg border border-line bg-surface-secondary p-4" role="status">
       <p className="text-sm leading-6 text-ink-secondary">{text}</p>
-      <Link href="/login" className="mt-3 inline-flex min-h-11 items-center gap-2 text-sm font-medium text-accent">Entrar na conta <Icon name="arrowRight" /></Link>
+      <Link
+        href="/login"
+        className="mt-3 inline-flex min-h-11 items-center gap-2 text-sm font-medium text-accent"
+      >
+        Entrar na conta <Icon name="arrowRight" />
+      </Link>
     </div>
   );
   return (
-    <AppShell activeSection="rooms" title="Salas" accountSlot={authChecked ? <ProfileMenu name={account?.name ?? 'Convidado'} email={account?.email} isAuthenticated={isAuthenticated} user={account} onUserChange={setAccount} /> : authState === 'error' ? <span className="text-xs text-ink-muted">Conta indisponível</span> : <Skeleton className="h-10 w-10" />}
-      actions={<Button size="sm" onClick={openCreate}><Icon name="phone" /><span className="hidden sm:inline">Nova sala</span><span className="sr-only sm:hidden">Nova sala</span></Button>}
-      contextSidebar={<>
-        <h2 className="context-title">Seu espaço</h2>
-        <nav aria-label="Salas e atalhos" className="space-y-1">
-          <a href="#rooms-list" className="context-link" data-active="true"><Icon name="speaker" />Salas disponíveis</a>
-          <button type="button" onClick={openCreate} data-context-focus-target="room-name" className="context-link w-full"><Icon name="phone" />Criar uma sala</button>
-          <a href="#join-room" className="context-link"><Icon name="link" />Entrar por código</a>
-        </nav>
-        <div className="mt-8 border-t border-line pt-6">
-          <h3 className="mb-3 text-xs font-semibold text-ink-muted">Para começar</h3>
-          <p className="text-sm leading-6 text-ink-secondary">Chame os amigos ou reúna a equipe. Uma sala, voz e tela compartilhada.</p>
-          <button type="button" onClick={handleShowGuide} className="context-link mt-3 w-full !px-0"><Icon name="lightbulb" />{onboardingDone ? 'Rever guia de uso' : 'Abrir guia de uso'}</button>
-          <Link href="/tutorial" className="context-link !px-0"><Icon name="book" />Como usar o Scale</Link>
-        </div>
-      </>}
+    <AppShell
+      activeSection="rooms"
+      title="Salas"
+      accountSlot={
+        authChecked ? (
+          <ProfileMenu
+            name={account?.name ?? 'Convidado'}
+            email={account?.email}
+            isAuthenticated={isAuthenticated}
+            user={account}
+            onUserChange={setAccount}
+          />
+        ) : authState === 'error' ? (
+          <span className="text-xs text-ink-muted">Conta indisponível</span>
+        ) : (
+          <Skeleton className="h-10 w-10" />
+        )
+      }
+      actions={
+        <Button size="sm" onClick={openCreate}>
+          <Icon name="phone" />
+          <span className="hidden sm:inline">Nova sala</span>
+          <span className="sr-only sm:hidden">Nova sala</span>
+        </Button>
+      }
+      contextSidebar={
+        <>
+          <h2 className="context-title">Seu espaço</h2>
+          <nav aria-label="Salas e atalhos" className="space-y-1">
+            <a href="#rooms-list" className="context-link" data-active="true">
+              <Icon name="speaker" />
+              Salas disponíveis
+            </a>
+            <button
+              type="button"
+              onClick={openCreate}
+              data-context-focus-target="room-name"
+              className="context-link w-full"
+            >
+              <Icon name="phone" />
+              Criar uma sala
+            </button>
+            <a href="#join-room" className="context-link">
+              <Icon name="link" />
+              Entrar por código
+            </a>
+          </nav>
+          <div className="mt-8 border-t border-line pt-6">
+            <h3 className="mb-3 text-xs font-semibold text-ink-muted">Para começar</h3>
+            <p className="text-sm leading-6 text-ink-secondary">
+              Chame os amigos ou reúna a equipe. Uma sala, voz e tela compartilhada.
+            </p>
+            <button
+              type="button"
+              onClick={handleShowGuide}
+              className="context-link mt-3 w-full !px-0"
+            >
+              <Icon name="lightbulb" />
+              {onboardingDone ? 'Rever guia de uso' : 'Abrir guia de uso'}
+            </button>
+            <Link href="/tutorial" className="context-link !px-0">
+              <Icon name="book" />
+              Como usar o Scale
+            </Link>
+          </div>
+        </>
+      }
     >
       <div className="rooms-content">
         <div className="rooms-layout">
           <section id="rooms-list" className="rooms-list" aria-labelledby="rooms-title">
             <div className="mb-6">
-              <h2 id="rooms-title" className="text-[28px] font-semibold leading-9 tracking-tight text-ink-primary">Uma sala para se encontrar.</h2>
-              <p className="mt-2 text-sm leading-6 text-ink-secondary">Entre na conversa ou comece uma nova com até 8 pessoas.</p>
+              <h2
+                id="rooms-title"
+                className="text-[28px] font-semibold leading-9 tracking-tight text-ink-primary"
+              >
+                Uma sala para se encontrar.
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-ink-secondary">
+                Entre na conversa ou comece uma nova com até 8 pessoas.
+              </p>
             </div>
             <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
               <h3 className="text-sm font-semibold text-ink-primary">Salas persistentes</h3>
-              <div className="w-full sm:w-56"><Input aria-label="Buscar salas" placeholder="Buscar sala pelo nome" value={roomSearch} onChange={(event) => setRoomSearch(event.target.value)} /></div>
+              <div className="w-full sm:w-56">
+                <Input
+                  aria-label="Buscar salas"
+                  placeholder="Buscar sala pelo nome"
+                  value={roomSearch}
+                  onChange={(event) => setRoomSearch(event.target.value)}
+                />
+              </div>
             </div>
-            {roomsLoading ? <div aria-label="Carregando salas" role="status" className="space-y-4"><SkeletonCard /><SkeletonCard /><SkeletonCard /></div>
-              : authState === 'error' ? <div className="rounded-lg border border-red-400/30 p-5" role="alert"><p className="text-sm text-red-300">Não foi possível verificar sua conta. Tente novamente para carregar suas salas.</p><Button variant="secondary" size="sm" className="mt-3" onClick={() => setAuthAttempt((attempt) => attempt + 1)}>Tentar novamente</Button></div>
-              : roomsRequireAuth ? authNotice('Entre na sua conta para ver as salas disponíveis. Você também pode usar um convite sem criar uma conta.')
-              : roomsError ? <div className="rounded-lg border border-red-400/30 p-5" role="alert"><p className="text-sm text-red-300">{roomsError}.</p><Button variant="secondary" size="sm" className="mt-3" onClick={() => setAuthAttempt((attempt) => attempt + 1)}>Tentar novamente</Button></div>
-              : visibleRooms.length === 0 ? <EmptyRooms onCreate={openCreate} />
-              : listedRooms.length === 0 ? <div className="border-y border-line py-10 text-center"><p className="text-sm text-ink-secondary">Nenhuma sala com esse nome.</p><Button variant="ghost" onClick={() => setRoomSearch('')}>Limpar busca</Button></div>
-              : <ul>{listedRooms.map((room) => <li key={room.id}><RoomCard room={room} onEnter={() => handleEnterRoom(room.id)} onDelete={() => setRoomToDelete(room)} /></li>)}</ul>}
-            {recentRooms.length > 0 && <section aria-labelledby="recent-title" className="mt-10"><h3 id="recent-title" className="mb-2 text-sm font-semibold text-ink-secondary">Acessadas recentemente</h3><ul>{recentRooms.map((room) => <li key={room.id}><RoomCard room={room} onEnter={() => handleEnterRoom(room.id)} onDelete={() => setRoomToDelete(room)} /></li>)}</ul></section>}
-            <section id="join-room" className="mt-10 border-t border-line pt-6" aria-labelledby="join-title">
-              <h3 id="join-title" className="text-base font-semibold text-ink-primary">Recebeu um código?</h3>
-              <p className="mt-1 mb-4 text-sm text-ink-secondary">Cole o código da sala para entrar. Um link de convite abre a sala diretamente.</p>
-              <form onSubmit={(event) => { event.preventDefault(); handleJoinRoom(); }} className="flex items-end gap-2"><div className="min-w-0 flex-1"><Input label="Código da sala" placeholder="Cole o código aqui" value={joinCode} onChange={(event) => setJoinCode(event.target.value)} /></div><Button type="submit" variant="secondary" disabled={!joinCode.trim()}>Entrar <Icon name="arrowRight" /></Button></form>
+            {roomsLoading ? (
+              <div aria-label="Carregando salas" role="status" className="space-y-4">
+                <SkeletonCard />
+                <SkeletonCard />
+                <SkeletonCard />
+              </div>
+            ) : authState === 'error' ? (
+              <div className="rounded-lg border border-red-400/30 p-5" role="alert">
+                <p className="text-sm text-red-300">
+                  Não foi possível verificar sua conta. Tente novamente para carregar suas salas.
+                </p>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="mt-3"
+                  onClick={() => setAuthAttempt((attempt) => attempt + 1)}
+                >
+                  Tentar novamente
+                </Button>
+              </div>
+            ) : roomsRequireAuth ? (
+              authNotice(
+                'Entre na sua conta para ver as salas disponíveis. Você também pode usar um convite sem criar uma conta.',
+              )
+            ) : roomsError ? (
+              <div className="rounded-lg border border-red-400/30 p-5" role="alert">
+                <p className="text-sm text-red-300">{roomsError}.</p>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="mt-3"
+                  onClick={() => setAuthAttempt((attempt) => attempt + 1)}
+                >
+                  Tentar novamente
+                </Button>
+              </div>
+            ) : visibleRooms.length === 0 ? (
+              <EmptyRooms onCreate={openCreate} />
+            ) : listedRooms.length === 0 ? (
+              <div className="border-y border-line py-10 text-center">
+                <p className="text-sm text-ink-secondary">Nenhuma sala com esse nome.</p>
+                <Button variant="ghost" onClick={() => setRoomSearch('')}>
+                  Limpar busca
+                </Button>
+              </div>
+            ) : (
+              <ul>
+                {listedRooms.map((room) => (
+                  <li key={room.id}>
+                    <RoomCard
+                      room={room}
+                      onEnter={() => handleEnterRoom(room.id)}
+                      onDelete={() => setRoomToDelete(room)}
+                    />
+                  </li>
+                ))}
+              </ul>
+            )}
+            {recentRooms.length > 0 && (
+              <section aria-labelledby="recent-title" className="mt-10">
+                <h3 id="recent-title" className="mb-2 text-sm font-semibold text-ink-secondary">
+                  Acessadas recentemente
+                </h3>
+                <ul>
+                  {recentRooms.map((room) => (
+                    <li key={room.id}>
+                      <RoomCard
+                        room={room}
+                        onEnter={() => handleEnterRoom(room.id)}
+                        onDelete={() => setRoomToDelete(room)}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+            <section
+              id="join-room"
+              className="mt-10 border-t border-line pt-6"
+              aria-labelledby="join-title"
+            >
+              <h3 id="join-title" className="text-base font-semibold text-ink-primary">
+                Recebeu um código?
+              </h3>
+              <p className="mt-1 mb-4 text-sm text-ink-secondary">
+                Cole o código da sala para entrar. Um link de convite abre a sala diretamente.
+              </p>
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  handleJoinRoom();
+                }}
+                className="flex items-end gap-2"
+              >
+                <div className="min-w-0 flex-1">
+                  <Input
+                    label="Código da sala"
+                    placeholder="Cole o código aqui"
+                    value={joinCode}
+                    onChange={(event) => setJoinCode(event.target.value)}
+                  />
+                </div>
+                <Button type="submit" variant="secondary" disabled={!joinCode.trim()}>
+                  Entrar <Icon name="arrowRight" />
+                </Button>
+              </form>
             </section>
           </section>
           <section className="room-form" aria-labelledby="create-title">
-            <div className="mb-6 flex items-start gap-3"><span className="room-row-icon"><Icon name="phone" size={21} /></span><div><h2 id="create-title" className="text-xl font-semibold leading-7">Nova sala</h2><p className="mt-1 text-sm leading-5 text-ink-secondary">Dê um nome e mande o convite.</p></div></div>
-            <form onSubmit={(event) => { event.preventDefault(); if (!showRoomOptions) { setNameTouched(true); if (!nameError) setShowRoomOptions(true); return; } void handleCreateRoom(); }} className="space-y-5">
-              <Input id="room-name" label="Nome da sala" placeholder="Ex.: Partida de hoje ou Equipe" value={roomName} onChange={(event) => setRoomName(event.target.value)} onBlur={() => setNameTouched(true)} maxLength={ROOM_NAME_MAX} required error={nameTouched && nameError ? nameError : undefined} />
-              {showRoomOptions && <fieldset className="space-y-3"><legend className="mb-2 text-sm font-medium text-ink-secondary">Preferências da sala</legend>
-                <CheckOption checked={isPersistent} onChange={handleTogglePersistent} label="Sala persistente" hint="Fica disponível até você encerrar." />
-                <CheckOption checked={isPrivate} onChange={setIsPrivate} label="Sala privada" hint="Acesso somente pelo link de convite." />
-              </fieldset>}
-              {authWarning && <div role="alert" className="text-sm text-amber-200">Entre na sua conta para criar uma sala. <Link href="/login" className="underline underline-offset-4">Entrar</Link></div>}
-              <Button type="submit" className="w-full" disabled={creating || !authChecked}>{creating ? createRetry !== null ? `Tentando novamente (${createRetry + 1}/${FETCH_RETRY_MAX_ATTEMPTS})...` : 'Criando sala...' : showRoomOptions ? 'Confirmar e criar sala' : 'Criar sala'}<Icon name="arrowRight" /></Button>
-              {!isAuthenticated && authChecked && <p className="text-xs leading-5 text-ink-muted">Para criar uma sala, <Link href="/login" className="text-accent underline underline-offset-4">entre na sua conta</Link> ou <Link href="/register" className="text-accent underline underline-offset-4">cadastre-se</Link>.</p>}
+            <div className="mb-6 flex items-start gap-3">
+              <span className="room-row-icon">
+                <Icon name="phone" size={21} />
+              </span>
+              <div>
+                <h2 id="create-title" className="text-xl font-semibold leading-7">
+                  Nova sala
+                </h2>
+                <p className="mt-1 text-sm leading-5 text-ink-secondary">
+                  Dê um nome e mande o convite.
+                </p>
+              </div>
+            </div>
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (!showRoomOptions) {
+                  setNameTouched(true);
+                  if (!nameError) setShowRoomOptions(true);
+                  return;
+                }
+                void handleCreateRoom();
+              }}
+              className="space-y-5"
+            >
+              <Input
+                id="room-name"
+                label="Nome da sala"
+                placeholder="Ex.: Partida de hoje ou Equipe"
+                value={roomName}
+                onChange={(event) => setRoomName(event.target.value)}
+                onBlur={() => setNameTouched(true)}
+                maxLength={ROOM_NAME_MAX}
+                required
+                error={nameTouched && nameError ? nameError : undefined}
+              />
+              {showRoomOptions && (
+                <fieldset className="space-y-3">
+                  <legend className="mb-2 text-sm font-medium text-ink-secondary">
+                    Preferências da sala
+                  </legend>
+                  <CheckOption
+                    checked={isPersistent}
+                    onChange={handleTogglePersistent}
+                    label="Sala persistente"
+                    hint="Fica disponível até você encerrar."
+                  />
+                  <CheckOption
+                    checked={isPrivate}
+                    onChange={setIsPrivate}
+                    label="Sala privada"
+                    hint="Acesso somente pelo link de convite."
+                  />
+                </fieldset>
+              )}
+              {authWarning && (
+                <div role="alert" className="text-sm text-amber-200">
+                  Entre na sua conta para criar uma sala.{' '}
+                  <Link href="/login" className="underline underline-offset-4">
+                    Entrar
+                  </Link>
+                </div>
+              )}
+              <Button type="submit" className="w-full" disabled={creating || !authChecked}>
+                {creating
+                  ? createRetry !== null
+                    ? `Tentando novamente (${createRetry + 1}/${FETCH_RETRY_MAX_ATTEMPTS})...`
+                    : 'Criando sala...'
+                  : showRoomOptions
+                    ? 'Confirmar e criar sala'
+                    : 'Criar sala'}
+                <Icon name="arrowRight" />
+              </Button>
+              {!isAuthenticated && authChecked && (
+                <p className="text-xs leading-5 text-ink-muted">
+                  Para criar uma sala,{' '}
+                  <Link href="/login" className="text-accent underline underline-offset-4">
+                    entre na sua conta
+                  </Link>{' '}
+                  ou{' '}
+                  <Link href="/register" className="text-accent underline underline-offset-4">
+                    cadastre-se
+                  </Link>
+                  .
+                </p>
+              )}
             </form>
-            <div className="mt-7 flex items-start gap-2 border-t border-line pt-5 text-xs leading-5 text-ink-muted"><Icon name="lock" size={16} className="mt-0.5 shrink-0" /><p>Voz e tela conectadas entre os participantes. Sem gravação de chamadas.</p></div>
+            <div className="mt-7 flex items-start gap-2 border-t border-line pt-5 text-xs leading-5 text-ink-muted">
+              <Icon name="lock" size={16} className="mt-0.5 shrink-0" />
+              <p>Voz e tela conectadas entre os participantes. Sem gravação de chamadas.</p>
+            </div>
           </section>
         </div>
       </div>
-      {roomToDelete && <DeleteRoomDialog roomId={roomToDelete.id} roomName={roomToDelete.name} onCancel={() => setRoomToDelete(null)} onDeleted={() => handleRoomDeleted(roomToDelete.id)} />}
-      {createdInvite && <InviteModal roomId={createdInvite.roomId} inviteToken={createdInvite.inviteToken} onClose={() => setCreatedInvite(null)} />}
+      {roomToDelete && (
+        <DeleteRoomDialog
+          roomId={roomToDelete.id}
+          roomName={roomToDelete.name}
+          onCancel={() => setRoomToDelete(null)}
+          onDeleted={() => handleRoomDeleted(roomToDelete.id)}
+        />
+      )}
+      {createdInvite && (
+        <InviteModal
+          roomId={createdInvite.roomId}
+          inviteToken={createdInvite.inviteToken}
+          onClose={() => setCreatedInvite(null)}
+        />
+      )}
     </AppShell>
   );
 }
 
-function CheckOption({ checked, onChange, label, hint }: { checked: boolean; onChange: (value: boolean) => void; label: string; hint: string }) {
+function CheckOption({
+  checked,
+  onChange,
+  label,
+  hint,
+}: {
+  checked: boolean;
+  onChange: (value: boolean) => void;
+  label: string;
+  hint: string;
+}) {
   return (
     <label className="group flex min-h-11 cursor-pointer items-start gap-3 rounded-md py-2">
       <span className="relative mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center">
@@ -483,7 +694,11 @@ function CheckOption({ checked, onChange, label, hint }: { checked: boolean; onC
           onChange={(event) => onChange(event.target.checked)}
           className="peer h-5 w-5 cursor-pointer appearance-none rounded-[6px] border border-line-strong bg-surface-tertiary transition-colors duration-150 group-hover:border-accent checked:border-accent-solid checked:bg-accent-solid focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface-base"
         />
-        <Icon name="check" size={14} className="pointer-events-none absolute scale-50 text-white opacity-0 transition-[opacity,transform] duration-150 peer-checked:scale-100 peer-checked:opacity-100" />
+        <Icon
+          name="check"
+          size={14}
+          className="pointer-events-none absolute scale-50 text-white opacity-0 transition-[opacity,transform] duration-150 peer-checked:scale-100 peer-checked:opacity-100"
+        />
       </span>
       <span>
         <span className="block text-sm font-medium">{label}</span>

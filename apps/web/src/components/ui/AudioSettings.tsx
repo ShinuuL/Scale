@@ -24,6 +24,15 @@ import {
   type AudioDeviceList,
 } from '@/lib/audioDevices';
 
+/**
+ * Microfone de fone Bluetooth: ao abrir o mic, o sistema muda o fone para o
+ * modo chamada (HFP, "Hands-Free"), mono e de baixa qualidade nos DOIS sentidos
+ * — a voz fica metálica. Detectado pelo nome do aparelho.
+ */
+export function isBluetoothCallMic(label: string | undefined): boolean {
+  return !!label && /hands[- ]?free|bluetooth/i.test(label);
+}
+
 interface DeviceOption {
   deviceId: string;
   label: string;
@@ -199,6 +208,16 @@ export function AudioSettings() {
         value={inputId}
         onChange={onInput}
       />
+      {isBluetoothCallMic(devices?.inputs.find((d) => d.deviceId === inputId)?.label) && (
+        <p
+          role="note"
+          className="flex items-start gap-2 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs leading-5 text-amber-200"
+        >
+          <Icon name="info" size={14} className="mt-0.5 shrink-0" />
+          Microfone de fone sem fio deixa o som metálico para você e para os outros. Para ouvir
+          melhor, escolha o microfone do computador e mantenha o fone só como saída de áudio.
+        </p>
+      )}
 
       {devices && !devices.hasLabels && (
         <div className="flex flex-wrap items-center gap-2">
