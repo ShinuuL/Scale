@@ -23,7 +23,15 @@ model User {
   avatarMime      String?
   avatarUpdatedAt DateTime?
 
+  // Gate de partilha de tela (spec docs/superpowers/specs/2026-11-11-moderacao-assistente-design.md).
+  // birthDate NUNCA sai em DTO publico: so o booleano isAdult.
+  birthDate                 DateTime?
+  ageVerifiedAt             DateTime?
+  screenShareConsentAt      DateTime?
+  screenShareConsentVersion String?
+
   ownedRooms  Room[]
+  moderationEvents ModerationEvent[]
   roomMembers RoomMember[]
 
   username               Username?
@@ -186,4 +194,26 @@ model RoomMember {
   user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@unique([roomId, userId])
+}
+
+// Evento de moderacao (texto, amostra de tela ou denuncia). Retencao:
+// MODERATION_RETENTION_DAYS (default 90) pelo sweep. `excerpt` e SEMPRE null
+// para frames (o quadro nunca persiste) e truncado a 120 chars para texto.
+model ModerationEvent {
+  id         String   @id @default(uuid())
+  kind       String // 'text' | 'frame' | 'report'
+  source     String // 'chat' | 'dm' | 'screen' | 'user'
+  roomId     String?
+  userId     String?
+  guestId    String?
+  reporterId String?
+  category   String
+  severity   String
+  action     String // 'blocked' | 'warned' | 'stopped-share' | 'reported' | 'none'
+  excerpt    String?
+  createdAt  DateTime @default(now())
+  user       User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([roomId, createdAt])
+  @@index([userId, createdAt])
 }

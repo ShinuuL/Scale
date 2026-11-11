@@ -3,3 +3,4 @@ export * from './rooms.js';
 export * from './socket.js';
 export * from './social.js';
 export * from './calls.js';
+export * from './moderation.js';
