@@ -11,6 +11,7 @@ import { registerUser } from './auth';
 test.describe('wizard de onboarding', () => {
   test('anonimo: aviso de login e botao de criar desabilitado', async ({ page }) => {
     await page.goto('/');
+    await page.getByRole('button', { name: 'Continuar como convidado' }).click();
 
     await page.getByRole('button', { name: 'Abrir guia de uso' }).click();
     await page.getByRole('button', { name: 'Começar' }).click();
@@ -25,6 +26,7 @@ test.describe('wizard de onboarding', () => {
 
   test('anonimo: entrar por codigo nao exige login', async ({ page }) => {
     await page.goto('/');
+    await page.getByRole('button', { name: 'Continuar como convidado' }).click();
 
     await page.getByRole('button', { name: 'Abrir guia de uso' }).click();
     await page.getByRole('button', { name: 'Começar' }).click();
@@ -60,6 +62,7 @@ test.describe('wizard de onboarding', () => {
 
   test('passos do guia nao mencionam rede privada/VPN (regressao)', async ({ page }) => {
     await page.goto('/');
+    await page.getByRole('button', { name: 'Continuar como convidado' }).click();
 
     await page.getByRole('button', { name: 'Abrir guia de uso' }).click();
 
