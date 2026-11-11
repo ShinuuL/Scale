@@ -7,7 +7,18 @@ import { roomUrl } from '@/lib/roomLink';
 import { copyText } from '@/lib/clipboard';
 
 /** A room is a row with separate, keyboard-accessible actions. */
-export function RoomCard({ room, onEnter, onDelete }: { room: RoomListItem; onEnter: () => void; onDelete?: () => void }) {
+export function RoomCard({
+  room,
+  onEnter,
+  onDelete,
+  onRemoveRecent,
+}: {
+  room: RoomListItem;
+  onEnter: () => void;
+  onDelete?: () => void;
+  /** Tira a sala só da lista local de recentes; não apaga a sala. */
+  onRemoveRecent?: () => void;
+}) {
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'error'>('idle');
   async function handleCopyLink() {
     const copied = await copyText(roomUrl(room.id));
@@ -24,6 +35,7 @@ export function RoomCard({ room, onEnter, onDelete }: { room: RoomListItem; onEn
       </button>
       <div className="room-row-actions">
         <button type="button" onClick={() => void handleCopyLink()} className="room-icon-button" title="Copiar link" aria-label={copyStatus === 'copied' ? 'Link copiado' : `Copiar link da sala ${room.name}`}><Icon name={copyStatus === 'copied' ? 'check' : 'link'} size={17} /></button>
+        {onRemoveRecent && <button type="button" onClick={onRemoveRecent} className="room-icon-button" title="Remover das recentes" aria-label={`Remover ${room.name} das recentes`}><Icon name="close" size={17} /></button>}
         {room.canDelete && onDelete && <button type="button" onClick={onDelete} className="room-icon-button hover:!text-red-300" title={`Apagar sala ${room.name}`} aria-label={`Apagar sala ${room.name}`} aria-haspopup="dialog"><Icon name="trash" size={17} /></button>}
         <button type="button" className="room-icon-button room-enter-label" onClick={onEnter} aria-label={`Abrir sala ${room.name}`}><Icon name="arrowRight" size={18} /></button>
       </div>

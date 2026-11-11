@@ -19,6 +19,20 @@ describe('RoomCard independent actions', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Entrar na sala Equipe' }));
     expect(enter).toHaveBeenCalledOnce();
   });
+  it('removing from recents does not delete or enter the room', () => {
+    const enter = vi.fn();
+    const remove = vi.fn();
+    const forget = vi.fn();
+    render(<RoomCard room={room} onEnter={enter} onDelete={remove} onRemoveRecent={forget} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Remover Equipe das recentes' }));
+    expect(forget).toHaveBeenCalledOnce();
+    expect(remove).not.toHaveBeenCalled();
+    expect(enter).not.toHaveBeenCalled();
+  });
+  it('hides the remove-from-recents button outside the recents list', () => {
+    render(<RoomCard room={room} onEnter={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: /das recentes/ })).toBeNull();
+  });
   it('reports a failed clipboard operation with recovery guidance', async () => {
     vi.mocked(copyText).mockResolvedValue(false);
     render(<RoomCard room={room} onEnter={vi.fn()} />);
