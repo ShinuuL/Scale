@@ -13,6 +13,7 @@ import {
   isModerationReportRateLimited,
 } from '../lib/rateLimit.js';
 import { computeScreenShareGate, GUEST_SCREEN_SHARE_GATE, screenShareGateSelect } from '../lib/screenShareGate.js';
+import { getEffectiveMinAge } from '../lib/moderation/settings.js';
 import { moderateText, recordModerationEvent } from '../lib/moderation/index.js';
 import { GUEST_COOKIE_NAME, newGuestId, serializeGuestCookie, verifyGuestCookie } from '../lib/guestId.js';
 import { signRoomTicket, ticketSubject } from '../lib/roomTicket.js';
@@ -353,7 +354,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
         let gate: ScreenShareGate = GUEST_SCREEN_SHARE_GATE;
         if (user.userId) {
           const row = await prisma.user.findUnique({ where: { id: user.userId }, select: screenShareGateSelect });
-          gate = computeScreenShareGate(row);
+          gate = computeScreenShareGate(row, { minAge: await getEffectiveMinAge() });
         }
         socket.data.screenShare = gate;
 

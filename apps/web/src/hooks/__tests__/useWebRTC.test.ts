@@ -237,6 +237,7 @@ function createHookMock(myId: string) {
     onRoomDeleted: vi.fn(() => () => {}),
     onModerationAction: vi.fn(register<Payload<'onModerationAction'>>('moderationAction')),
     onModerationWarning: vi.fn(() => () => {}),
+    onModerationConfig: vi.fn(() => () => {}),
     onModerationNotice: vi.fn(() => () => {}),
     onMeScreenShare: vi.fn(() => () => {}),
     emitModerationReport: vi.fn().mockResolvedValue(undefined),

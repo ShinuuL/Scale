@@ -3,6 +3,9 @@ import type { CreateRoomInput, RoomResponse, RoomListItem, AuthResponse, LoginIn
 import {
   acceptCallResponseSchema,
   activeCallsSchema,
+  adminModerationStateSchema,
+  moderationAuditEntrySchema,
+  moderationVerdictSchema,
   directMessageSchema,
   dmSendSchema,
   friendsListSchema,
@@ -11,7 +14,11 @@ import {
   startCallResponseSchema,
   SCREEN_SHARE_CONSENT_VERSION,
   type ActiveCalls,
+  type AdminModerationState,
+  type AdminModerationUpdate,
   type DirectMessage,
+  type ModerationAuditEntry,
+  type ModerationVerdict,
   type FriendsList,
   type ModerationConfig,
   type ScreenShareGate,
@@ -23,9 +30,13 @@ import { createRoomSchema, authResponseSchema, roomResponseSchema, roomListItemS
 // next.config.js reescreve `/api` para o backend no host. Nao ha SSR.
 const BASE_URL = '';
 
-interface ApiError {
+export interface ApiError {
   error: string;
   details?: Record<string, string[]>;
+  /** Campo invalido (400 do painel de administracao: `{ error, field }`). */
+  field?: string;
+  /** Detalhe legivel (502 `provider_error` do teste de moderacao; nunca traz a chave). */
+  detail?: string;
   status: number;
 }
 
@@ -97,6 +108,8 @@ export interface MeUser {
    * data de nascimento. Ausente = servidor antigo (trata como nao liberado).
    */
   screenShare?: ScreenShareGate;
+  /** Admin do sistema (`ADMIN_EMAILS`): ve o painel /admin/moderation. Ausente = nao. */
+  isAdmin?: boolean;
 }
 
 /** Gate quando o DTO nao trouxe o campo (ou convidado). */
@@ -166,6 +179,8 @@ class ApiClient {
       const error: ApiError = {
         error: body.error || `HTTP ${response.status}`,
         details: body.details,
+        field: typeof body.field === 'string' ? body.field : undefined,
+        detail: typeof body.detail === 'string' ? body.detail : undefined,
         status: response.status,
       };
       throw error;
@@ -419,6 +434,44 @@ class ApiClient {
       body: JSON.stringify(dmSendSchema.parse({ content })),
     });
     return directMessageSchema.parse(data.message);
+  }
+
+  // ─── Administracao da moderacao (so admin do sistema; 403 para os demais) ──
+  async getAdminModeration(): Promise<AdminModerationState> {
+    return adminModerationStateSchema.parse(await this.request<unknown>('/api/admin/moderation'));
+  }
+
+  /** Parcial: so os campos alterados; `null` = volta ao valor do .env. */
+  async updateAdminModeration(update: AdminModerationUpdate): Promise<AdminModerationState> {
+    const data = await this.request<unknown>('/api/admin/moderation', {
+      method: 'PUT',
+      body: JSON.stringify(update),
+    });
+    return adminModerationStateSchema.parse(data);
+  }
+
+  async deleteAdminModerationApiKey(): Promise<AdminModerationState> {
+    const data = await this.request<unknown>('/api/admin/moderation/api-key', {
+      method: 'DELETE',
+      body: '{}',
+    });
+    return adminModerationStateSchema.parse(data);
+  }
+
+  /** Classifica um texto com o provedor efetivo sem gravar evento (valida chave/modelo). */
+  async testAdminModeration(text: string): Promise<ModerationVerdict> {
+    const data = await this.request<unknown>('/api/admin/moderation/test', {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    });
+    return moderationVerdictSchema.parse(data);
+  }
+
+  async getAdminModerationAudit(limit = 50): Promise<{ entries: ModerationAuditEntry[] }> {
+    const data = await this.request<{ entries: unknown[] }>(
+      `/api/admin/moderation/audit?limit=${encodeURIComponent(String(limit))}`,
+    );
+    return { entries: z.array(moderationAuditEntrySchema).parse(data.entries) };
   }
 
   // ─── Health ─────────────────────────────────────────────────

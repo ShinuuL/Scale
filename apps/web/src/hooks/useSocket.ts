@@ -5,6 +5,7 @@ import { io, Socket } from 'socket.io-client';
 import type { ChatMessage } from '@/hooks/useChat';
 import {
   moderationActionSchema,
+  moderationConfigSchema,
   moderationNoticeSchema,
   moderationReportSchema,
   moderationStopShareSchema,
@@ -15,6 +16,7 @@ import {
 import type {
   JoinRoomPayload,
   ModerationActionPayload,
+  ModerationConfig,
   ModerationNoticePayload,
   ModerationReportPayload,
   ModerationWarningPayload,
@@ -109,6 +111,8 @@ export interface UseSocketReturn {
   onModerationWarning: (cb: (data: ModerationWarningPayload) => void) => () => void;
   /** Dono da sala: denuncia ou alerta sobre um peer. */
   onModerationNotice: (cb: (data: ModerationNoticePayload) => void) => () => void;
+  /** Admin mudou a configuracao da moderacao (broadcast): config publica nova. */
+  onModerationConfig: (cb: (config: ModerationConfig) => void) => () => void;
   /** Gate de partilha de tela mudou (idade/consentimento salvos pelo REST). */
   onMeScreenShare: (cb: (gate: ScreenShareGate) => void) => () => void;
   /** Denuncia um participante (balde no servidor: 10 / 10 min). */
@@ -142,6 +146,7 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
     moderationAction: [] as Array<(data: ModerationActionPayload) => void>,
     moderationWarning: [] as Array<(data: ModerationWarningPayload) => void>,
     moderationNotice: [] as Array<(data: ModerationNoticePayload) => void>,
+    moderationConfig: [] as Array<(config: ModerationConfig) => void>,
     meScreenShare: [] as Array<(gate: ScreenShareGate) => void>,
   });
 
@@ -242,6 +247,11 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
       const parsed = moderationNoticeSchema.safeParse(data);
       if (!parsed.success) return;
       callbacksRef.current.moderationNotice.forEach((cb) => cb(parsed.data));
+    });
+    sock.on('moderation:config', (data: unknown) => {
+      const parsed = moderationConfigSchema.safeParse(data);
+      if (!parsed.success) return;
+      callbacksRef.current.moderationConfig.forEach((cb) => cb(parsed.data));
     });
     sock.on('me:screen-share', (data: unknown) => {
       const parsed = screenShareGateSchema.safeParse(data);
@@ -531,6 +541,14 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
     };
   }, []);
 
+  const onModerationConfig = useCallback((cb: (config: ModerationConfig) => void): (() => void) => {
+    callbacksRef.current.moderationConfig.push(cb);
+    return () => {
+      const idx = callbacksRef.current.moderationConfig.indexOf(cb);
+      if (idx >= 0) callbacksRef.current.moderationConfig.splice(idx, 1);
+    };
+  }, []);
+
   const onMeScreenShare = useCallback((cb: (gate: ScreenShareGate) => void): (() => void) => {
     callbacksRef.current.meScreenShare.push(cb);
     return () => {
@@ -593,6 +611,7 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
       onModerationAction,
       onModerationWarning,
       onModerationNotice,
+      onModerationConfig,
       onMeScreenShare,
       emitModerationReport,
       emitModerationStopShare,
@@ -623,6 +642,7 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
       onModerationAction,
       onModerationWarning,
       onModerationNotice,
+      onModerationConfig,
       onMeScreenShare,
       emitModerationReport,
       emitModerationStopShare,

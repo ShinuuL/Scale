@@ -129,7 +129,7 @@ export async function socialRoutes(fastify: FastifyInstance): Promise<void> {
     }
     const user = await prisma.user.findUnique({ where: { id: me }, select: meSelect });
     if (!user) return reply.code(404).send({ error: 'User not found' });
-    return reply.send({ user: toMe(user) });
+    return reply.send({ user: await toMe(user) });
   });
 
   // GET /api/friends — amigos, pedidos recebidos e enviados.

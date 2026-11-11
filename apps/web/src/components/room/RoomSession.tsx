@@ -137,6 +137,10 @@ export function RoomSession({ roomId, visible, onJoinedChange }: RoomSessionProp
     };
   }, []);
 
+  // Admin mudou a configuracao (moderation:config): o intervalo de amostragem
+  // e o gate passam a usar o valor novo sem sair da sala.
+  useEffect(() => socket.onModerationConfig((c) => setModerationConfig(c)), [socket]);
+
   // Persist chatOpen em localStorage
   useEffect(() => {
     const key = `scale:chatOpen:${roomId}`;

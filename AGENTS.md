@@ -273,6 +273,17 @@ docker compose up --build -d
   `MODERATION_SCREEN`, `MODERATION_FRAME_INTERVAL_SEC` (10..120),
   `MODERATION_RETENTION_DAYS` (1..365), `SCREEN_SHARE_MIN_AGE` (13..21),
   `PRIVACY_CONTACT_EMAIL`.
+- Painel de admin (`/admin/moderation`, só `isAdmin` em `/api/auth/me`):
+  `GET|PUT /api/admin/moderation`, `DELETE /api/admin/moderation/api-key`,
+  `POST /api/admin/moderation/test`, `GET /api/admin/moderation/audit`
+  (não-admin = 403; balde `adminSettings` 30 / 10 min por usuário).
+  Override no banco > `.env`, campo a campo; `null` volta ao `.env`. Toda
+  mudança vai para `ModerationAuditLog` e emite `moderation:config`.
+- Chave de API do painel: AES-256-GCM com chave derivada do `JWT_SECRET`
+  (HMAC, rótulo `scale:settings-key:v1`); nunca em DTO/log. Trocar o
+  `JWT_SECRET` exige recadastrar a chave.
+- **Não existe modo oculto**: toda configuração efetiva é exibida em
+  `/privacy` e no termo de partilha de tela.
 
 ### Validação
 - **Zod** em todos os inputs do frontend e backend

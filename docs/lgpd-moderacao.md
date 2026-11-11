@@ -185,6 +185,12 @@ internamente 15 dias para resposta.
 | Amostragem de tela | Mastersys | Anthropic | Usuários logados maiores que compartilham | Quadro JPEG (transitório); evento sem excerpt | Art. 7, IX + 7, I | Quadro: 0; evento: 90 dias | Sim (art. 33) | Nunca persiste, 204 sem oráculo, balde 6/min |
 | Denúncia | Mastersys | — | Usuários e convidados (denunciante e denunciado) | Motivo, detalhes ≤ 300, ids internos | Art. 7, IX | 90 dias | Não | Balde 10/10 min, só na sala |
 | Export de privacidade | Mastersys | — | Usuários logados | Perfil e eventos próprios | Art. 18 | Não armazena | Não | Rota autenticada |
+| Configuração e auditoria de moderação | Mastersys | — | Administradores do sistema | Id e nome do admin, data, diff da configuração (chave de API só como `set`/`cleared`) | Art. 7, IX (legítimo interesse: segurança e prestação de contas) | Indefinida (a definir) | Não | Só admin (`ADMIN_EMAILS`), balde `adminSettings`, chave cifrada (AES-256-GCM) |
+
+A configuração da moderação feita pelo painel de administração **nunca é
+oculta ao titular**: o estado efetivo é público (`GET /api/moderation/config`)
+e é o que a página `/privacy` e o termo de partilha de tela exibem. Não existe
+modo de monitoramento oculto (art. 6, VI e art. 9).
 
 ---
 

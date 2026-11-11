@@ -217,3 +217,33 @@ model ModerationEvent {
   @@index([roomId, createdAt])
   @@index([userId, createdAt])
 }
+
+// Overrides da moderacao gravados pelo admin do sistema (singleton 'default').
+// `null` em cada campo = usa o valor do .env. `apiKeyCiphertext`: AES-256-GCM
+// com chave derivada do JWT_SECRET (lib/settingsCrypto.ts); nunca sai em DTO
+// nem em log. Spec: docs/superpowers/specs/2026-11-11-admin-moderacao-design.md
+model ModerationSettings {
+  id                  String   @id @default("default")
+  provider            String?
+  model               String?
+  screenEnabled       Boolean?
+  frameIntervalSec    Int?
+  retentionDays       Int?
+  minAge              Int?
+  privacyContactEmail String?
+  apiKeyCiphertext    String?
+  updatedById         String?
+  updatedAt           DateTime @updatedAt
+}
+
+// Auditoria das alteracoes do painel de moderacao. `changes` e JSON
+// `{ campo: { from, to } }`; a chave de API aparece so como 'set' | 'cleared'.
+model ModerationAuditLog {
+  id        String   @id @default(uuid())
+  adminId   String
+  adminName String
+  changes   String
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}

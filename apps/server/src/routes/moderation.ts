@@ -3,10 +3,10 @@ import type { Server } from 'socket.io';
 import { z } from 'zod';
 import { MODERATION_FRAME_MAX_BYTES, type ModerationActionPayload, type ModerationNoticePayload, type ModerationWarningPayload } from '@scale/shared';
 import { prisma } from '../lib/prisma.js';
-import { getModerationConfig, isScreenModerationEnabled } from '../lib/env.js';
 import { guardRoomParticipation } from '../lib/roomAccess.js';
 import { isModerationFrameRateLimited } from '../lib/rateLimit.js';
 import { moderateImage, recordModerationEvent } from '../lib/moderation/index.js';
+import { getModerationConfig, isScreenModerationEnabled } from '../lib/moderation/settings.js';
 import { findUserSocketInRoom, getRoomOwnerSocketIds } from '../socket/handler.js';
 
 const roomParams = z.object({ roomId: z.string().uuid() });
@@ -40,7 +40,7 @@ async function readFrame(request: FastifyRequest): Promise<Buffer | null | 'none
 export async function moderationRoutes(fastify: FastifyInstance): Promise<void> {
   // GET /api/moderation/config — publico; sem chave nem modelo.
   fastify.get('/api/moderation/config', async (_request, reply) => {
-    return reply.send(getModerationConfig());
+    return reply.send(await getModerationConfig(fastify.log));
   });
 
   // POST /api/rooms/:roomId/moderation/frame — amostra JPEG (<= 200 KB) da
@@ -70,7 +70,7 @@ export async function moderationRoutes(fastify: FastifyInstance): Promise<void> 
     if (!isJpeg(frame)) return reply.code(400).send({ error: 'Frame must be JPEG' });
 
     // Amostragem desligada (ou provedor sem imagem): 204 e descarta.
-    if (!isScreenModerationEnabled(fastify.log)) return reply.code(204).send();
+    if (!(await isScreenModerationEnabled(fastify.log))) return reply.code(204).send();
 
     // Veredito fora do ciclo da resposta? Nao: a classificacao e curta (8 s) e
     // o cliente nao espera a resposta para continuar; mas respondemos 204 antes

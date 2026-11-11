@@ -1,5 +1,5 @@
 import type { FastifyBaseLogger } from 'fastify';
-import { getEnv, isScreenModerationEnabled } from '../env.js';
+import { getResolvedModerationSettings, isScreenModerationEnabled, onModerationSettingsInvalidated, type ResolvedModerationSettings } from './settings.js';
 import { prisma } from '../prisma.js';
 import { createClaudeProvider } from './claude.js';
 import { heuristicProvider } from './heuristic.js';
@@ -17,29 +17,40 @@ const offProvider: ModerationProvider = {
   },
 };
 
-let cached: ModerationProvider | undefined;
+let cached: { settings: ResolvedModerationSettings; provider: ModerationProvider } | undefined;
 let override: ModerationProvider | undefined;
 
-/** Provedor conforme MODERATION_PROVIDER (cacheado). */
-export function getModerationProvider(): ModerationProvider {
+onModerationSettingsInvalidated(() => {
+  cached = undefined;
+});
+
+/**
+ * Provedor conforme a configuracao EFETIVA (banco ?? .env): provedor, modelo e
+ * chave. Cacheado por leitura dos settings — invalidar os settings (rotas de
+ * admin) recria o provedor na proxima chamada.
+ */
+export async function getModerationProvider(log?: Log): Promise<ModerationProvider> {
   if (override) return override;
-  if (cached) return cached;
-  const env = getEnv();
-  switch (env.MODERATION_PROVIDER) {
+  const settings = await getResolvedModerationSettings(log);
+  if (cached && cached.settings === settings) return cached.provider;
+  let provider: ModerationProvider;
+  switch (settings.effective.provider) {
     case 'off':
-      cached = offProvider;
+      provider = offProvider;
       break;
     case 'claude': {
-      const apiKey = env.ANTHROPIC_API_KEY?.trim();
       // Fora de producao a chave pode faltar (o env.ts so recusa em producao):
       // cai no fail-open em vez de derrubar o dev.
-      cached = apiKey ? createClaudeProvider({ apiKey, model: env.MODERATION_MODEL }) : offProvider;
+      provider = settings.apiKey
+        ? createClaudeProvider({ apiKey: settings.apiKey, model: settings.effective.model })
+        : offProvider;
       break;
     }
     default:
-      cached = heuristicProvider;
+      provider = heuristicProvider;
   }
-  return cached;
+  cached = { settings, provider };
+  return provider;
 }
 
 /** Testes: injeta um provedor (undefined = volta ao do ambiente). */
@@ -57,7 +68,7 @@ export function resetModerationProvider(): void {
  * mensagem passa com `reason: 'provider_error'`.
  */
 export async function moderateText(text: string, log?: Log): Promise<ModerationVerdict> {
-  const provider = getModerationProvider();
+  const provider = await getModerationProvider(log);
   if (provider.name === 'off') return NONE_VERDICT;
   try {
     return await provider.classifyText(text, { lang: 'pt' });
@@ -73,8 +84,8 @@ export async function moderateText(text: string, log?: Log): Promise<ModerationV
  * e gravado nem logado.
  */
 export async function moderateImage(jpeg: Buffer, log?: Log): Promise<ModerationVerdict> {
-  if (!isScreenModerationEnabled(log)) return NONE_VERDICT;
-  const provider = getModerationProvider();
+  if (!(await isScreenModerationEnabled(log))) return NONE_VERDICT;
+  const provider = await getModerationProvider(log);
   if (!provider.classifyImage) return NONE_VERDICT;
   try {
     return await provider.classifyImage(jpeg);
@@ -130,12 +141,13 @@ export async function recordModerationEvent(input: ModerationEventInput, log?: L
 }
 
 /**
- * Retencao (LGPD): apaga ModerationEvent mais antigos que
- * MODERATION_RETENTION_DAYS. Chamado pelo sweep de salas (mesmo intervalo).
+ * Retencao (LGPD): apaga ModerationEvent mais antigos que a retencao EFETIVA
+ * (override do admin ?? MODERATION_RETENTION_DAYS). Chamado pelo sweep de
+ * salas (mesmo intervalo).
  */
 export async function sweepModerationEvents(opts: { now?: Date; retentionDays?: number } = {}): Promise<number> {
   const now = opts.now ?? new Date();
-  const days = opts.retentionDays ?? getEnv().MODERATION_RETENTION_DAYS;
+  const days = opts.retentionDays ?? (await getResolvedModerationSettings()).effective.retentionDays;
   const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
   const result = await prisma.moderationEvent.deleteMany({ where: { createdAt: { lt: cutoff } } });
   return result.count;

@@ -28,7 +28,8 @@ import {
   resetModerationProvider,
   setModerationProviderForTests,
 } from '../lib/moderation/index.js';
-import { getEnv, getModerationConfig, isScreenModerationEnabled, resetEnv } from '../lib/env.js';
+import { getEnv, resetEnv } from '../lib/env.js';
+import { getModerationConfig, isScreenModerationEnabled } from '../lib/moderation/settings.js';
 
 describe('heuristica PT-BR', () => {
   it('normaliza acentos, caixa e letras repetidas', () => {
@@ -142,13 +143,13 @@ describe('moderateText / moderateImage e config', () => {
 
   it('MODERATION_PROVIDER=off nunca marca', async () => {
     setEnv({ JWT_SECRET: 'test-secret-for-unit-tests', MODERATION_PROVIDER: 'off' });
-    expect(getModerationProvider().name).toBe('off');
+    expect((await getModerationProvider()).name).toBe('off');
     expect((await moderateText('seu idiota')).flagged).toBe(false);
   });
 
   it('default = heuristic', async () => {
     setEnv({ JWT_SECRET: 'test-secret-for-unit-tests', MODERATION_PROVIDER: undefined });
-    expect(getModerationProvider().name).toBe('heuristic');
+    expect((await getModerationProvider()).name).toBe('heuristic');
     expect((await moderateText('@Ana seu idiota')).severity).toBe('high');
   });
 
@@ -165,13 +166,13 @@ describe('moderateText / moderateImage e config', () => {
     expect(JSON.stringify(warn.mock.calls)).not.toContain('texto secreto');
   });
 
-  it('MODERATION_SCREEN=true sem provedor claude fica false efetivo e avisa uma vez', () => {
+  it('MODERATION_SCREEN=true sem provedor claude fica false efetivo e avisa uma vez', async () => {
     setEnv({ JWT_SECRET: 'test-secret-for-unit-tests', MODERATION_PROVIDER: 'heuristic', MODERATION_SCREEN: 'true' });
     const warn = vi.fn();
-    expect(isScreenModerationEnabled({ warn })).toBe(false);
-    expect(isScreenModerationEnabled({ warn })).toBe(false);
+    expect(await isScreenModerationEnabled({ warn })).toBe(false);
+    expect(await isScreenModerationEnabled({ warn })).toBe(false);
     expect(warn).toHaveBeenCalledTimes(1);
-    expect(getModerationConfig().screen).toBe(false);
+    expect((await getModerationConfig()).screen).toBe(false);
   });
 
   it('moderateImage com tela desligada devolve none sem chamar o provedor', async () => {
@@ -182,12 +183,12 @@ describe('moderateText / moderateImage e config', () => {
     expect(classifyImage).not.toHaveBeenCalled();
   });
 
-  it('GET config DTO: sem chave nem modelo; limites e defaults das vars', () => {
+  it('GET config DTO: sem chave nem modelo; limites e defaults das vars', async () => {
     setEnv({
       JWT_SECRET: 'test-secret-for-unit-tests', MODERATION_PROVIDER: 'claude', ANTHROPIC_API_KEY: 'sk-secret',
       MODERATION_SCREEN: 'true', MODERATION_FRAME_INTERVAL_SEC: '30', SCREEN_SHARE_MIN_AGE: '16', PRIVACY_CONTACT_EMAIL: 'dpo@exemplo.com',
     });
-    const cfg = getModerationConfig();
+    const cfg = await getModerationConfig();
     expect(cfg).toEqual({ provider: 'claude', screen: true, minAge: 16, consentVersion: '2026-11', frameIntervalSec: 30, privacyContactEmail: 'dpo@exemplo.com' });
     expect(JSON.stringify(cfg)).not.toContain('sk-secret');
     expect(getEnv().MODERATION_RETENTION_DAYS).toBe(90);
