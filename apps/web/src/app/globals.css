@@ -82,6 +82,7 @@
   .input-base:focus { border-color: var(--accent); outline: 2px solid var(--accent); outline-offset: 2px; }
   .badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 7px; border-radius: 4px; font-size: 11px; line-height: 16px; font-weight: 500; }
   .app-shell { height: 100dvh; min-height: 0; display: grid; grid-template-columns: 72px 232px minmax(0, 1fr); overflow: hidden; }
+  .app-shell-no-context { grid-template-columns: 72px minmax(0, 1fr); }
   .app-rail { background: #111217; border-right: 1px solid var(--border); padding: 18px 10px; display: flex; flex-direction: column; align-items: center; gap: 24px; }
   .app-rail-nav { display: flex; flex-direction: column; gap: 8px; width: 100%; }
   .app-nav-item { display: flex; min-height: 52px; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: var(--text-muted); border-radius: 8px; font-size: 10px; font-weight: 500; }
@@ -122,6 +123,7 @@
   @media (max-width: 1199px) { .rooms-layout { grid-template-columns: 1fr; gap: 32px; } .room-form { border-left: 0; border-top: 1px solid var(--border); padding: 28px 0 0; } }
   @media (max-width: 1023px) {
     .app-shell { grid-template-columns: 64px minmax(0, 1fr); }
+    .app-shell-no-context { grid-template-columns: 64px minmax(0, 1fr); }
     .app-context { display: none; }
     .app-context-trigger { display: inline-flex; }
     .app-header { padding: 0 20px; }

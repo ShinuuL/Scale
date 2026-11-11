@@ -50,3 +50,14 @@ export const ROOM_NAME_MAX = 50;
 
 /** Teto da malha P2P (mesh): acima disso a banda de upload nao comporta. */
 export const MAX_PARTICIPANTS = 8;
+
+/** Prazo para editar uma mensagem de chat, contado desde a criação. */
+export const CHAT_EDIT_WINDOW_MS = 15 * 60 * 1000;
+
+/** Limites de comunidades e canais. */
+export const COMMUNITY_NAME_MAX = 50;
+export const CHANNEL_NAME_MAX = 40;
+export const MAX_COMMUNITIES_OWNED = 10;
+export const MAX_CHANNELS_PER_COMMUNITY = 50;
+export const MAX_COMMUNITY_MEMBERS = 500;
+export const MAX_COMMUNITIES_JOINED = 100;
