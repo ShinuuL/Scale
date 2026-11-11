@@ -100,3 +100,70 @@ export type ModerationNoticePayload = z.infer<typeof moderationNoticeSchema>;
 /** Limites da amostra de tela enviada pelo sharer. */
 export const MODERATION_FRAME_MAX_BYTES = 200 * 1024;
 export const MODERATION_FRAME_MAX_WIDTH = 480;
+
+// ---------------------------------------------------------------------------
+// Painel de administracao da moderacao (PR 2). Spec:
+// docs/superpowers/specs/2026-11-11-admin-moderacao-design.md
+// Overrides gravados no banco por admin do sistema; `null` = volta ao .env.
+// A chave de API NUNCA volta ao cliente: so `hasApiKey` e `apiKeySource`.
+// ---------------------------------------------------------------------------
+
+export const moderationProviderSchema = z.enum(['off', 'heuristic', 'claude']);
+
+/** `PUT /api/admin/moderation` — parcial; campo ausente = nao mexe; null = usa o .env. */
+export const adminModerationUpdateSchema = z
+  .object({
+    provider: moderationProviderSchema.nullable(),
+    model: z.string().trim().min(1).max(80).nullable(),
+    screenEnabled: z.boolean().nullable(),
+    frameIntervalSec: z.number().int().min(10).max(120).nullable(),
+    retentionDays: z.number().int().min(1).max(365).nullable(),
+    minAge: z.number().int().min(13).max(21).nullable(),
+    privacyContactEmail: z.string().trim().email().max(120).nullable(),
+    /** Nova chave (gravada cifrada). Para remover: `DELETE /api/admin/moderation/api-key`. */
+    apiKey: z.string().trim().min(10).max(400),
+  })
+  .partial()
+  .strict();
+export type AdminModerationUpdate = z.infer<typeof adminModerationUpdateSchema>;
+
+export const moderationOverridesSchema = z.object({
+  provider: moderationProviderSchema.nullable(),
+  model: z.string().nullable(),
+  screenEnabled: z.boolean().nullable(),
+  frameIntervalSec: z.number().int().nullable(),
+  retentionDays: z.number().int().nullable(),
+  minAge: z.number().int().nullable(),
+  privacyContactEmail: z.string().nullable(),
+});
+export type ModerationOverrides = z.infer<typeof moderationOverridesSchema>;
+
+export const moderationEffectiveSchema = moderationConfigSchema.extend({
+  model: z.string(),
+  retentionDays: z.number().int(),
+  hasApiKey: z.boolean(),
+  apiKeySource: z.enum(['db', 'env', 'none']),
+});
+export type ModerationEffective = z.infer<typeof moderationEffectiveSchema>;
+
+/** `GET|PUT /api/admin/moderation` */
+export const adminModerationStateSchema = z.object({
+  effective: moderationEffectiveSchema,
+  overrides: moderationOverridesSchema,
+  envDefaults: moderationOverridesSchema.extend({ hasApiKey: z.boolean() }),
+  updatedAt: z.string().nullable(),
+  updatedBy: z.object({ id: z.string(), name: z.string() }).nullable(),
+});
+export type AdminModerationState = z.infer<typeof adminModerationStateSchema>;
+
+/** `POST /api/admin/moderation/test` */
+export const adminModerationTestSchema = z.object({ text: z.string().trim().min(1).max(2000) });
+
+export const moderationAuditEntrySchema = z.object({
+  id: z.string(),
+  admin: z.object({ id: z.string(), name: z.string() }),
+  /** `{ campo: { from, to } }`; `apiKey` aparece so como `'set' | 'cleared'`. */
+  changes: z.record(z.string(), z.object({ from: z.unknown(), to: z.unknown() })),
+  createdAt: z.string(),
+});
+export type ModerationAuditEntry = z.infer<typeof moderationAuditEntrySchema>;
