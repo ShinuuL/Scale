@@ -10,6 +10,10 @@ import { prisma } from '../lib/prisma.js';
 import { signToken } from '../lib/auth.js';
 import { readFileHead, UPLOADS_ROOT } from '../lib/uploads.js';
 import { isProfileUpdateRateLimited } from '../lib/rateLimit.js';
+import { computeScreenShareGate, screenShareGateSelect } from '../lib/screenShareGate.js';
+import { userRoom } from '../socket/handler.js';
+import type { Server } from 'socket.io';
+import { setBirthDateSchema, screenShareConsentSchema, SCREEN_SHARE_CONSENT_VERSION, type ScreenShareGate } from '@scale/shared';
 
 /** Fotos de perfil: uploads/avatars/<userId>.<ext>, fora das pastas de sala. */
 export const AVATARS_ROOT = path.resolve(UPLOADS_ROOT, 'avatars');
@@ -68,6 +72,7 @@ export const meSelect = {
   createdAt: true,
   avatarUpdatedAt: true,
   username: { select: { name: true } },
+  ...screenShareGateSelect,
 } as const;
 
 type MeRow = {
@@ -77,11 +82,52 @@ type MeRow = {
   createdAt: Date;
   avatarUpdatedAt: Date | null;
   username: { name: string } | null;
+  birthDate: Date | null;
+  ageVerifiedAt: Date | null;
+  screenShareConsentAt: Date | null;
+  screenShareConsentVersion: string | null;
 };
 
-/** Achata o @nome (tabela Username) para `username: string | null`. */
+/**
+ * Achata o @nome (tabela Username) para `username: string | null` e troca as
+ * colunas do gate por `screenShare` (computeScreenShareGate). `birthDate`
+ * NUNCA sai daqui — so o booleano isAdult.
+ */
 export function toMe(u: MeRow) {
-  return { ...u, username: u.username?.name ?? null };
+  const { birthDate, ageVerifiedAt, screenShareConsentAt, screenShareConsentVersion, username, ...rest } = u;
+  return {
+    ...rest,
+    username: username?.name ?? null,
+    screenShare: computeScreenShareGate({ birthDate, ageVerifiedAt, screenShareConsentAt, screenShareConsentVersion }),
+  };
+}
+
+/**
+ * Idade/consentimento mudou: avisa todas as abas logadas (`me:screen-share`
+ * na sala `user:<userId>`) e atualiza `socket.data.screenShare` de cada socket
+ * desse usuario — o join-room so le o banco uma vez, entao sem isto o gate
+ * novo so valeria na proxima reconexao.
+ */
+export async function broadcastScreenShareGate(
+  fastify: FastifyInstance,
+  userId: string,
+  gate: ScreenShareGate,
+): Promise<void> {
+  const io = (fastify as unknown as { io?: Server }).io;
+  if (!io) return;
+  const sockets = await io.in(userRoom(userId)).fetchSockets();
+  for (const sock of sockets) sock.data.screenShare = gate;
+  io.to(userRoom(userId)).emit('me:screen-share', gate);
+}
+
+/** `YYYY-MM-DD` -> Date UTC ou null (invalida, futura, > 120 anos). */
+export function parseBirthDate(value: string, now: Date = new Date()): Date | null {
+  const [y, m, d] = value.split('-').map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  if (date.getUTCFullYear() !== y || date.getUTCMonth() !== m - 1 || date.getUTCDate() !== d) return null;
+  if (date.getTime() > now.getTime()) return null;
+  if (now.getUTCFullYear() - y > 120) return null;
+  return date;
 }
 
 export async function profileRoutes(fastify: FastifyInstance): Promise<void> {
@@ -117,6 +163,125 @@ export async function profileRoutes(fastify: FastifyInstance): Promise<void> {
       maxAge: 7 * 24 * 60 * 60,
     });
     return reply.send({ user });
+  });
+
+  // PUT /api/me/age — data de nascimento (gate de partilha de tela). A data
+  // fica no banco; o DTO so devolve os booleanos.
+  fastify.put('/api/me/age', auth, async (request, reply) => {
+    const userId = request.userId;
+    if (!userId) return reply.code(401).send({ error: 'Not authenticated' });
+    const limit = isProfileUpdateRateLimited(userId);
+    if (limit.limited) return tooMany(reply, limit.retryAfterSeconds);
+
+    const parsed = setBirthDateSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'Validation failed', details: parsed.error.flatten().fieldErrors });
+    }
+    const birthDate = parseBirthDate(parsed.data.birthDate);
+    if (!birthDate) return reply.code(400).send({ error: 'Data de nascimento invalida' });
+
+    const user = await prisma.user
+      .update({ where: { id: userId }, data: { birthDate, ageVerifiedAt: new Date() }, select: meSelect })
+      .then(toMe)
+      .catch(() => null);
+    if (!user) return reply.code(404).send({ error: 'User not found' });
+    await broadcastScreenShareGate(fastify, userId, user.screenShare);
+    return reply.send({ ageVerified: user.screenShare.ageVerified, isAdult: user.screenShare.isAdult, screenShare: user.screenShare });
+  });
+
+  // DELETE /api/me/age — apaga data de nascimento e verificacao (idempotente).
+  fastify.delete('/api/me/age', auth, async (request, reply) => {
+    const userId = request.userId;
+    if (!userId) return reply.code(401).send({ error: 'Not authenticated' });
+    const user = await prisma.user
+      .update({ where: { id: userId }, data: { birthDate: null, ageVerifiedAt: null }, select: meSelect })
+      .then(toMe)
+      .catch(() => null);
+    if (!user) return reply.code(404).send({ error: 'User not found' });
+    await broadcastScreenShareGate(fastify, userId, user.screenShare);
+    return reply.send({ screenShare: user.screenShare });
+  });
+
+  // PUT /api/me/screen-share-consent — aceita o termo na versao ATUAL.
+  fastify.put('/api/me/screen-share-consent', auth, async (request, reply) => {
+    const userId = request.userId;
+    if (!userId) return reply.code(401).send({ error: 'Not authenticated' });
+    const limit = isProfileUpdateRateLimited(userId);
+    if (limit.limited) return tooMany(reply, limit.retryAfterSeconds);
+
+    const parsed = screenShareConsentSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'Versao do termo invalida', currentVersion: SCREEN_SHARE_CONSENT_VERSION });
+    }
+    const user = await prisma.user
+      .update({
+        where: { id: userId },
+        data: { screenShareConsentAt: new Date(), screenShareConsentVersion: parsed.data.version },
+        select: meSelect,
+      })
+      .then(toMe)
+      .catch(() => null);
+    if (!user) return reply.code(404).send({ error: 'User not found' });
+    await broadcastScreenShareGate(fastify, userId, user.screenShare);
+    return reply.send({ screenShare: user.screenShare });
+  });
+
+  // DELETE /api/me/screen-share-consent — revoga (idempotente).
+  fastify.delete('/api/me/screen-share-consent', auth, async (request, reply) => {
+    const userId = request.userId;
+    if (!userId) return reply.code(401).send({ error: 'Not authenticated' });
+    const user = await prisma.user
+      .update({
+        where: { id: userId },
+        data: { screenShareConsentAt: null, screenShareConsentVersion: null },
+        select: meSelect,
+      })
+      .then(toMe)
+      .catch(() => null);
+    if (!user) return reply.code(404).send({ error: 'User not found' });
+    await broadcastScreenShareGate(fastify, userId, user.screenShare);
+    return reply.send({ screenShare: user.screenShare });
+  });
+
+  // GET /api/me/privacy/export — direito do titular (LGPD): perfil (sem hash
+  // de senha e sem birthDate crua), flags de consentimento e eventos de
+  // moderacao proprios. guestId/reporterId de terceiros nao saem.
+  fastify.get('/api/me/privacy/export', auth, async (request, reply) => {
+    const userId = request.userId;
+    if (!userId) return reply.code(401).send({ error: 'Not authenticated' });
+    const limit = isProfileUpdateRateLimited(userId);
+    if (limit.limited) return tooMany(reply, limit.retryAfterSeconds);
+
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: meSelect });
+    if (!user) return reply.code(404).send({ error: 'User not found' });
+    const events = await prisma.moderationEvent.findMany({
+      where: { OR: [{ userId }, { reporterId: userId }] },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, kind: true, source: true, roomId: true, category: true, severity: true, action: true, excerpt: true, createdAt: true, reporterId: true },
+    });
+    const me = toMe(user);
+    reply.header('Content-Disposition', 'attachment; filename="scale-privacidade.json"');
+    return reply.send({
+      exportedAt: new Date().toISOString(),
+      profile: me,
+      consent: {
+        ageVerifiedAt: user.ageVerifiedAt?.toISOString() ?? null,
+        screenShareConsentAt: user.screenShareConsentAt?.toISOString() ?? null,
+        screenShareConsentVersion: user.screenShareConsentVersion,
+      },
+      moderationEvents: events.map((e) => ({
+        id: e.id,
+        kind: e.kind,
+        source: e.source,
+        roomId: e.roomId,
+        category: e.category,
+        severity: e.severity,
+        action: e.action,
+        excerpt: e.excerpt,
+        createdAt: e.createdAt.toISOString(),
+        role: e.reporterId === userId ? 'reporter' : 'subject',
+      })),
+    });
   });
 
   // PUT /api/me/avatar — multipart com um arquivo `avatar` (ate 32 MB).

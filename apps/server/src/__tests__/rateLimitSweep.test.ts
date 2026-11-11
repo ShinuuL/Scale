@@ -38,6 +38,8 @@ describe('expurgo dos baldes de rate limit', () => {
       'googleOAuth',
       'loginEmail',
       'loginIp',
+      'moderationFrame',
+      'moderationReport',
       'profile',
       'refresh',
       'register',

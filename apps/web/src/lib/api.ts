@@ -6,10 +6,15 @@ import {
   directMessageSchema,
   dmSendSchema,
   friendsListSchema,
+  moderationConfigSchema,
+  screenShareGateSchema,
   startCallResponseSchema,
+  SCREEN_SHARE_CONSENT_VERSION,
   type ActiveCalls,
   type DirectMessage,
   type FriendsList,
+  type ModerationConfig,
+  type ScreenShareGate,
 } from '@scale/shared';
 import { createRoomSchema, authResponseSchema, roomResponseSchema, roomListItemSchema, metricsSchema } from './validation';
 
@@ -87,6 +92,27 @@ export interface MeUser {
   avatarUpdatedAt?: string | null;
   /** @nome unico; null = ainda nao escolheu (necessario para amizades). */
   username?: string | null;
+  /**
+   * Gate de partilha de tela (idade verificada + consentimento). Nunca traz a
+   * data de nascimento. Ausente = servidor antigo (trata como nao liberado).
+   */
+  screenShare?: ScreenShareGate;
+}
+
+/** Gate quando o DTO nao trouxe o campo (ou convidado). */
+export const GUEST_SCREEN_SHARE_GATE: ScreenShareGate = {
+  ageVerified: false,
+  isAdult: false,
+  consentVersion: null,
+  allowed: false,
+  reason: 'guest',
+};
+
+/** Gate efetivo do `me`: convidado ou DTO sem o campo = nao liberado. */
+export function screenShareGateOf(user: MeUser | null | undefined): ScreenShareGate {
+  if (!user) return GUEST_SCREEN_SHARE_GATE;
+  const parsed = screenShareGateSchema.safeParse(user.screenShare);
+  return parsed.success ? parsed.data : { ...GUEST_SCREEN_SHARE_GATE, reason: 'age' };
 }
 
 /** URL da propria foto, com versao para furar cache ao trocar. */
@@ -130,7 +156,11 @@ class ApiClient {
       retry.onRetry,
     );
 
-    const body = await response.json();
+    // 204 (PUT/DELETE de privacidade) e corpo vazio nao sao erro de parse.
+    const text = await response.text();
+    const body: { error?: string; details?: Record<string, string[]> } & Record<string, unknown> = text
+      ? (JSON.parse(text) as Record<string, unknown>)
+      : {};
 
     if (!response.ok) {
       const error: ApiError = {
@@ -291,6 +321,66 @@ class ApiClient {
 
   async setUsername(username: string): Promise<{ user: MeUser }> {
     return this.request('/api/me/username', { method: 'PUT', body: JSON.stringify({ username }) });
+  }
+
+  // ─── Privacidade e gate de partilha de tela ─────────────────
+  /** Data de nascimento (AAAA-MM-DD). O servidor so guarda e devolve booleanos. */
+  async setBirthDate(birthDate: string): Promise<{ ageVerified: boolean; isAdult: boolean }> {
+    const data = await this.request<unknown>('/api/me/age', {
+      method: 'PUT',
+      body: JSON.stringify({ birthDate }),
+    });
+    return z.object({ ageVerified: z.boolean(), isAdult: z.boolean() }).parse(data);
+  }
+
+  async deleteBirthDate(): Promise<void> {
+    await this.request('/api/me/age', { method: 'DELETE', body: '{}' });
+  }
+
+  /** Aceita o termo de partilha de tela na versao atual do @scale/shared. */
+  async giveScreenShareConsent(): Promise<void> {
+    await this.request('/api/me/screen-share-consent', {
+      method: 'PUT',
+      body: JSON.stringify({ version: SCREEN_SHARE_CONSENT_VERSION }),
+    });
+  }
+
+  async revokeScreenShareConsent(): Promise<void> {
+    await this.request('/api/me/screen-share-consent', { method: 'DELETE', body: '{}' });
+  }
+
+  /** Exportacao LGPD: JSON bruto como Blob para o download "Baixar meus dados". */
+  async exportPrivacyData(): Promise<Blob> {
+    const res = await fetch(`${this.baseUrl}/api/me/privacy/export`, { credentials: 'include' });
+    if (!res.ok) {
+      const error: ApiError = { error: `HTTP ${res.status}`, status: res.status };
+      throw error;
+    }
+    return res.blob();
+  }
+
+  /** Configuracao publica do assistente de moderacao. */
+  async getModerationConfig(): Promise<ModerationConfig> {
+    return moderationConfigSchema.parse(await this.request<unknown>('/api/moderation/config'));
+  }
+
+  /**
+   * Amostra de tela do sharer (JPEG pequeno). Multipart; o veredito chega por
+   * socket, a rota so responde 204. Ticket no header, nunca na URL.
+   */
+  async sendModerationFrame(roomId: string, frame: Blob, roomTicket: string): Promise<void> {
+    const form = new FormData();
+    form.append('frame', frame, 'frame.jpg');
+    const res = await fetch(`${this.baseUrl}/api/rooms/${encodeURIComponent(roomId)}/moderation/frame`, {
+      method: 'POST',
+      body: form,
+      credentials: 'include',
+      headers: { 'X-Room-Ticket': roomTicket },
+    });
+    if (!res.ok) {
+      const error: ApiError = { error: `HTTP ${res.status}`, status: res.status };
+      throw error;
+    }
   }
 
   // ─── Amizades e mensagens privadas ──────────────────────────

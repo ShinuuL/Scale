@@ -457,3 +457,33 @@ export function recordRoomAuthFailure(ip: string, roomId: string): void {
 export function resetRoomAuthFailures(ip: string, roomId: string): void {
   reset(roomAuthStore, roomAuthKey(ip, roomId));
 }
+
+// Amostras de tela para moderacao: 6 / min por SUJEITO do room ticket
+// (`u:<userId>`; so logado compartilha tela). O cliente manda uma a cada
+// MODERATION_FRAME_INTERVAL_SEC (>= 10 s); o teto segura quem tenta usar a
+// rota como oraculo do classificador.
+const MODERATION_FRAME_WINDOW_MS = 60_000;
+const MODERATION_FRAME_MAX = 6;
+const moderationFrameStore = createBucket('moderationFrame');
+
+export function isModerationFrameRateLimited(subject: string): RateLimitResult {
+  return take(moderationFrameStore, subject, MODERATION_FRAME_WINDOW_MS, MODERATION_FRAME_MAX);
+}
+
+export function resetModerationFrameRateLimit(subject: string): void {
+  reset(moderationFrameStore, subject);
+}
+
+// Denuncias (`moderation:report`): 10 / 10 min por SOCKET. Cada uma grava um
+// ModerationEvent e avisa o dono da sala.
+const MODERATION_REPORT_WINDOW_MS = 10 * 60_000;
+const MODERATION_REPORT_MAX = 10;
+const moderationReportStore = createBucket('moderationReport');
+
+export function isModerationReportRateLimited(socketId: string): RateLimitResult {
+  return take(moderationReportStore, socketId, MODERATION_REPORT_WINDOW_MS, MODERATION_REPORT_MAX);
+}
+
+export function resetModerationReportRateLimit(socketId: string): void {
+  reset(moderationReportStore, socketId);
+}

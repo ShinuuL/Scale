@@ -1,7 +1,7 @@
 import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
 import { prisma } from './lib/prisma.js';
-import { getEnv } from './lib/env.js';
+import { getEnv, isScreenModerationEnabled } from './lib/env.js';
 import { getGuestCookieSecret } from './lib/guestId.js';
 import { authPlugin } from './plugins/auth.js';
 import { corsPlugin } from './plugins/cors.js';
@@ -17,6 +17,7 @@ import { profileRoutes } from './routes/profile.js';
 import { socialRoutes } from './routes/social.js';
 import { callRoutes } from './routes/calls.js';
 import { githubAuthRoutes, googleAuthRoutes } from './routes/oauthAuth.js';
+import { moderationRoutes } from './routes/moderation.js';
 import { createSocketServer } from './socket/handler.js';
 import { gcDeletedFiles, gcOrphanUploads } from './lib/uploads.js';
 import { sweepExpiredRooms, retryPendingRoomDeletions, ROOM_SWEEP_INTERVAL_MS } from './lib/roomDeletion.js';
@@ -67,6 +68,7 @@ await server.register(socialRoutes);
 await server.register(callRoutes);
 await server.register(githubAuthRoutes);
 await server.register(googleAuthRoutes);
+await server.register(moderationRoutes);
 
 // Health check
 server.get('/health', async () => {
@@ -82,6 +84,8 @@ server.get('/api/health', async () => {
 const httpServer = server.server;
 const io = createSocketServer(httpServer);
 (server as unknown as Record<string, unknown>).io = io;
+// Avisa uma vez se MODERATION_SCREEN=true sem provedor claude (fica desligada).
+isScreenModerationEnabled(server.log);
 
 // GC diário de arquivos deletados há >7d (libera quota; logs em uploads.ts)
 let gcRunning = false;

@@ -10,7 +10,10 @@ import {
   isChatRateLimited,
   isRoomAuthLocked,
   recordRoomAuthFailure,
+  isModerationReportRateLimited,
 } from '../lib/rateLimit.js';
+import { computeScreenShareGate, GUEST_SCREEN_SHARE_GATE, screenShareGateSelect } from '../lib/screenShareGate.js';
+import { moderateText, recordModerationEvent } from '../lib/moderation/index.js';
 import { GUEST_COOKIE_NAME, newGuestId, serializeGuestCookie, verifyGuestCookie } from '../lib/guestId.js';
 import { signRoomTicket, ticketSubject } from '../lib/roomTicket.js';
 import { buildIceServers } from '../lib/turnCredentials.js';
@@ -36,8 +39,14 @@ import {
   chatDeleteSchema,
   MAX_PARTICIPANTS,
   parseGuestName,
+  moderationReportSchema,
+  moderationStopShareSchema,
+  type ModerationActionPayload,
+  type ModerationNoticePayload,
+  type ModerationWarningPayload,
   type PeerInfo,
   type RoomDeletedEvent,
+  type ScreenShareGate,
 } from '@scale/shared';
 
 interface SocketUser {
@@ -111,6 +120,24 @@ export function isUserInRoom(roomId: string, userId: string): boolean {
 /** Quantos peers estao conectados agora na sala. */
 export function getRoomPeerCount(roomId: string): number {
   return roomPeers.get(roomId)?.size ?? 0;
+}
+
+/** socket.id de um peer (aba) do usuario logado que esta AGORA na sala. */
+export function findUserSocketInRoom(roomId: string, userId: string): string | null {
+  const peers = roomPeers.get(roomId);
+  if (!peers) return null;
+  for (const peer of peers.values()) if (peer.userId === userId) return peer.socketId;
+  return null;
+}
+
+/** Todas as abas do dono da sala que estao NELA agora (avisos de moderacao). */
+export function getRoomOwnerSocketIds(roomId: string, ownerId: string | null): string[] {
+  if (!ownerId) return [];
+  const peers = roomPeers.get(roomId);
+  if (!peers) return [];
+  const ids: string[] = [];
+  for (const peer of peers.values()) if (peer.userId === ownerId) ids.push(peer.socketId);
+  return ids;
 }
 
 /** Valor de um cookie no header `Cookie` do handshake (undefined se ausente). */
@@ -319,6 +346,16 @@ export function createSocketServer(httpServer: HttpServer): Server {
           clearTimeout(existingTimer);
           emptyTimers.delete(roomId);
         }
+
+        // Gate de partilha de tela: lido UMA vez por join (socket.data), nao a
+        // cada sinal. Convidado nunca compartilha. Mudanca de idade/termo
+        // reemite via REST (broadcastScreenShareGate em routes/profile.ts).
+        let gate: ScreenShareGate = GUEST_SCREEN_SHARE_GATE;
+        if (user.userId) {
+          const row = await prisma.user.findUnique({ where: { id: user.userId }, select: screenShareGateSelect });
+          gate = computeScreenShareGate(row);
+        }
+        socket.data.screenShare = gate;
 
         // Add peer to room
         peers.set(socket.id, {
@@ -545,6 +582,15 @@ export function createSocketServer(httpServer: HttpServer): Server {
         callback?.({ error: 'Target peer not in room' });
         return;
       }
+      // Enforcement do gate no SERVIDOR: ligar a partilha sem idade/termo e
+      // recusado (nao repassa). Desligar sempre passa.
+      if (isScreenSharing) {
+        const gate: ScreenShareGate = socket.data.screenShare ?? GUEST_SCREEN_SHARE_GATE;
+        if (!gate.allowed) {
+          callback?.({ error: 'Partilha de tela nao liberada', code: 'SCREEN_SHARE_NOT_ALLOWED', reason: gate.reason });
+          return;
+        }
+      }
 
       io.to(targetPeerId).emit('signal:screen-share-state', {
         fromPeerId: socket.id,
@@ -632,6 +678,19 @@ export function createSocketServer(httpServer: HttpServer): Server {
       const intersected = rawMentions.filter((n) => peersNames.has(n)).slice(0, 8);
 
       const user: SocketUser = socket.data.user;
+
+      // Moderacao ANTES de gravar/retransmitir (spec 4.1): high bloqueia,
+      // medium entrega e avisa so o autor.
+      const verdict = await moderateText(content);
+      if (verdict.severity === 'high') {
+        void recordModerationEvent({
+          kind: 'text', source: 'chat', roomId, userId: user.userId, guestId: user.userId ? null : (user.guestId ?? null),
+          category: verdict.category, severity: verdict.severity, action: 'blocked', excerpt: content,
+        });
+        callback?.({ error: 'Mensagem bloqueada pela moderacao', code: 'MODERATED', category: verdict.category });
+        return;
+      }
+
       let savedMsg: ChatMessageRow;
       if (room.isPersistent) {
         const created = await prisma.chatMessage.create({
@@ -665,6 +724,13 @@ export function createSocketServer(httpServer: HttpServer): Server {
       incChatMessages(room.isPersistent ? 'persistent' : 'temporary');
 
       emitChatMessage(io, roomId, savedMsg);
+      if (verdict.severity === 'medium') {
+        void recordModerationEvent({
+          kind: 'text', source: 'chat', roomId, userId: user.userId, guestId: user.userId ? null : (user.guestId ?? null),
+          category: verdict.category, severity: verdict.severity, action: 'warned', excerpt: content,
+        });
+        socket.emit('moderation:warning', chatWarning(roomId, verdict.category));
+      }
       // fan-out mention
       for (const name of intersected) {
         for (const [sid, peer] of peers.entries()) {
@@ -729,6 +795,16 @@ export function createSocketServer(httpServer: HttpServer): Server {
         return;
       }
 
+      const verdict = await moderateText(content);
+      if (verdict.severity === 'high') {
+        void recordModerationEvent({
+          kind: 'text', source: 'chat', roomId, userId: user.userId, guestId: user.userId ? null : (user.guestId ?? null),
+          category: verdict.category, severity: verdict.severity, action: 'blocked', excerpt: content,
+        });
+        callback?.({ error: 'Mensagem bloqueada pela moderacao', code: 'MODERATED', category: verdict.category });
+        return;
+      }
+
       const updated = await prisma.chatMessage.update({
         where: { id: messageId },
         data: { prevContent: msg.content, content, editedAt: new Date() },
@@ -742,6 +818,100 @@ export function createSocketServer(httpServer: HttpServer): Server {
         // `prevContent` nunca trafega: a UI so precisa saber que foi editada.
         edited: true,
       });
+      if (verdict.severity === 'medium') {
+        void recordModerationEvent({
+          kind: 'text', source: 'chat', roomId, userId: user.userId, guestId: user.userId ? null : (user.guestId ?? null),
+          category: verdict.category, severity: verdict.severity, action: 'warned', excerpt: content,
+        });
+        socket.emit('moderation:warning', chatWarning(roomId, verdict.category));
+      }
+      callback?.({ success: true });
+    });
+
+    // Denuncia de um participante (spec 4.3): grava o evento e avisa o dono
+    // da sala se ele estiver nela agora. Quem denuncia nunca sabe o resultado.
+    socket.on('moderation:report', async (data, callback) => {
+      if (isRateLimited(`socket:${socket.id}`)) {
+        callback?.({ error: 'Rate limit exceeded. Max 30 messages/second.' });
+        return;
+      }
+      const parsed = moderationReportSchema.safeParse(data);
+      if (!parsed.success) {
+        callback?.({ error: 'Invalid payload', details: parsed.error.flatten() });
+        return;
+      }
+      const { roomId, targetPeerId, reason, details } = parsed.data;
+      if (!senderInRoom(roomId)) {
+        callback?.({ error: 'Not in room' });
+        return;
+      }
+      const peers = roomPeers.get(roomId);
+      const target = peers?.get(targetPeerId);
+      if (!target) {
+        callback?.({ error: 'Target peer not in room' });
+        return;
+      }
+      if (targetPeerId === socket.id) {
+        callback?.({ error: 'Cannot report yourself' });
+        return;
+      }
+      const limit = isModerationReportRateLimited(socket.id);
+      if (limit.limited) {
+        callback?.({ error: 'Too many reports. Try again later.', retryAfterSeconds: limit.retryAfterSeconds });
+        return;
+      }
+
+      const reporter: SocketUser = socket.data.user;
+      const category = reason === 'other' ? 'none' : reason;
+      await recordModerationEvent({
+        kind: 'report', source: 'user', roomId,
+        userId: target.userId, guestId: target.userId ? null : (target.guestId ?? null),
+        reporterId: reporter.userId,
+        category, severity: 'medium', action: 'reported', excerpt: details ?? null,
+      });
+
+      const room = await prisma.room.findUnique({ where: { id: roomId }, select: { ownerId: true } });
+      const notice: ModerationNoticePayload = { roomId, peerId: targetPeerId, kind: 'report', category };
+      for (const sid of getRoomOwnerSocketIds(roomId, room?.ownerId ?? null)) {
+        if (sid !== socket.id) io.to(sid).emit('moderation:notice', notice);
+      }
+      callback?.({ success: true });
+    });
+
+    // Dono da sala interrompe a partilha de tela de um participante.
+    socket.on('moderation:stop-share', async (data, callback) => {
+      if (isRateLimited(`socket:${socket.id}`)) {
+        callback?.({ error: 'Rate limit exceeded. Max 30 messages/second.' });
+        return;
+      }
+      const parsed = moderationStopShareSchema.safeParse(data);
+      if (!parsed.success) {
+        callback?.({ error: 'Invalid payload', details: parsed.error.flatten() });
+        return;
+      }
+      const { roomId, targetPeerId } = parsed.data;
+      if (!senderInRoom(roomId)) {
+        callback?.({ error: 'Not in room' });
+        return;
+      }
+      const target = roomPeers.get(roomId)?.get(targetPeerId);
+      if (!target) {
+        callback?.({ error: 'Target peer not in room' });
+        return;
+      }
+      const me: SocketUser = socket.data.user;
+      const room = await prisma.room.findUnique({ where: { id: roomId }, select: { ownerId: true } });
+      if (!me.userId || !room?.ownerId || room.ownerId !== me.userId) {
+        callback?.({ error: 'Not room owner', code: 'NOT_OWNER' });
+        return;
+      }
+      void recordModerationEvent({
+        kind: 'report', source: 'user', roomId,
+        userId: target.userId, guestId: target.userId ? null : (target.guestId ?? null),
+        reporterId: me.userId, category: 'none', severity: 'high', action: 'stopped-share',
+      });
+      const action: ModerationActionPayload = { roomId, action: 'stop-screen-share', category: 'none', by: 'owner' };
+      io.to(targetPeerId).emit('moderation:action', action);
       callback?.({ success: true });
     });
 
@@ -890,6 +1060,15 @@ function handleLeaveRoom(
   }
 
   socket.leave(roomId);
+}
+
+/** Aviso ao autor de mensagem marcada como `medium`. */
+function chatWarning(roomId: string, category: ModerationWarningPayload['category']): ModerationWarningPayload {
+  return {
+    roomId,
+    category,
+    text: 'Sua mensagem foi marcada pelo assistente de moderacao. Mantenha o respeito com os participantes.',
+  };
 }
 
 /** Leitor (para isMine) a partir do usuario do socket. */
