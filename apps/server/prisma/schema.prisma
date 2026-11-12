@@ -37,6 +37,7 @@ model User {
   username               Username?
   githubAccount          GithubAccount?
   googleAccount          GoogleAccount?
+  adminGrant             AdminGrant?
   friendRequestsSent     Friendship[]    @relation("FriendshipRequester")
   friendRequestsReceived Friendship[]    @relation("FriendshipAddressee")
   directMessagesSent     DirectMessage[] @relation("DirectMessageSender")
@@ -244,6 +245,29 @@ model ModerationAuditLog {
   adminName String
   changes   String
   createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+// Admin concedido pela UI (spec docs/superpowers/specs/2026-11-11-admin-usuarios-design.md).
+// Admin raiz (ADMIN_EMAILS) NAO tem linha aqui: vem do .env.
+model AdminGrant {
+  userId      String   @id
+  grantedById String
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Auditoria de concessao/remocao de admin. Nomes copiados no momento do ato
+// (sobrevive a renomeacao/remocao da conta).
+model AdminRoleAudit {
+  id         String   @id @default(uuid())
+  actorId    String
+  actorName  String
+  targetId   String
+  targetName String
+  action     String // 'grant' | 'revoke'
+  createdAt  DateTime @default(now())
 
   @@index([createdAt])
 }

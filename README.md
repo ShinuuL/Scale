@@ -322,6 +322,7 @@ cd apps/server && npx prisma studio       # Interface visual do DB
 - [Cliente desktop](docs/desktop.md) - Electron: rodar, gerar instalador, trocar servidor, seguranca
 - [Assistente de moderacao](docs/moderacao.md) - Arquitetura, provedores, custos, variaveis e troubleshooting
 - Painel de administracao da moderacao em `/admin/moderation` (so admin; ver [docs/moderacao.md](docs/moderacao.md))
+- [Administracao](docs/administracao.md) - Hub `/admin`, papeis raiz (.env) e concedido, gestao de administradores e auditoria
 - [LGPD da moderacao](docs/lgpd-moderacao.md) - Inventario de tratamentos, bases legais, LIA, ROPA e direitos do titular
 
 ## Convencoes

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { io, Socket } from 'socket.io-client';
 import type { ChatMessage } from '@/hooks/useChat';
+import { meAdminEventSchema, type MeAdminEvent } from '@/lib/api';
 import {
   moderationActionSchema,
   moderationConfigSchema,
@@ -115,6 +116,8 @@ export interface UseSocketReturn {
   onModerationConfig: (cb: (config: ModerationConfig) => void) => () => void;
   /** Gate de partilha de tela mudou (idade/consentimento salvos pelo REST). */
   onMeScreenShare: (cb: (gate: ScreenShareGate) => void) => () => void;
+  /** Papel de admin desta conta mudou (concedido/removido por outro admin). */
+  onMeAdmin: (cb: (data: MeAdminEvent) => void) => () => void;
   /** Denuncia um participante (balde no servidor: 10 / 10 min). */
   emitModerationReport: (payload: ModerationReportPayload) => Promise<void>;
   /** Dono da sala: encerra a partilha de tela de um peer. */
@@ -148,6 +151,7 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
     moderationNotice: [] as Array<(data: ModerationNoticePayload) => void>,
     moderationConfig: [] as Array<(config: ModerationConfig) => void>,
     meScreenShare: [] as Array<(gate: ScreenShareGate) => void>,
+    meAdmin: [] as Array<(data: MeAdminEvent) => void>,
   });
 
   useEffect(() => {
@@ -257,6 +261,11 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
       const parsed = screenShareGateSchema.safeParse(data);
       if (!parsed.success) return;
       callbacksRef.current.meScreenShare.forEach((cb) => cb(parsed.data));
+    });
+    sock.on('me:admin', (data: unknown) => {
+      const parsed = meAdminEventSchema.safeParse(data);
+      if (!parsed.success) return;
+      callbacksRef.current.meAdmin.forEach((cb) => cb(parsed.data));
     });
 
     // Reconexão: ver o handler de 'connect' acima. Os consumidores recebem o
@@ -557,6 +566,14 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
     };
   }, []);
 
+  const onMeAdmin = useCallback((cb: (data: MeAdminEvent) => void): (() => void) => {
+    callbacksRef.current.meAdmin.push(cb);
+    return () => {
+      const idx = callbacksRef.current.meAdmin.indexOf(cb);
+      if (idx >= 0) callbacksRef.current.meAdmin.splice(idx, 1);
+    };
+  }, []);
+
   const emitModerationReport = useCallback((payload: ModerationReportPayload): Promise<void> => {
     return new Promise((resolve, reject) => {
       const socket = socketRef.current;
@@ -613,6 +630,7 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
       onModerationNotice,
       onModerationConfig,
       onMeScreenShare,
+      onMeAdmin,
       emitModerationReport,
       emitModerationStopShare,
       guestName,
@@ -644,6 +662,7 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
       onModerationNotice,
       onModerationConfig,
       onMeScreenShare,
+      onMeAdmin,
       emitModerationReport,
       emitModerationStopShare,
       setGuestName,

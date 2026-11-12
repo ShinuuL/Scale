@@ -110,8 +110,8 @@ function parseEmailCsv(csv: string): string[] {
 
 /**
  * Emails dos administradores do sistema: ADMIN_EMAILS ∪ METRICS_ADMIN_EMAILS
- * (legado). Lido do ambiente a cada chamada (barato; os testes trocam a lista
- * sem reiniciar o cache do getEnv). Fonte UNICA para toda checagem de admin.
+ * (legado) = admins RAIZ. Lido do ambiente a cada chamada (barato; os testes trocam a lista
+ * sem reiniciar o cache do getEnv). Checagem de admin (raiz OU AdminGrant): lib/adminRole.ts.
  */
 export function getAdminEmails(): Set<string> {
   const parsed = adminAuthSchema.parse(process.env);
@@ -119,13 +119,6 @@ export function getAdminEmails(): Set<string> {
     ...parseEmailCsv(parsed.ADMIN_EMAILS),
     ...parseEmailCsv(parsed.METRICS_ADMIN_EMAILS),
   ]);
-}
-
-/** true quando o email (do JWT) pertence a um administrador do sistema. */
-export function isSystemAdmin(email: string | null | undefined): boolean {
-  const normalized = email?.trim().toLowerCase();
-  if (!normalized) return false;
-  return getAdminEmails().has(normalized);
 }
 
 export interface MetricsAuthConfig {

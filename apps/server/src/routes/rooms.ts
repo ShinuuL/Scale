@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../lib/prisma.js';
 import { isRoomCreateRateLimited, isRoomDeleteRateLimited } from '../lib/rateLimit.js';
-import { isSystemAdmin } from '../lib/env.js';
+import { isAdminUser } from '../lib/adminRole.js';
 import { purgeRoom } from '../lib/roomDeletion.js';
 import { getClientIp } from '../lib/clientIp.js';
 import { createRoomSchema as sharedCreateRoomSchema } from '@scale/shared';
@@ -19,16 +19,17 @@ const inviteHeaderSchema = z.string().uuid();
 const roomIdParamSchema = z.object({ id: z.string().uuid() });
 
 /**
- * Pode apagar a sala: o dono (ownerId) ou um admin do sistema (ADMIN_EMAILS /
- * METRICS_ADMIN_EMAILS). Anonimo nunca.
+ * Pode apagar a sala: o dono (ownerId) ou um admin (raiz por ADMIN_EMAILS ou
+ * concedido via AdminGrant). Anonimo nunca. `isAdmin` vem de isAdminUser,
+ * resolvido uma vez por request (a lista de salas nao consulta por item).
  */
 function canDeleteRoom(
   room: { ownerId: string | null },
   userId: string | undefined,
-  email: string | undefined,
+  isAdmin: boolean,
 ): boolean {
   if (!userId) return false;
-  return room.ownerId === userId || isSystemAdmin(email);
+  return room.ownerId === userId || isAdmin;
 }
 
 const createRoomSchema = sharedCreateRoomSchema.extend({
@@ -144,7 +145,7 @@ export async function roomRoutes(fastify: FastifyInstance): Promise<void> {
 
     // Don't expose inviteToken unless requester is the owner
     const isOwner = Boolean(request.userId && room.ownerId === request.userId);
-    const canDelete = canDeleteRoom(room, request.userId, request.userEmail);
+    const canDelete = canDeleteRoom(room, request.userId, await isAdminUser({ userId: request.userId, email: request.userEmail }));
 
     // Sala PRIVADA sem credencial (nem dono, nem X-Room-Invite valido): so o
     // minimo para a tela de entrada decidir o fluxo (pedir senha/convite).
@@ -216,6 +217,7 @@ export async function roomRoutes(fastify: FastifyInstance): Promise<void> {
       });
 
       const counts = getRoomPeersSnapshot();
+      const requesterIsAdmin = await isAdminUser({ userId: request.userId, email: request.userEmail });
       const roomsPublic = rooms.map((room) => ({
         id: room.id,
         name: room.name,
@@ -223,7 +225,7 @@ export async function roomRoutes(fastify: FastifyInstance): Promise<void> {
         isPersistent: room.isPersistent,
         hasPassword: room.passwordHash !== null,
         // Permissao calculada para QUEM pede; o ownerId em si nao sai.
-        canDelete: canDeleteRoom(room, request.userId, request.userEmail),
+        canDelete: canDeleteRoom(room, request.userId, requesterIsAdmin),
       }));
 
       return reply.send({ rooms: roomsPublic });
@@ -307,7 +309,7 @@ export async function roomRoutes(fastify: FastifyInstance): Promise<void> {
       }
 
       const isOwner = room.ownerId === userId;
-      const isAdmin = isSystemAdmin(request.userEmail);
+      const isAdmin = await isAdminUser({ userId, email: request.userEmail });
       if (!isOwner && !isAdmin) {
         return reply
           .code(403)

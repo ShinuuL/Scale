@@ -29,7 +29,7 @@ import { useToast } from '@/components/ui/Toast';
 import { MiniCallBar } from '@/components/room/MiniCallBar';
 import { Icon } from '@/components/ui/Icon';
 import { ProfileMenu } from '@/components/ui/ProfileMenu';
-import { api, avatarUrl, screenShareGateOf, type MeUser } from '@/lib/api';
+import { api, avatarUrl, applyMeAdmin, screenShareGateOf, type MeUser } from '@/lib/api';
 import { copyText } from '@/lib/clipboard';
 import { subscribeAudioDeviceChange } from '@/lib/audioDevices';
 import { roomUrl } from '@/lib/roomLink';
@@ -191,6 +191,15 @@ export function RoomSession({ roomId, visible, onJoinedChange }: RoomSessionProp
     () =>
       socket.onMeScreenShare((gate) => {
         setAccount((prev) => (prev ? { ...prev, screenShare: gate } : prev));
+      }),
+    [socket],
+  );
+
+  // Papel de admin concedido/removido por outro admin: o menu muda sem recarregar.
+  useEffect(
+    () =>
+      socket.onMeAdmin((event) => {
+        setAccount((prev) => (prev ? applyMeAdmin(prev, event) : prev));
       }),
     [socket],
   );

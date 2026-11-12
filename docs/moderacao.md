@@ -151,8 +151,10 @@ documenta. Nenhuma delas precisa de override no `docker-compose.prod.yml`.
 
 ## 4.1 Painel de administração
 
-Página `/admin/moderation` (menu de perfil > "Administração"), visível só para
-admin do sistema (`ADMIN_EMAILS`; `GET /api/auth/me` devolve `isAdmin`).
+Página `/admin/moderation` (menu de perfil > "Administração" > Moderação, ou
+Configurações > Administração), visível só para admin do sistema (raiz em
+`ADMIN_EMAILS` ou concedido; ver `docs/administracao.md`; `GET /api/auth/me`
+devolve `isAdmin` e `adminSource`).
 Quem não é admin é mandado para a home com aviso; o backend repete a checagem
 (403) em toda rota. Spec: `docs/superpowers/specs/2026-11-11-admin-moderacao-design.md`.
 

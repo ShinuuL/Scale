@@ -20,6 +20,7 @@ import { callRoutes } from './routes/calls.js';
 import { githubAuthRoutes, googleAuthRoutes } from './routes/oauthAuth.js';
 import { moderationRoutes } from './routes/moderation.js';
 import { adminModerationRoutes } from './routes/adminModeration.js';
+import { adminUsersRoutes } from './routes/adminUsers.js';
 import { createSocketServer } from './socket/handler.js';
 import { gcDeletedFiles, gcOrphanUploads } from './lib/uploads.js';
 import { sweepExpiredRooms, retryPendingRoomDeletions, ROOM_SWEEP_INTERVAL_MS } from './lib/roomDeletion.js';
@@ -72,6 +73,7 @@ await server.register(githubAuthRoutes);
 await server.register(googleAuthRoutes);
 await server.register(moderationRoutes);
 await server.register(adminModerationRoutes);
+await server.register(adminUsersRoutes);
 
 // Health check
 server.get('/health', async () => {

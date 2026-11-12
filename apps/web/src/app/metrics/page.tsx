@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import type { Metrics } from '@/lib/validation';
+import { BackToAdminLink } from '@/components/admin/BackToAdminLink';
 import { Badge } from '@/components/ui/Badge';
 import { AppShell } from '@/components/layout/AppShell';
 import { HelpSidebar } from '@/components/layout/HelpSidebar';
@@ -107,7 +108,7 @@ export default function MetricsPage() {
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-8 sm:px-8">
       <div className="mx-auto max-w-5xl space-y-8">
         <header className="flex flex-wrap items-start justify-between gap-4">
-          <div><h2 className="text-[28px] font-semibold leading-9 tracking-tight">Métricas do sistema</h2><p className="mt-2 text-sm text-ink-secondary">{metrics ? 'Atualizado a cada 10 segundos.' : loading ? 'Carregando métricas...' : 'Acesso restrito ao servidor.'}</p></div>
+          <div><BackToAdminLink /><h2 className="text-[28px] font-semibold leading-9 tracking-tight">Métricas do sistema</h2><p className="mt-2 text-sm text-ink-secondary">{metrics ? 'Atualizado a cada 10 segundos.' : loading ? 'Carregando métricas...' : 'Acesso restrito ao servidor.'}</p></div>
           <Badge variant={needsAuth ? 'info' : error ? 'error' : loading ? 'default' : 'success'}>{needsAuth ? 'Requer login' : error ? 'Indisponível' : loading ? 'Conectando...' : 'Conectado'}</Badge>
         </header>
 
