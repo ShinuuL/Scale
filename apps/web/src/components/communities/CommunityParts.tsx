@@ -1,6 +1,7 @@
 'use client';
 
 import { Button as AriaButton, Menu, MenuItem, MenuTrigger, Popover } from 'react-aria-components';
+import { api } from '@/lib/api';
 import { Icon } from '@/components/ui/Icon';
 import { Tooltip } from '@/components/ui/Tooltip';
 import type { ChannelKind, CommunityRole, CommunityVoiceState } from '@scale/shared';
@@ -9,6 +10,7 @@ export interface CommunitySummary {
   id: string;
   name: string;
   role: CommunityRole;
+  iconVersion?: string | null;
 }
 export interface Channel {
   id: string;
@@ -63,7 +65,13 @@ export function CommunityRail({
               onClick={() => onSelect(community.id)}
               className={`${railButton} ${community.id === selected ? 'btn-primary' : 'bg-surface-hover text-ink-muted hover:text-ink-primary'}`}
             >
-              {community.name.slice(0, 2).toLocaleUpperCase('pt-BR')}
+              {community.iconVersion ? (
+                // Icone privado (exige sessao): <img> simples, sem otimizacao do Next.
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={api.communityIconUrl(community.id, community.iconVersion)} alt="" className="h-full w-full rounded-xl object-cover" />
+              ) : (
+                community.name.slice(0, 2).toLocaleUpperCase('pt-BR')
+              )}
             </button>
           </Tooltip>
         </div>

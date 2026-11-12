@@ -6,6 +6,7 @@ import { AriaRouter } from '@/components/AriaRouter';
 import { RoomHost } from '@/components/room/RoomHost';
 import { CallCenter } from '@/components/calls/CallCenter';
 import { ApplicationFeatures } from '@/components/pwa/ApplicationFeatures';
+import { UpdatePrompt } from '@/components/pwa/UpdatePrompt';
 
 export const metadata: Metadata = {
   title: 'Scale — Voz, tela e conversa',
@@ -49,6 +50,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           {/* Chamadas entre amigos: tela tocando e "Chamando…" em qualquer pagina. */}
           <CallCenter />
           <ApplicationFeatures />
+          <UpdatePrompt />
         </AriaRouter>
       </body>
     </html>

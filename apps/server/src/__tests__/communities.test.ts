@@ -9,12 +9,13 @@ import { io as ioClient, type Socket } from 'socket.io-client';
 import { prisma } from '../lib/prisma.js';
 import { signToken } from '../lib/auth.js';
 import { resetEnv } from '../lib/env.js';
-import { resetChatRateLimit, resetCommunityInviteRateLimit } from '../lib/rateLimit.js';
+import { resetChatRateLimit, resetCommunityInviteRateLimit, resetProfileUpdateRateLimit } from '../lib/rateLimit.js';
 import { authPlugin } from '../plugins/auth.js';
 import { communityRoutes } from '../routes/communities.js';
 import { roomRoutes } from '../routes/rooms.js';
 import { messagesRoutes } from '../routes/messages.js';
 import { filesRoutes } from '../routes/files.js';
+import { communityIconRoutes } from '../routes/communityIcon.js';
 import { turnRoutes } from '../routes/turn.js';
 import { createSocketServer } from '../socket/handler.js';
 
@@ -80,6 +81,7 @@ describe('comunidades', () => {
     await app.register(messagesRoutes);
     await app.register(multipart, { limits: { fileSize: 15_000_000, files: 5 } });
     await app.register(filesRoutes);
+    await app.register(communityIconRoutes);
     await app.register(turnRoutes);
     await app.listen({ port: 0, host: '127.0.0.1' });
     const server: HttpServer = app.server;
@@ -387,6 +389,36 @@ describe('comunidades', () => {
     const after = (await inject('member', 'GET', `/api/communities/${id}`)).json() as { roles: unknown[]; members: Array<{ userId: string; customRoleId: string | null }> };
     expect(after.roles).toEqual([]);
     expect(after.members.find((m) => m.userId === users.member.id)?.customRoleId).toBeNull();
+  });
+
+  it('icone da comunidade: so o dono troca e remove; so membro ve', async () => {
+    const id = await create();
+    await join(id, 'member');
+    resetProfileUpdateRateLimit(users.owner.id);
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52]);
+    const put = (who: Who, content: Buffer, type = 'image/png') => {
+      const boundary = `----scale${Math.random().toString(16).slice(2)}`;
+      const crlf = '\r\n';
+      const head = [`--${boundary}`, 'Content-Disposition: form-data; name="icon"; filename="icone.png"', `Content-Type: ${type}`, '', ''].join(crlf);
+      return app.inject({ method: 'PUT', url: `/api/communities/${id}/icon`, payload: Buffer.concat([Buffer.from(head), content, Buffer.from(`${crlf}--${boundary}--${crlf}`)]), headers: { cookie: `token=${users[who].token}`, 'content-type': `multipart/form-data; boundary=${boundary}` } });
+    };
+    expect((await inject('member', 'GET', `/api/communities/${id}/icon`)).statusCode).toBe(404);
+    expect((await put('member', png)).statusCode).toBe(403);
+    expect((await put('outsider', png)).statusCode).toBe(404);
+    expect((await put('owner', Buffer.from('GIF89a-nao-permitido'), 'image/gif')).statusCode).toBe(400);
+    const saved = await put('owner', png);
+    expect(saved.statusCode).toBe(200);
+    const version = (saved.json() as { iconVersion: string }).iconVersion;
+    expect(version).toEqual(expect.any(String));
+    const icon = await inject('member', 'GET', `/api/communities/${id}/icon`);
+    expect(icon.statusCode).toBe(200);
+    expect(icon.headers['content-type']).toBe('image/png');
+    expect((await inject('outsider', 'GET', `/api/communities/${id}/icon`)).statusCode).toBe(404);
+    expect((await inject('member', 'GET', `/api/communities/${id}`)).json()).toMatchObject({ community: { iconVersion: version } });
+    expect((await inject('member', 'GET', '/api/communities')).json()).toMatchObject({ communities: expect.arrayContaining([expect.objectContaining({ id, iconVersion: version })]) });
+    expect((await inject('member', 'DELETE', `/api/communities/${id}/icon`)).statusCode).toBe(403);
+    expect((await inject('owner', 'DELETE', `/api/communities/${id}/icon`)).statusCode).toBe(200);
+    expect((await inject('member', 'GET', `/api/communities/${id}/icon`)).statusCode).toBe(404);
   });
 
   it('recusa criar comunidade acima do limite e aceitar convite de comunidade cheia', async () => {

@@ -10,7 +10,7 @@ const all = { manageChannels: true, manageInvites: true, manageMessages: true, k
 const role = { id: 'r1', name: 'Moderador', color: '#22aa88', permissions: { ...none, manageMessages: true } };
 function detail(overrides: Partial<CommunityDetail>): CommunityDetail {
   return {
-    community: { id: 'c1', name: 'Grupo', ownerId: 'dono' },
+    community: { id: 'c1', name: 'Grupo', ownerId: 'dono', iconVersion: null },
     myRole: 'OWNER',
     myPermissions: all,
     roles: [role],
