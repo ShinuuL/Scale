@@ -1,5 +1,37 @@
 # Estado de implantação e pendências
 
+## 2026-11-09 — comunidades (servidor + web) e desktop nativo Rust (R1)
+
+Estado local, sem commit e sem implantação. Branch `feat/scale-interface`.
+Plano e contrato: `docs/plano-comunidades-desktop-nativo.md`.
+
+- Servidor: comunidades só por convite (código 128 bits, só hash no banco, até 7 dias,
+  `maxUses`, aceite atômico), cargos OWNER/ADMIN/MEMBER, canais TEXT/VOICE como `Room`
+  com `communityId`, chat de canal REST + socket (`community:subscribe` com `voiceStates`,
+  edição/exclusão), membership checada em `join-room`, histórico, arquivos e TURN.
+  Requer `prisma db push` (tabelas novas e colunas anuláveis em `Room`).
+  **294 testes** verdes; lint (2 avisos antigos) e tsc ok. Revisão cruzada (Kimi) sem
+  crítico/alto; médio e baixos corrigidos.
+- Web: `/communities` (trilho, canais, chat, membros; gavetas abaixo de 1024px, membros
+  abaixo de 1280px), `/invite#código`, `next` restrito a `/invite` e `/communities`.
+  **212 testes**, lint e build ok. Validado no navegador com banco descartável: login com
+  `next`, layout de 4 colunas, envio em tempo real, convite gerado e mostrado uma vez.
+  Erro antigo de tsc em `useRoomDeleted.test.ts:37` não é deste trabalho.
+- Desktop nativo `apps/desktop-native` (Rust, egui): conectar ao servidor, login
+  e-mail/senha (JWT do `Set-Cookie` no keyring), comunidades, canais de texto em tempo
+  real, convites, DMs. Cliente Socket.IO v4 próprio com ack. **34 testes**, clippy limpo.
+  `cargo packager --release --formats deb,appimage` gera `.deb` e AppImage (~12 MB) em
+  `target/dist`; abriu no Wayland sem erro. Sem voz/tela ainda.
+
+Pendências: R2 voz nativa (webrtc-rs + cpal + Opus, interop com o navegador), R3/R4 tela;
+instalador Windows (`.msi`/NSIS) só via `cargo-xwin` ou Actions `windows-latest`
+(`apps/desktop-native/ci/build.yml`, não testado); assinatura de código no Windows;
+OAuth no nativo; validação com leitor de tela e em celular; UX: Editar/Apagar sempre
+visíveis (no estilo Discord seriam no hover) e `/communities` sem comunidade escolhida
+mostra o texto de "criar" mesmo com comunidades existentes. `.tmp/visual/` é ambiente
+descartável de teste (contas `*@scale.test`), pode apagar. `stash@{0}` (autostash do pull)
+tem só restos de uma tentativa interrompida e pode ser descartado.
+
 ## 2026-11-06 — implementação local de PWA, mídia, desktop e VPS
 
 Estado local, sem implantação na VPS. A análise histórica abaixo usa o HEAD

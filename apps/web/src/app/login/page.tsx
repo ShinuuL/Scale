@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
+import { authNext } from '@/lib/authNext';
 import { Card, CardHeader, CardDescription, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -11,6 +12,7 @@ import Link from 'next/link';
 import { OAuthLoginButtons, readOAuthError } from '@/components/auth/OAuthLogin';
 
 export default function LoginPage() {
+  const [next, setNext] = useState<'/invite' | '/communities' | '/'>('/');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -19,7 +21,9 @@ export default function LoginPage() {
   // Erro do login externo (/login?github=<codigo> ou ?google=<codigo>). Em efeito, nao no
   // estado inicial: a pagina e pre-renderizada sem query (export estatico).
   useEffect(() => {
+    setNext(authNext(new URLSearchParams(window.location.search).get('next')));
     const oauthError = readOAuthError();
+    if (oauthError) sessionStorage.removeItem('scale:invite-oauth-return');
     if (oauthError) setError(oauthError);
   }, []);
 
@@ -30,7 +34,7 @@ export default function LoginPage() {
 
     try {
       await api.login({ email: email.trim(), password });
-      window.location.href = '/';
+      window.location.href = authNext(new URLSearchParams(window.location.search).get('next'));
     } catch (err: unknown) {
       const apiErr = err as { error?: string; status?: number };
       if (apiErr.status === 401) {
@@ -92,7 +96,7 @@ export default function LoginPage() {
 
           <div className="mt-4 text-center">
             <Link
-              href="/register"
+              href={next === '/' ? '/register' : `/register?next=${encodeURIComponent(next)}`}
               className="text-sm text-brand-400 hover:text-brand-300 transition-colors"
             >
               Não tem conta? Criar conta

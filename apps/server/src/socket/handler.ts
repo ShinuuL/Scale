@@ -39,6 +39,8 @@ import {
   chatEditSchema,
   chatDeleteSchema,
   MAX_PARTICIPANTS,
+  CHAT_EDIT_WINDOW_MS,
+  communitySubscriptionSchema,
   parseGuestName,
   moderationReportSchema,
   moderationStopShareSchema,
@@ -69,6 +71,7 @@ interface RoomPeer {
   muted: boolean;
 }
 
+const roomCommunities = new Map<string, string>();
 const roomPeers = new Map<string, Map<string, RoomPeer>>();
 /** guestId resolvido no handshake do engine, por request HTTP. */
 const handshakeGuestIds = new WeakMap<IncomingMessage, string>();
@@ -256,6 +259,22 @@ export function createSocketServer(httpServer: HttpServer): Server {
     const senderInRoom = (roomId: string): boolean =>
       roomPeers.get(roomId)?.has(socket.id) === true && socket.data.roomId === roomId;
 
+    socket.on('community:subscribe', async (data, callback) => {
+      const parsed = communitySubscriptionSchema.safeParse(data);
+      if (!parsed.success || !user.userId) { callback?.({ error: 'Not found' }); return; }
+      const member = await prisma.communityMember.findUnique({ where: { communityId_userId: { communityId: parsed.data.communityId, userId: user.userId } } });
+      if (!member) { callback?.({ error: 'Not found' }); return; }
+      await socket.join(`community:${parsed.data.communityId}`);
+      const voiceStates = Array.from(roomCommunities.entries())
+        .filter(([channelId, communityId]) => communityId === parsed.data.communityId && (roomPeers.get(channelId)?.size ?? 0) > 0)
+        .map(([channelId]) => voiceState(channelId));
+      callback?.({ success: true, voiceStates });
+    });
+    socket.on('community:unsubscribe', (data) => {
+      const parsed = communitySubscriptionSchema.safeParse(data);
+      if (parsed.success) void socket.leave(`community:${parsed.data.communityId}`);
+    });
+
     socket.on('join-room', async (data, callback) => {
       // Rate limit check
       if (isRateLimited(`socket:${socket.id}`)) {
@@ -294,7 +313,13 @@ export function createSocketServer(httpServer: HttpServer): Server {
         // Balde de falhas de credencial por IP+sala (10 / 15 min): checado
         // ANTES do bcrypt, so falhas contam.
         const clientIp = getSocketClientIp(socket.request, getEnv().TRUST_PROXY);
-        const isProtected = room.passwordHash !== null || room.isPrivate;
+        if (room.communityId) {
+          if (!user.userId || !(await prisma.communityMember.findUnique({ where: { communityId_userId: { communityId: room.communityId, userId: user.userId } } }))) {
+            callback?.({ error: 'Room not found' }); return;
+          }
+          if (room.channelKind !== 'VOICE') { callback?.({ error: 'Not a voice channel' }); return; }
+        }
+        const isProtected = !room.communityId && (room.passwordHash !== null || room.isPrivate);
         if (isProtected) {
           const locked = isRoomAuthLocked(clientIp, roomId);
           if (locked.limited) {
@@ -307,7 +332,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
         }
 
         // Access control: protected rooms accept a valid invite token OR the correct password
-        if (room.passwordHash) {
+        if (!room.communityId && room.passwordHash) {
           const hasValidInvite =
             inviteToken !== undefined && inviteToken === room.inviteToken;
           const hasValidPassword =
@@ -318,7 +343,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
             callback?.({ error: 'Invalid invite token or password' });
             return;
           }
-        } else if (room.isPrivate && inviteToken !== room.inviteToken) {
+        } else if (!room.communityId && room.isPrivate && inviteToken !== room.inviteToken) {
           // Check invite token for private rooms
           recordRoomAuthFailure(clientIp, roomId);
           callback?.({ error: 'Invalid invite token' });
@@ -368,6 +393,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
           muted: parsed.data.muted ?? false,
         });
         roomPeers.set(roomId, peers);
+        if (room.communityId) { roomCommunities.set(roomId, room.communityId); emitVoiceState(io, roomId); }
 
         // Join socket room
         socket.join(roomId);
@@ -791,7 +817,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
       }
 
       // Janela de edição: 15 minutos desde a criação
-      if (Date.now() - new Date(msg.createdAt).getTime() > 15 * 60 * 1000) {
+      if (Date.now() - new Date(msg.createdAt).getTime() > CHAT_EDIT_WINDOW_MS) {
         callback?.({ error: 'Edit window expired' });
         return;
       }
@@ -1009,6 +1035,7 @@ export function evictRoom(io: Server | undefined, roomId: string): void {
     io.in(roomId).socketsLeave(roomId);
   }
   roomPeers.delete(roomId);
+  roomCommunities.delete(roomId);
   chatBuffers.delete(roomId);
   const timer = emptyTimers.get(roomId);
   if (timer) {
@@ -1026,9 +1053,11 @@ function handleLeaveRoom(
   if (!peers) return;
 
   peers.delete(socket.id);
+  emitVoiceState(io, roomId);
 
   if (peers.size === 0) {
     roomPeers.delete(roomId);
+    roomCommunities.delete(roomId);
     // Agenda auto-delete após 5 min vazia (só salas temporárias)
     if (!emptyTimers.has(roomId)) {
       const timer = setTimeout(async () => {
@@ -1070,6 +1099,45 @@ function chatWarning(roomId: string, category: ModerationWarningPayload['categor
     category,
     text: 'Sua mensagem foi marcada pelo assistente de moderacao. Mantenha o respeito com os participantes.',
   };
+}
+
+function voiceState(channelId: string) {
+  const members = Array.from(roomPeers.get(channelId)?.values() ?? [])
+    .filter((peer): peer is RoomPeer & { userId: string } => peer.userId !== null)
+    .map(({ userId, name }) => ({ userId, name }));
+  return { channelId, members };
+}
+
+function emitVoiceState(io: Server, channelId: string): void {
+  const communityId = roomCommunities.get(channelId);
+  if (!communityId) return;
+  io.to(`community:${communityId}`).emit('community:voice-state', voiceState(channelId));
+}
+
+export function evictChannel(io: Server | undefined, channelId: string): void {
+  evictRoom(io, channelId);
+}
+
+export async function evictCommunityUser(io: Server | undefined, communityId: string, userId: string): Promise<void> {
+  if (!io) return;
+  const sockets = await io.in(userRoom(userId)).fetchSockets();
+  const channels = await prisma.room.findMany({ where: { communityId }, select: { id: true } });
+  const ids = new Set(channels.map((channel) => channel.id));
+  for (const remote of sockets) {
+    const socket = io.sockets.sockets.get(remote.id);
+    if (!socket) continue;
+    await socket.leave(`community:${communityId}`);
+    const roomId = socket.data.roomId as string | undefined;
+    if (roomId && ids.has(roomId)) { handleLeaveRoom(io, socket, roomId); socket.data.roomId = undefined; }
+  }
+  io.to(userRoom(userId)).emit('community:removed', { communityId });
+}
+
+export async function evictCommunity(io: Server | undefined, communityId: string): Promise<void> {
+  if (!io) return;
+  const channels = await prisma.room.findMany({ where: { communityId }, select: { id: true } });
+  for (const channel of channels) evictChannel(io, channel.id);
+  io.in(`community:${communityId}`).socketsLeave(`community:${communityId}`);
 }
 
 /** Leitor (para isMine) a partir do usuario do socket. */

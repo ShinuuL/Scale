@@ -501,3 +501,18 @@ export function isAdminSettingsRateLimited(userId: string): RateLimitResult {
 export function resetAdminSettingsRateLimit(userId: string): void {
   reset(adminSettingsStore, userId);
 }
+
+// Convidado de comunidade: 30 / 10 min por IP, na previa e no aceite do codigo.
+// Enumera o espaco de codigos (22 chars base64url) para descobrir comunidades
+// ou colar gente de graca em comunidades alheias.
+const COMMUNITY_INVITE_WINDOW_MS = 10 * 60_000;
+const COMMUNITY_INVITE_MAX = 30;
+const communityInviteStore = createBucket('communityInvite');
+
+export function isCommunityInviteRateLimited(ip: string): RateLimitResult {
+  return ipBucket(communityInviteStore, ip, COMMUNITY_INVITE_WINDOW_MS, COMMUNITY_INVITE_MAX);
+}
+
+export function resetCommunityInviteRateLimit(ip: string): void {
+  reset(communityInviteStore, ip);
+}

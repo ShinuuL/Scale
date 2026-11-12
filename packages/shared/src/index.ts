@@ -5,3 +5,4 @@ export * from './social.js';
 export * from './calls.js';
 export * from './moderation.js';
 export * from './admin.js';
+export * from './communities.js';

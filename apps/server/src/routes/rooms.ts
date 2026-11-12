@@ -131,10 +131,11 @@ export async function roomRoutes(fastify: FastifyInstance): Promise<void> {
         status: true,
         ownerId: true,
         passwordHash: true,
+        communityId: true,
       },
     });
 
-    if (!room) {
+    if (!room || room.communityId) {
       return reply.code(404).send({ error: 'Room not found' });
     }
 
@@ -200,6 +201,7 @@ export async function roomRoutes(fastify: FastifyInstance): Promise<void> {
         where: {
           status: 'ACTIVE',
           isPrivate: false,
+          communityId: null,
           OR: [
             { expiresAt: null },
             { expiresAt: { gt: new Date() } },
@@ -246,10 +248,10 @@ export async function roomRoutes(fastify: FastifyInstance): Promise<void> {
 
       const room = await prisma.room.findUnique({
         where: { id },
-        select: { id: true, ownerId: true },
+        select: { id: true, ownerId: true, communityId: true },
       });
 
-      if (!room) {
+      if (!room || room.communityId) {
         return reply.code(404).send({ error: 'Room not found' });
       }
 
@@ -301,10 +303,10 @@ export async function roomRoutes(fastify: FastifyInstance): Promise<void> {
 
       const room = await prisma.room.findUnique({
         where: { id },
-        select: { id: true, ownerId: true },
+        select: { id: true, ownerId: true, communityId: true },
       });
 
-      if (!room) {
+      if (!room || room.communityId) {
         return reply.code(404).send({ error: 'Room not found' });
       }
 

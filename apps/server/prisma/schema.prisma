@@ -29,6 +29,9 @@ model User {
   ageVerifiedAt             DateTime?
   screenShareConsentAt      DateTime?
   screenShareConsentVersion String?
+  ownedCommunities Community[]
+  communityMemberships CommunityMember[]
+  communityInvites CommunityInvite[]
 
   ownedRooms  Room[]
   moderationEvents ModerationEvent[]
@@ -119,6 +122,55 @@ model DirectMessage {
   @@index([recipientId, senderId, createdAt])
 }
 
+enum CommunityRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+model Community {
+  id        String   @id @default(uuid())
+  name      String
+  ownerId   String
+  createdAt DateTime @default(now())
+
+  owner   User              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  members CommunityMember[]
+  invites CommunityInvite[]
+  rooms   Room[]
+}
+
+model CommunityMember {
+  id          String        @id @default(uuid())
+  communityId String
+  userId      String
+  role        CommunityRole @default(MEMBER)
+  joinedAt    DateTime      @default(now())
+
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([communityId, userId])
+  @@index([userId])
+}
+
+model CommunityInvite {
+  id          String    @id @default(uuid())
+  communityId String
+  codeHash    String    @unique
+  createdById String
+  expiresAt   DateTime
+  maxUses     Int?
+  uses        Int       @default(0)
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  createdBy User      @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([communityId])
+}
+
 model Room {
   id               String    @id @default(uuid())
   name             String
@@ -131,12 +183,17 @@ model Room {
   status           RoomStatus @default(ACTIVE)
   createdAt        DateTime  @default(now())
   expiresAt        DateTime?
+  communityId      String?
+  channelKind      String?
+  position         Int       @default(0)
 
+  community     Community?    @relation(fields: [communityId], references: [id], onDelete: Cascade)
   owner         User?         @relation(fields: [ownerId], references: [id], onDelete: SetNull)
   roomMembers   RoomMember[]
   chatMessages  ChatMessage[]
   chatFiles     ChatFile[]
 
+  @@index([communityId])
   @@index([isPersistent, status])
   @@index([expiresAt])
 }

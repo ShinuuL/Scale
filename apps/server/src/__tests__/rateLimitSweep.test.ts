@@ -33,6 +33,7 @@ describe('expurgo dos baldes de rate limit', () => {
       'adminSettings',
       'call',
       'chat',
+      'communityInvite',
       'dm',
       'friendRequest',
       'githubOAuth',
