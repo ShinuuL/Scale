@@ -6,7 +6,7 @@ export async function corsPlugin(fastify: FastifyInstance): Promise<void> {
   await fastify.register(cors, {
     origin: getAllowedOrigins(),
     credentials: true,
-    methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   });
 }

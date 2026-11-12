@@ -34,6 +34,8 @@ export type IconName =
   | 'document'
   | 'eye'
   | 'flag'
+  | 'hash'
+  | 'plus'
   | 'github'
   | 'globe'
   | 'google'
@@ -96,6 +98,8 @@ const CIRCLE_R9 = 'M12 3a9 9 0 1 0 0 18 9 9 0 1 0 0-18Z';
 
 /** Catálogo fechado: todo `IconName` tem geometria aqui (o Record garante em tipo). */
 export const ICONS: Record<IconName, IconShape[]> = {
+  hash: [{ d: 'M9 4 7 20M17 4l-2 16M4 9h16M3 15h16' }],
+  plus: [{ d: 'M12 5v14M5 12h14' }],
   mic: [{ d: MIC_BODY, filled: true }, { d: MIC_ARC }, { d: MIC_STEM }, { d: MIC_BASE }],
   micOff: [
     { d: MIC_BODY },

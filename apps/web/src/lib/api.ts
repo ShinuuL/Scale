@@ -18,6 +18,21 @@ import {
 } from '@scale/shared';
 import { createRoomSchema, authResponseSchema, roomResponseSchema, roomListItemSchema, metricsSchema } from './validation';
 
+import { communityCreateSchema, channelCreateSchema, channelUpdateSchema, communityMemberRoleSchema, communityInviteCreateSchema, communityInviteCodeSchema, channelMessageSendSchema, communityRoleSchema, channelKindSchema } from '@scale/shared';
+
+const okSchema = z.object({ ok: z.literal(true) });
+const communitySchema = z.object({ id: z.string(), name: z.string(), ownerId: z.string() });
+const channelSchema = z.object({ id: z.string(), name: z.string(), kind: channelKindSchema, position: z.number() });
+const memberSchema = z.object({ userId: z.string(), name: z.string(), username: z.string().nullable(), role: communityRoleSchema });
+export const channelMessageSchema = z.object({ id: z.string(), channelId: z.string(), author: z.object({ id: z.string().nullable(), name: z.string(), username: z.string().nullable() }), content: z.string(), createdAt: z.string(), editedAt: z.string().nullable(), deletedAt: z.string().nullable() });
+const communityDetailSchema = z.object({ community: communitySchema, myRole: communityRoleSchema, channels: z.array(channelSchema), members: z.array(memberSchema) });
+const communityListSchema = z.object({ communities: z.array(z.object({ id: z.string(), name: z.string(), role: communityRoleSchema })) });
+const inviteSchema = z.object({ id: z.string(), createdById: z.string(), expiresAt: z.string(), maxUses: z.number().nullable(), uses: z.number(), revokedAt: z.string().nullable(), createdAt: z.string() });
+export type ChannelMessage = z.infer<typeof channelMessageSchema>;
+export type CommunityDetail = z.infer<typeof communityDetailSchema>;
+export type CommunityListItem = z.infer<typeof communityListSchema>['communities'][number];
+export type CommunityInvite = z.infer<typeof inviteSchema>;
+
 // Caminhos SEMPRE relativos (`/api/...`): em producao o Caddy serve o frontend
 // estatico e encaminha `/api` ao backend no mesmo origin; em `next dev` o
 // next.config.js reescreve `/api` para o backend no host. Nao ha SSR.
@@ -156,11 +171,12 @@ class ApiClient {
       retry.onRetry,
     );
 
-    // 204 (PUT/DELETE de privacidade) e corpo vazio nao sao erro de parse.
-    const text = await response.text();
-    const body: { error?: string; details?: Record<string, string[]> } & Record<string, unknown> = text
-      ? (JSON.parse(text) as Record<string, unknown>)
-      : {};
+    // 204/205 (PUT/DELETE de privacidade) nao tem corpo. Nos demais, corpo
+    // vazio ou invalido vira `{}`: o status decide se e erro.
+    const body: { error?: string; details?: Record<string, string[]> } & Record<string, unknown> =
+      response.status === 204 || response.status === 205
+        ? {}
+        : ((await response.json().catch(() => ({}))) as Record<string, unknown>);
 
     if (!response.ok) {
       const error: ApiError = {
@@ -420,6 +436,34 @@ class ApiClient {
     });
     return directMessageSchema.parse(data.message);
   }
+
+  // ─── Comunidades ─────────────────────────────────────────────
+  async listCommunities() { return communityListSchema.parse(await this.request('/api/communities')); }
+  async getCommunity(id: string) { return communityDetailSchema.parse(await this.request(`/api/communities/${encodeURIComponent(id)}`)); }
+  async createCommunity(name: string) {
+    return z.object({ community: communitySchema }).parse(await this.request('/api/communities', { method: 'POST', body: JSON.stringify(communityCreateSchema.parse({ name })) }));
+  }
+  async updateCommunity(id: string, name: string): Promise<void> { okSchema.parse(await this.request(`/api/communities/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(communityCreateSchema.parse({ name })) })); }
+  async deleteCommunity(id: string): Promise<void> { okSchema.parse(await this.request(`/api/communities/${encodeURIComponent(id)}`, { method: 'DELETE', body: '{}' })); }
+  async leaveCommunity(id: string): Promise<void> { okSchema.parse(await this.request(`/api/communities/${encodeURIComponent(id)}/leave`, { method: 'POST', body: '{}' })); }
+  async removeCommunityMember(id: string, userId: string): Promise<void> { okSchema.parse(await this.request(`/api/communities/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`, { method: 'DELETE', body: '{}' })); }
+  async updateCommunityMemberRole(id: string, userId: string, role: 'ADMIN' | 'MEMBER'): Promise<void> { okSchema.parse(await this.request(`/api/communities/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`, { method: 'PATCH', body: JSON.stringify(communityMemberRoleSchema.parse({ role })) })); }
+  async createChannel(id: string, name: string, kind: 'TEXT' | 'VOICE') { return z.object({ channel: channelSchema }).parse(await this.request(`/api/communities/${encodeURIComponent(id)}/channels`, { method: 'POST', body: JSON.stringify(channelCreateSchema.parse({ name, kind })) })); }
+  async updateChannel(id: string, name: string): Promise<void> { okSchema.parse(await this.request(`/api/channels/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(channelUpdateSchema.parse({ name })) })); }
+  async deleteChannel(id: string): Promise<void> { okSchema.parse(await this.request(`/api/channels/${encodeURIComponent(id)}`, { method: 'DELETE', body: '{}' })); }
+  async getChannelMessages(id: string, cursor?: string, limit?: number) {
+    const query = new URLSearchParams(); if (cursor) query.set('cursor', cursor); if (limit !== undefined) query.set('limit', String(limit));
+    const suffix = query.toString();
+    return z.object({ messages: z.array(channelMessageSchema), nextCursor: z.string().nullable() }).parse(await this.request(`/api/channels/${encodeURIComponent(id)}/messages${suffix ? `?${suffix}` : ''}`));
+  }
+  async sendChannelMessage(id: string, content: string) { return z.object({ message: channelMessageSchema }).parse(await this.request(`/api/channels/${encodeURIComponent(id)}/messages`, { method: 'POST', body: JSON.stringify(channelMessageSendSchema.parse({ content })) })); }
+  async editChannelMessage(id: string, messageId: string, content: string): Promise<void> { okSchema.parse(await this.request(`/api/channels/${encodeURIComponent(id)}/messages/${encodeURIComponent(messageId)}`, { method: 'PATCH', body: JSON.stringify(channelMessageSendSchema.parse({ content })) })); }
+  async deleteChannelMessage(id: string, messageId: string): Promise<void> { okSchema.parse(await this.request(`/api/channels/${encodeURIComponent(id)}/messages/${encodeURIComponent(messageId)}`, { method: 'DELETE', body: '{}' })); }
+  async createCommunityInvite(id: string, input: { expiresIn?: '1h' | '24h' | '7d'; maxUses?: number }) { return z.object({ invite: z.object({ id: z.string(), code: z.string(), expiresAt: z.string(), maxUses: z.number().nullable() }) }).parse(await this.request(`/api/communities/${encodeURIComponent(id)}/invites`, { method: 'POST', body: JSON.stringify(communityInviteCreateSchema.parse(input)) })); }
+  async listCommunityInvites(id: string) { return z.object({ invites: z.array(inviteSchema) }).parse(await this.request(`/api/communities/${encodeURIComponent(id)}/invites`)); }
+  async revokeCommunityInvite(id: string): Promise<void> { okSchema.parse(await this.request(`/api/invites/${encodeURIComponent(id)}`, { method: 'DELETE', body: '{}' })); }
+  async previewCommunityInvite(code: string) { return z.object({ community: z.object({ id: z.string(), name: z.string(), memberCount: z.number() }), alreadyMember: z.boolean() }).parse(await this.request('/api/invites/preview', { method: 'POST', body: JSON.stringify(communityInviteCodeSchema.parse({ code })) })); }
+  async acceptCommunityInvite(code: string) { return z.object({ communityId: z.string() }).parse(await this.request('/api/invites/accept', { method: 'POST', body: JSON.stringify(communityInviteCodeSchema.parse({ code })) })); }
 
   // ─── Health ─────────────────────────────────────────────────
   async health(): Promise<{ status: string; timestamp: string }> {

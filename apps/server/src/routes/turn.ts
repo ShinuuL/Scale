@@ -30,10 +30,17 @@ export async function turnRoutes(fastify: FastifyInstance): Promise<void> {
       }
 
       let subject = request.userId ? `u${request.userId}` : '';
+      if (request.userId && request.query.roomId) {
+        const roomId = z.string().uuid().safeParse(request.query.roomId);
+        const room = roomId.success ? await prisma.room.findUnique({ where: { id: roomId.data } }) : null;
+        if (room?.communityId && !(await prisma.communityMember.findUnique({ where: { communityId_userId: { communityId: room.communityId, userId: request.userId } } }))) {
+          return reply.code(403).send({ error: 'Not a room member' });
+        }
+      }
       if (!request.userId) {
         const roomId = z.string().uuid().safeParse(request.query.roomId);
         const room = roomId.success ? await prisma.room.findUnique({ where: { id: roomId.data } }) : null;
-        if (!room || !roomParticipant(request, room)) return reply.code(401).send({ error: 'Authentication required' });
+        if (!room || !(await roomParticipant(request, room))) return reply.code(401).send({ error: 'Authentication required' });
         subject = `r${room.id}`;
       }
 
