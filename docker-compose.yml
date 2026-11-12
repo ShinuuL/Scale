@@ -141,6 +141,8 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_DESKTOP_DOWNLOAD_URL: ${DESKTOP_DOWNLOAD_URL:-}
     ports:
       # Porta do HOST do proxy interno. Em acesso local HTTP, o origin
       # `http://localhost:${PROXY_PORT:-8080}` precisa estar em ALLOWED_ORIGINS.
