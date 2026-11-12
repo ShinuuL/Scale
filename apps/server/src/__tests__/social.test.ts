@@ -168,6 +168,22 @@ describe('amizades e mensagens privadas', () => {
     expect(caioGot).toBe(false);
   });
 
+  it('DM: moderacao bloqueia ofensa grave (422 MODERATED) sem gravar; medium entrega e avisa so o autor', async () => {
+    const before = await prisma.directMessage.count({ where: { senderId: users.ana.id } });
+    const res = await inject('ana', 'POST', `/api/dm/${users.bia.id}/messages`, { content: '@Bia vai se matar' });
+    expect(res.statusCode).toBe(422);
+    expect(res.json()).toEqual({ error: 'Mensagem bloqueada pela moderacao', code: 'MODERATED', category: 'bullying' });
+    expect(await prisma.directMessage.count({ where: { senderId: users.ana.id } })).toBe(before);
+    expect(await prisma.moderationEvent.findFirst({ where: { source: 'dm', userId: users.ana.id, action: 'blocked' } })).toBeTruthy();
+
+    const anaSocket = await connect('ana');
+    const warning = new Promise<{ category: string }>((r) => anaSocket.once('moderation:warning', r));
+    const ok = await inject('ana', 'POST', `/api/dm/${users.bia.id}/messages`, { content: 'que idiota' });
+    expect(ok.statusCode).toBe(201);
+    expect((await warning).category).toBe('bullying');
+    anaSocket.disconnect();
+  });
+
   it('DM: recusa vazio e acima do limite', async () => {
     expect((await inject('ana', 'POST', `/api/dm/${users.bia.id}/messages`, { content: '   ' })).statusCode).toBe(400);
     expect((await inject('ana', 'POST', `/api/dm/${users.bia.id}/messages`, { content: 'a'.repeat(2001) })).statusCode).toBe(400);

@@ -199,3 +199,25 @@ describe('ProfileMenu: sair da conta', () => {
     expect(assign).not.toHaveBeenCalled();
   });
 });
+
+describe('ProfileMenu — Administração', () => {
+  const base = { id: 'ana', name: 'Ana', email: 'ana@example.test', createdAt: '2026-11-06T10:00:00.000Z' };
+
+  it('mostra "Administração" só para admin, apontando para /admin', () => {
+    render(<ProfileMenu name="Ana" isAuthenticated user={{ ...base, isAdmin: true }} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Perfil de Ana' }));
+    const item = screen.getByRole('menuitem', { name: 'Administração' });
+    expect(item.getAttribute('href')).toBe('/admin');
+  });
+
+  it('esconde "Administração" para conta comum e para convidado', () => {
+    const { unmount } = render(<ProfileMenu name="Ana" isAuthenticated user={{ ...base, isAdmin: false }} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Perfil de Ana' }));
+    expect(screen.queryByRole('menuitem', { name: 'Administração' })).toBeNull();
+    unmount();
+
+    render(<ProfileMenu name="Convidado" isAuthenticated={false} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Perfil de Convidado' }));
+    expect(screen.queryByRole('menuitem', { name: 'Administração' })).toBeNull();
+  });
+});

@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@testing-library/react';
 import type { Socket } from 'socket.io-client';
 import { useWebRTC } from '@/hooks/useWebRTC';
-import type { UseSocketReturn } from '@/hooks/useSocket';
+import { ScreenShareNotAllowedError, type UseSocketReturn } from '@/hooks/useSocket';
 
 // ─── Mocks de WebRTC (jsdom não implementa RTCPeerConnection) ──
 // Registry de instâncias para os testes inspecionarem signalingState e
@@ -202,6 +202,7 @@ type EventName =
   | 'signalIceCandidate'
   | 'screenShareState'
   | 'peerAudioState'
+  | 'moderationAction'
   | 'reconnect';
 
 let getUserMediaMock: ReturnType<typeof vi.fn>;
@@ -234,6 +235,14 @@ function createHookMock(myId: string) {
     onPeerAudioState: vi.fn(register<Payload<'onPeerAudioState'>>('peerAudioState')),
     onReconnect: vi.fn(register<void>('reconnect')),
     onRoomDeleted: vi.fn(() => () => {}),
+    onModerationAction: vi.fn(register<Payload<'onModerationAction'>>('moderationAction')),
+    onModerationWarning: vi.fn(() => () => {}),
+    onModerationConfig: vi.fn(() => () => {}),
+    onModerationNotice: vi.fn(() => () => {}),
+    onMeScreenShare: vi.fn(() => () => {}),
+    onMeAdmin: vi.fn(() => () => {}),
+    emitModerationReport: vi.fn().mockResolvedValue(undefined),
+    emitModerationStopShare: vi.fn().mockResolvedValue(undefined),
     guestName: 'Test',
     setGuestName: vi.fn(),
   };
@@ -497,7 +506,7 @@ describe('tela com áudio independente', () => {
     expect(result.current.isScreenSharing).toBe(false);
     let resolvePicker: (stream: MediaStream) => void = () => {};
     vi.mocked(navigator.mediaDevices.getDisplayMedia).mockReturnValueOnce(new Promise((resolve) => { resolvePicker = resolve; }));
-    let pending: Promise<boolean | null> = Promise.resolve(null);
+    let pending: Promise<boolean | null | 'gated'> = Promise.resolve(null);
     act(() => { pending = result.current.toggleScreenShare(); });
     act(() => { result.current.cleanupMedia(); });
     const video = createMockTrack('video');
@@ -1193,5 +1202,60 @@ describe('estado de mudo entre peers', () => {
 
     await emit('peerAudioState', { peerId: 'me-050', muted: false });
     expect(result.current.peers.get('me-050')?.audioMuted).toBe(false);
+  });
+});
+
+describe('moderacao: parar a partilha de tela a forca', () => {
+  const acceptOffer = (emit: ReturnType<typeof createHookMock>['emit']) => emit('signalOffer', {
+    fromPeerId: 'me-050', name: 'Ana', isRegistered: false, offer: { type: 'offer' },
+  });
+
+  it('pre-check recusado devolve "gated" sem chamar getDisplayMedia; parar nunca e bloqueado', async () => {
+    const { hook } = createHookMock('me-100');
+    vi.mocked(navigator.mediaDevices.getDisplayMedia).mockResolvedValue(new MockMediaStream([createMockTrack('video')]) as unknown as MediaStream);
+    const { result } = renderHook(() => useWebRTC(hook, ROOM_ID));
+    await act(async () => { expect(await result.current.toggleScreenShare({ canShare: () => false })).toBe('gated'); });
+    expect(navigator.mediaDevices.getDisplayMedia).not.toHaveBeenCalled();
+    await act(async () => { expect(await result.current.toggleScreenShare({ canShare: () => true })).toBe(true); });
+    await act(async () => { expect(await result.current.toggleScreenShare({ canShare: () => false })).toBe(false); });
+    expect(result.current.isScreenSharing).toBe(false);
+  });
+
+  it('moderation:action stop-screen-share para a captura e expoe quem parou', async () => {
+    const { hook, emit } = createHookMock('me-100');
+    const video = createMockTrack('video');
+    vi.mocked(navigator.mediaDevices.getDisplayMedia).mockResolvedValue(new MockMediaStream([video]) as unknown as MediaStream);
+    const { result } = renderHook(() => useWebRTC(hook, ROOM_ID));
+    await acceptOffer(emit);
+    await act(async () => { await result.current.toggleScreenShare(); });
+    expect(result.current.isScreenSharing).toBe(true);
+
+    // Outra sala: ignorado.
+    await emit('moderationAction', { roomId: 'outra', action: 'stop-screen-share', category: 'sexual', by: 'assistant' });
+    expect(result.current.isScreenSharing).toBe(true);
+
+    await emit('moderationAction', { roomId: ROOM_ID, action: 'stop-screen-share', category: 'sexual', by: 'owner' });
+    expect(result.current.isScreenSharing).toBe(false);
+    expect(video.stop).toHaveBeenCalledOnce();
+    expect(result.current.screenShareStoppedBy).toBe('owner');
+    expect(hook.emitScreenShareState).toHaveBeenLastCalledWith(ROOM_ID, 'me-050', false);
+    act(() => { result.current.clearScreenShareStop(); });
+    expect(result.current.screenShareStoppedBy).toBeNull();
+  });
+
+  it('ack SCREEN_SHARE_NOT_ALLOWED no sinal para a captura e informa o motivo', async () => {
+    const { hook, emit } = createHookMock('me-100');
+    const video = createMockTrack('video');
+    vi.mocked(navigator.mediaDevices.getDisplayMedia).mockResolvedValue(new MockMediaStream([video]) as unknown as MediaStream);
+    vi.mocked(hook.emitScreenShareState).mockImplementation(async (_room, _peer, sharing) => {
+      if (sharing) throw new ScreenShareNotAllowedError('Partilha de tela nao liberada', 'consent');
+    });
+    const { result } = renderHook(() => useWebRTC(hook, ROOM_ID));
+    await acceptOffer(emit);
+    await act(async () => { await result.current.toggleScreenShare(); });
+    await waitFor(() => expect(result.current.isScreenSharing).toBe(false));
+    expect(video.stop).toHaveBeenCalledOnce();
+    expect(result.current.screenShareStoppedBy).toBe('gate');
+    expect(result.current.screenShareError).toContain('Privacidade');
   });
 });

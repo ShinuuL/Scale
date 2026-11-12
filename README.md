@@ -89,6 +89,14 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
 | `PORT` | Porta do backend em dev no host (container sempre 4000) | `4100` |
 | `BACKEND_PORT` | Porta do backend publicada no host (so loopback) | `4100` |
 | `NODE_ENV` | Ambiente (`development`, `production`, `test`) | `development` |
+| `MODERATION_PROVIDER` | Moderacao de chat/DM: `off`, `heuristic` (local) ou `claude` (Claude API; ver `docs/moderacao.md`) | `heuristic` |
+| `MODERATION_MODEL` | Modelo com `claude` (`claude-haiku-5-5` e a opcao barata) | `claude-opus-5-5` |
+| `ANTHROPIC_API_KEY` | Chave da Claude API, obrigatoria com `claude`. **So no `.env`** | vazio |
+| `MODERATION_SCREEN` | Amostragem da tela compartilhada (exige `claude`) | `false` |
+| `MODERATION_FRAME_INTERVAL_SEC` | Intervalo das amostras de tela (10..120) | `20` |
+| `MODERATION_RETENTION_DAYS` | Retencao dos eventos de moderacao (1..365) | `90` |
+| `SCREEN_SHARE_MIN_AGE` | Idade minima para compartilhar tela (13..21) | `18` |
+| `PRIVACY_CONTACT_EMAIL` | Canal do encarregado LGPD, exibido em `/privacy` | vazio |
 
 ## Arquitetura
 
@@ -175,6 +183,14 @@ Regra geral: **nada do servidor e consultavel pelo front sem a prova certa**.
 - **Cabecalhos e erros:** CSP sem `unsafe-inline` em scripts, `X-Frame-Options:
   DENY`, `no-store` em respostas privadas, erros 5xx sem detalhes internos.
 - Modelo de confianca de proxy (`TRUST_PROXY`) e demais regras: `AGENTS.md`.
+- **Moderacao e LGPD:** chat e DM passam por um assistente de moderacao
+  (heuristica local por padrao; Claude API opcional via `MODERATION_PROVIDER`),
+  com denuncia na sala e amostragem opcional da tela compartilhada. Partilha
+  de tela so para usuario logado, maior de idade (autodeclarado) e com termo
+  aceito, aplicado no servidor. Audio e P2P e nao e monitorado. Operacao,
+  custos e troubleshooting em [docs/moderacao.md](docs/moderacao.md); bases
+  legais, retencao e direitos do titular em
+  [docs/lgpd-moderacao.md](docs/lgpd-moderacao.md).
 
 ### Proxy interno (Caddy, default)
 
@@ -304,6 +320,10 @@ cd apps/server && npx prisma studio       # Interface visual do DB
 - [Branding — Identidade Visual](docs/branding.md) - Conceito, paleta e tipografia do Scale
 - [Configuracao do tunel publico](docs/tunnel-setup.md) - Guia do tunel cloudflared (URL publica efemera)
 - [Cliente desktop](docs/desktop.md) - Electron: rodar, gerar instalador, trocar servidor, seguranca
+- [Assistente de moderacao](docs/moderacao.md) - Arquitetura, provedores, custos, variaveis e troubleshooting
+- Painel de administracao da moderacao em `/admin/moderation` (so admin; ver [docs/moderacao.md](docs/moderacao.md))
+- [Administracao](docs/administracao.md) - Hub `/admin`, papeis raiz (.env) e concedido, gestao de administradores e auditoria
+- [LGPD da moderacao](docs/lgpd-moderacao.md) - Inventario de tratamentos, bases legais, LIA, ROPA e direitos do titular
 
 ## Convencoes
 

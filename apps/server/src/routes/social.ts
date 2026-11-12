@@ -18,6 +18,7 @@ import { isDirectMessageRateLimited, isFriendRequestRateLimited } from '../lib/r
 import { AVATARS_ROOT, meSelect, toMe } from './profile.js';
 import { getRoomPeerUserId, userRoom } from '../socket/handler.js';
 import { guardRoomParticipation } from '../lib/roomAccess.js';
+import { moderateText, recordModerationEvent } from '../lib/moderation/index.js';
 
 /**
  * Amizades e mensagens privadas. Tudo exige login (convidado nao tem conta).
@@ -128,7 +129,7 @@ export async function socialRoutes(fastify: FastifyInstance): Promise<void> {
     }
     const user = await prisma.user.findUnique({ where: { id: me }, select: meSelect });
     if (!user) return reply.code(404).send({ error: 'User not found' });
-    return reply.send({ user: toMe(user) });
+    return reply.send({ user: await toMe(user) });
   });
 
   // GET /api/friends — amigos, pedidos recebidos e enviados.
@@ -289,11 +290,32 @@ export async function socialRoutes(fastify: FastifyInstance): Promise<void> {
     if (other === me) return reply.code(400).send({ error: 'Cannot message yourself' });
     if (!(await areFriends(me, other))) return reply.code(403).send({ error: 'Not friends' });
 
+    // Moderacao ANTES de gravar: high bloqueia (422), medium entrega e avisa
+    // so o autor (`moderation:warning` na sala `user:<me>`).
+    const verdict = await moderateText(parsed.data.content, fastify.log);
+    if (verdict.severity === 'high') {
+      await recordModerationEvent({
+        kind: 'text', source: 'dm', userId: me, category: verdict.category, severity: verdict.severity,
+        action: 'blocked', excerpt: parsed.data.content,
+      }, fastify.log);
+      return reply.code(422).send({ error: 'Mensagem bloqueada pela moderacao', code: 'MODERATED', category: verdict.category });
+    }
+
     const row = await prisma.directMessage.create({
       data: { senderId: me, recipientId: other, content: parsed.data.content },
     });
     const message = toDirectMessage(row);
     ioOf(fastify)?.to([userRoom(me), userRoom(other)]).emit('dm:message', message);
+    if (verdict.severity === 'medium') {
+      await recordModerationEvent({
+        kind: 'text', source: 'dm', userId: me, category: verdict.category, severity: verdict.severity,
+        action: 'warned', excerpt: parsed.data.content,
+      }, fastify.log);
+      ioOf(fastify)?.to(userRoom(me)).emit('moderation:warning', {
+        category: verdict.category,
+        text: 'Sua mensagem foi marcada pelo assistente de moderacao. Mantenha o respeito.',
+      });
+    }
     return reply.code(201).send({ message });
   });
 
