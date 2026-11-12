@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { usernameSchema } from '@scale/shared';
 import { api } from '@/lib/api';
+import { authNext } from '@/lib/authNext';
 import { Card, CardHeader, CardDescription, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -94,7 +95,7 @@ export default function RegisterPage() {
 
     try {
       await api.register({ name, email, password, username: parsedUsername.data });
-      window.location.href = '/';
+      window.location.href = authNext(new URLSearchParams(window.location.search).get('next'));
     } catch (err: unknown) {
       const apiErr = err as { error?: string; status?: number };
       if (apiErr.status === 409 && apiErr.error === 'Username already taken') {

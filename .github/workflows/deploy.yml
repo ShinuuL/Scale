@@ -1,0 +1,135 @@
+# Deploy da producao (VPS) a partir da main.
+#
+# Mesmo fluxo do deploy/enviar.ps1: `git archive` do commit, extrai em
+# /opt/scale (removendo o que saiu do repositorio), grava .deployed-commit e
+# roda deploy/deploy.sh (valida .env, backup, rebuild, espera healthy).
+# O .env da VPS nunca passa pelo GitHub.
+#
+# Secrets obrigatorios (Settings > Secrets and variables > Actions, de
+# preferencia no environment `production`):
+#   VPS_HOST         ex.: 187.41.116.22
+#   VPS_USER         ex.: scale
+#   VPS_SSH_KEY      chave privada (ed25519) dedicada ao CI, sem senha
+#   VPS_KNOWN_HOSTS  saida de `ssh-keyscan -t ed25519 <host>` conferida
+#                    contra o fingerprint real da VPS (nao confiar as cegas)
+# Opcional (variable, nao secret): VPS_PATH (default /opt/scale).
+name: Deploy VPS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Nunca dois deploys ao mesmo tempo; um novo push espera o anterior terminar.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  gates:
+    name: Lint, testes e build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run test
+      - run: npm run build
+
+  deploy:
+    name: Enviar para a VPS
+    needs: gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: production
+      url: https://scale.nexushosts.tech
+    env:
+      VPS_PATH: ${{ vars.VPS_PATH || '/opt/scale' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurar SSH
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          set -euo pipefail
+          for v in SSH_KEY KNOWN_HOSTS VPS_HOST VPS_USER; do
+            [[ -n "${!v}" ]] || { echo "::error::Secret ausente: $v"; exit 1; }
+          done
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOF
+          Host vps
+            HostName $VPS_HOST
+            User $VPS_USER
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+            ServerAliveInterval 30
+          EOF
+
+      - name: Empacotar o commit
+        run: git archive --format=tar.gz -o release.tar.gz HEAD
+
+      - name: Enviar e implantar
+        run: |
+          set -euo pipefail
+          COMMIT=$(git rev-parse --short HEAD)
+          scp -q release.tar.gz vps:/tmp/scale-release.tar.gz
+          # Mesma limpeza do enviar.ps1: remove da VPS os arquivos que sairam do
+          # repositorio (manifesto .deployed-files). Nunca toca .env, backups/ nem volumes.
+          ssh vps bash -s -- "$VPS_PATH" "$COMMIT" <<'REMOTE'
+          set -euo pipefail
+          P="$1"; COMMIT="$2"; PKG=/tmp/scale-release.tar.gz
+          cd "$P"
+          tar -tzf "$PKG" | grep -v '/$' | sort > .deployed-files.new
+          if [ -f .deployed-files ]; then
+            sort .deployed-files
+          else
+            find apps packages deploy docs -type f -not -path '*/node_modules/*' \
+              -not -path '*/.next/*' -not -path '*/out/*' -not -path '*/dist/*' \
+              -not -path '*/.caddy/*' 2>/dev/null | sort
+          fi | comm -23 - .deployed-files.new > .deployed-orfaos
+          if [ -s .deployed-orfaos ]; then
+            echo "Removendo arquivos que sairam do repositorio:"
+            sed 's/^/- /' .deployed-orfaos
+            xargs -d '\n' rm -f -- < .deployed-orfaos
+          fi
+          rm -f .deployed-orfaos
+          tar -xzf "$PKG" -C "$P"
+          mv .deployed-files.new .deployed-files
+          rm -f "$PKG"
+          chmod +x deploy/*.sh
+          echo "$COMMIT" > .deployed-commit
+          ./deploy/deploy.sh
+          REMOTE
+          echo "Commit $COMMIT implantado."
+
+      - name: Verificar saude publica
+        run: |
+          for i in $(seq 1 12); do
+            if curl -fsS -o /dev/null https://scale.nexushosts.tech/; then
+              echo "OK"; exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::https://scale.nexushosts.tech nao respondeu apos o deploy"
+          exit 1
+
+      - name: Limpar chave
+        if: always()
+        run: rm -f ~/.ssh/deploy_key release.tar.gz

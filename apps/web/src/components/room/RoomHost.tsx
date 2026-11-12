@@ -46,6 +46,7 @@ function RoomHostInner() {
       <RoomSession
         key={activeRoomId}
         roomId={activeRoomId}
+        communityId={onRoomRoute ? searchParams.get('c') : null}
         visible={routeRoomId === activeRoomId}
         onJoinedChange={handleJoinedChange}
       />

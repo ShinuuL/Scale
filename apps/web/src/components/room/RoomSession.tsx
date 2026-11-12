@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import Link from 'next/link';
 import { useSocket } from '@/hooks/useSocket';
 import { useWebRTC } from '@/hooks/useWebRTC';
 import { useDisconnectNotice } from '@/hooks/useDisconnectNotice';
@@ -65,6 +66,7 @@ interface RoomData {
 
 export interface RoomSessionProps {
   roomId: string;
+  communityId?: string | null;
   /** false: a pessoa navegou para outra área; a chamada continua montada. */
   visible: boolean;
   onJoinedChange: (joined: boolean) => void;
@@ -74,7 +76,7 @@ export interface RoomSessionProps {
  * Sessão da sala (socket, WebRTC e chat). Vive no `RoomHost` do layout raiz, não
  * na rota: navegar para Amigos ou Ajuda esconde a tela e mantém a ligação.
  */
-export function RoomSession({ roomId, visible, onJoinedChange }: RoomSessionProps) {
+export function RoomSession({ roomId, communityId, visible, onJoinedChange }: RoomSessionProps) {
   const { toast } = useToast();
   const [room, setRoom] = useState<RoomData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -727,6 +729,7 @@ export function RoomSession({ roomId, visible, onJoinedChange }: RoomSessionProp
           }
           actions={
             <div className="flex items-center gap-2">
+              {communityId && <Link href={`/communities?c=${encodeURIComponent(communityId)}`} className="btn-secondary text-sm px-3 py-2">Voltar à comunidade</Link>}
               <Badge variant={socket.connected ? 'success' : 'error'}>
                 {socket.connected ? 'Conectado' : 'Reconectando'}
               </Badge>
