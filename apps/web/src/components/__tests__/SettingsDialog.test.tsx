@@ -74,9 +74,17 @@ describe('SettingsDialog: seção Áudio', () => {
       { kind: 'audioinput', deviceId: 'mic-2', label: 'Webcam', groupId: '' },
     ]);
     render(<SettingsDialog user={null} onClose={() => {}} />);
-    const mic = await screen.findByRole('button', { name: /Microfone/ });
-    fireEvent.click(mic);
-    fireEvent.click(await screen.findByRole('option', { name: 'Webcam' }));
+    await screen.findByRole('button', { name: /Microfone/ });
+    // A lista de aparelhos chega assincrona: em maquina lenta (CI) o clique
+    // pode abrir o seletor antes dela. Reabre ate a opcao aparecer.
+    const webcam = await waitFor(
+      () => {
+        if (!screen.queryByRole('listbox')) fireEvent.click(screen.getByRole('button', { name: /Microfone/ }));
+        return screen.getByRole('option', { name: 'Webcam' });
+      },
+      { timeout: 5000 },
+    );
+    fireEvent.click(webcam);
     expect(getSavedDeviceId('input')).toBe('mic-2');
     expect(screen.queryByRole('listbox')).toBeNull();
     // A lista fechou, o diálogo continua aberto.
