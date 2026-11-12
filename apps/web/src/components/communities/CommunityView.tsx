@@ -5,6 +5,7 @@ import { Dialog, Heading, Modal, ModalOverlay } from 'react-aria-components';
 import type { CommunityVoiceState } from '@scale/shared';
 import { useRouter } from 'next/navigation';
 import { api, type CommunityDetail, type CommunityListItem } from '@/lib/api';
+import { callScreenPath, startBackgroundCall, useActiveCall } from '@/lib/callControl';
 import { useCommunityEvents } from '@/hooks/useCommunityEvents';
 import { useChannelMessages } from '@/hooks/useChannelMessages';
 import { Banner } from '@/components/ui/Banner';
@@ -43,6 +44,7 @@ export function CommunityView({
   const [dialog, setDialog] = useState<DialogName>(null);
   const [voice, setVoice] = useState<CommunityVoiceState[]>([]);
   const [refreshVersion, setRefreshVersion] = useState(0);
+  const activeCall = useActiveCall();
   const currentId = useRef(communityId);
   currentId.current = communityId;
   const selected =
@@ -135,11 +137,18 @@ export function CommunityView({
       onSelect={(channel) => {
         setDialog(null);
         setError('');
-        if (channel.kind === 'VOICE')
-          router.push(
-            `/room?id=${encodeURIComponent(channel.id)}&c=${encodeURIComponent(detail.community.id)}`,
-          );
-        else onNavigate(detail.community.id, channel.id);
+        // Voz estilo Discord: entra na chamada e continua no chat; a tela da
+        // chamada só abre por "Abrir chamada" ou pela barra de chamada.
+        if (channel.kind === 'VOICE') {
+          if (activeCall?.roomId !== channel.id)
+            startBackgroundCall({ roomId: channel.id, communityId: detail.community.id });
+        } else onNavigate(detail.community.id, channel.id);
+      }}
+      activeVoiceId={activeCall?.roomId}
+      activeVoiceJoined={!!activeCall?.joined}
+      onOpenCall={(channel) => {
+        setDialog(null);
+        router.push(callScreenPath(channel.id, detail.community.id));
       }}
       onInvite={() => setDialog('invite')}
       onSettings={() => setDialog('settings')}

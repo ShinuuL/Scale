@@ -3,9 +3,11 @@
 import Link from 'next/link';
 import { Icon } from '@/components/ui/Icon';
 import { Tooltip } from '@/components/ui/Tooltip';
+import { callScreenPath } from '@/lib/callControl';
 
 export interface MiniCallBarProps {
   roomId: string;
+  communityId?: string | null;
   roomName: string;
   connected: boolean;
   participants: number;
@@ -18,6 +20,7 @@ export interface MiniCallBarProps {
 /** Barra "Em chamada" mostrada fora da rota da sala: a ligação continua ativa. */
 export function MiniCallBar({
   roomId,
+  communityId,
   roomName,
   connected,
   participants,
@@ -70,7 +73,7 @@ export function MiniCallBar({
         </Tooltip>
         <Tooltip label="Voltar para a sala">
           <Link
-            href={`/room?id=${encodeURIComponent(roomId)}`}
+            href={callScreenPath(roomId, communityId)}
             aria-label="Voltar para a sala"
             className="flex h-9 w-9 items-center justify-center rounded-full text-ink-secondary transition-colors hover:bg-surface-hover hover:text-ink-primary"
           >

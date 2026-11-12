@@ -101,6 +101,9 @@ export function ChannelList({
   onSettings,
   canManage,
   onLeave,
+  activeVoiceId,
+  activeVoiceJoined = false,
+  onOpenCall,
 }: {
   name: string;
   channels: Channel[];
@@ -111,6 +114,10 @@ export function ChannelList({
   onSettings: () => void;
   canManage: boolean;
   onLeave?: () => void;
+  /** Canal de voz em que esta aba está (ou entrando). */
+  activeVoiceId?: string;
+  activeVoiceJoined?: boolean;
+  onOpenCall?: (channel: Channel) => void;
 }) {
   return (
     <section className="flex h-full w-full flex-col bg-surface-secondary p-3">
@@ -170,28 +177,28 @@ export function ChannelList({
                 .filter((channel) => channel.kind === kind)
                 .map((channel) => (
                   <li key={channel.id}>
-                    <button
-                      type="button"
-                      onClick={() => onSelect(channel)}
-                      aria-current={channel.id === selected ? 'true' : undefined}
-                      className={`${item} ${channel.id === selected ? 'bg-surface-hover text-ink-primary' : ''}`}
-                    >
-                      <Icon name={kind === 'TEXT' ? 'hash' : 'speaker'} />
-                      <span className="truncate">{channel.name}</span>
-                    </button>
-                    {kind === 'VOICE' && (
-                      <ul>
-                        {voiceStates
-                          .find((state) => state.channelId === channel.id)
-                          ?.members.map((member) => (
-                            <li
-                              key={member.userId}
-                              className="truncate py-1 pl-10 text-xs text-ink-muted"
-                            >
-                              {member.name}
-                            </li>
-                          ))}
-                      </ul>
+                    {kind === 'VOICE' ? (
+                      <VoiceChannelItem
+                        channel={channel}
+                        members={
+                          voiceStates.find((state) => state.channelId === channel.id)?.members ??
+                          []
+                        }
+                        active={channel.id === activeVoiceId}
+                        joined={channel.id === activeVoiceId && activeVoiceJoined}
+                        onSelect={() => onSelect(channel)}
+                        onOpenCall={onOpenCall ? () => onOpenCall(channel) : undefined}
+                      />
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => onSelect(channel)}
+                        aria-current={channel.id === selected ? 'true' : undefined}
+                        className={`${item} ${channel.id === selected ? 'bg-surface-hover text-ink-primary' : ''}`}
+                      >
+                        <Icon name="hash" />
+                        <span className="truncate">{channel.name}</span>
+                      </button>
                     )}
                   </li>
                 ))}
@@ -200,6 +207,76 @@ export function ChannelList({
         ))}
       </nav>
     </section>
+  );
+}
+
+function VoiceChannelItem({
+  channel,
+  members,
+  active,
+  joined,
+  onSelect,
+  onOpenCall,
+}: {
+  channel: Channel;
+  members: CommunityVoiceState['members'];
+  active: boolean;
+  joined: boolean;
+  onSelect: () => void;
+  onOpenCall?: () => void;
+}) {
+  return (
+    <>
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={onSelect}
+          aria-current={active ? 'true' : undefined}
+          aria-label={
+            active
+              ? `${channel.name}, ${joined ? 'conectado' : 'conectando'}`
+              : `Entrar no canal de voz ${channel.name}`
+          }
+          className={`${item} min-w-0 flex-1 ${active ? 'bg-surface-hover text-ink-primary' : ''}`}
+        >
+          <Icon name="speaker" />
+          <span className="truncate">{channel.name}</span>
+          {active && (
+            <span
+              className={`ml-auto shrink-0 text-[11px] font-medium ${joined ? 'text-emerald-400' : 'text-amber-300'}`}
+            >
+              {joined ? 'Conectado' : 'Conectando'}
+            </span>
+          )}
+        </button>
+        {active && onOpenCall && (
+          <Tooltip label="Abrir chamada">
+            <AriaButton
+              aria-label={`Abrir chamada de ${channel.name}`}
+              onPress={onOpenCall}
+              className="shrink-0 rounded-lg p-2 text-ink-muted hover:bg-surface-hover hover:text-ink-primary"
+            >
+              <Icon name="maximize" />
+            </AriaButton>
+          </Tooltip>
+        )}
+      </div>
+      {members.length > 0 && (
+        <ul aria-label={`Conectados em ${channel.name}`} className="mb-1">
+          {members.map((member) => (
+            <li key={member.userId} className="flex items-center gap-2 py-1 pl-9 pr-2">
+              <span
+                aria-hidden="true"
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-surface-hover text-[11px] font-semibold text-ink-primary"
+              >
+                {member.name.slice(0, 1).toLocaleUpperCase('pt-BR')}
+              </span>
+              <span className="truncate text-sm text-ink-secondary">{member.name}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
   );
 }
 
