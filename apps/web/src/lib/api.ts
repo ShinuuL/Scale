@@ -19,7 +19,7 @@ const okSchema = z.object({ ok: z.literal(true) });
 const communitySchema = z.object({ id: z.string(), name: z.string(), ownerId: z.string() });
 const channelSchema = z.object({ id: z.string(), name: z.string(), kind: channelKindSchema, position: z.number() });
 const memberSchema = z.object({ userId: z.string(), name: z.string(), username: z.string().nullable(), role: communityRoleSchema });
-export const channelMessageSchema = z.object({ id: z.string(), channelId: z.string(), author: z.object({ id: z.string().nullable(), name: z.string(), username: z.string().nullable() }), content: z.string(), createdAt: z.string(), editedAt: z.string().nullable(), deletedAt: z.string().nullable() });
+export const channelMessageSchema = z.object({ id: z.string(), channelId: z.string(), author: z.object({ id: z.string().nullable(), name: z.string(), username: z.string().nullable() }), content: z.string(), createdAt: z.string(), editedAt: z.string().nullable(), deletedAt: z.string().nullable(), files: z.array(z.object({ id: z.string(), filename: z.string(), mime: z.string(), size: z.number() })).default([]) });
 const communityDetailSchema = z.object({ community: communitySchema, myRole: communityRoleSchema, channels: z.array(channelSchema), members: z.array(memberSchema) });
 const communityListSchema = z.object({ communities: z.array(z.object({ id: z.string(), name: z.string(), role: communityRoleSchema })) });
 const inviteSchema = z.object({ id: z.string(), createdById: z.string(), expiresAt: z.string(), maxUses: z.number().nullable(), uses: z.number(), revokedAt: z.string().nullable(), createdAt: z.string() });
@@ -367,6 +367,20 @@ class ApiClient {
   }
   async sendChannelMessage(id: string, content: string) { return z.object({ message: channelMessageSchema }).parse(await this.request(`/api/channels/${encodeURIComponent(id)}/messages`, { method: 'POST', body: JSON.stringify(channelMessageSendSchema.parse({ content })) })); }
   async editChannelMessage(id: string, messageId: string, content: string): Promise<void> { okSchema.parse(await this.request(`/api/channels/${encodeURIComponent(id)}/messages/${encodeURIComponent(messageId)}`, { method: 'PATCH', body: JSON.stringify(channelMessageSendSchema.parse({ content })) })); }
+  /** Imagens no canal: mesma rota de arquivos das salas (membro do canal de texto passa). */
+  async uploadChannelImages(id: string, files: File[], content: string) {
+    const form = new FormData();
+    form.append('content', content);
+    for (const file of files) form.append('file', file, file.name);
+    const response = await fetch(`${this.baseUrl}/api/rooms/${encodeURIComponent(id)}/files`, { method: 'POST', body: form, credentials: 'include' });
+    const body: unknown = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error: ApiError = { error: z.object({ error: z.string() }).safeParse(body).data?.error ?? `HTTP ${response.status}`, status: response.status };
+      throw error;
+    }
+    return z.object({ message: channelMessageSchema }).parse(body);
+  }
+  fileUrl(fileId: string) { return `${this.baseUrl}/api/files/${encodeURIComponent(fileId)}`; }
   async deleteChannelMessage(id: string, messageId: string): Promise<void> { okSchema.parse(await this.request(`/api/channels/${encodeURIComponent(id)}/messages/${encodeURIComponent(messageId)}`, { method: 'DELETE', body: '{}' })); }
   async createCommunityInvite(id: string, input: { expiresIn?: '1h' | '24h' | '7d'; maxUses?: number }) { return z.object({ invite: z.object({ id: z.string(), code: z.string(), expiresAt: z.string(), maxUses: z.number().nullable() }) }).parse(await this.request(`/api/communities/${encodeURIComponent(id)}/invites`, { method: 'POST', body: JSON.stringify(communityInviteCreateSchema.parse(input)) })); }
   async listCommunityInvites(id: string) { return z.object({ invites: z.array(inviteSchema) }).parse(await this.request(`/api/communities/${encodeURIComponent(id)}/invites`)); }

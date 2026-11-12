@@ -251,6 +251,10 @@ docker compose up --build -d
     100 MB (limite do plano gratuito): arquivos maiores só sobem pelo acesso
     direto ao proxy (localhost/LAN)
 - Upload bloqueado em sala temporária (apenas persistente aceita arquivos)
+- Imagens nos canais de texto da comunidade: mesma rota `POST /api/rooms/:id/files`
+  (até 5 por mensagem, quota da sala). No canal de texto ser **membro** é a prova
+  de participação (não há `join-room`); só `image/*` é aceito. A mensagem sai
+  como `channel:message` para a comunidade, com `files` no DTO.
 - Sistema de ícones internos: UI sem emojis, `apps/web/src/components/ui/Icon.tsx`
   com 38 ícones (SVG vetorial, `stroke="currentColor"`), sem dependência externa
 - Configurações (menu de perfil, ícone `settings`): nome de usuário

@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { CHAT_EDIT_WINDOW_MS, MAX_COMMUNITIES_OWNED, MAX_COMMUNITIES_JOINED, MAX_CHANNELS_PER_COMMUNITY, MAX_COMMUNITY_MEMBERS, communityCreateSchema, channelCreateSchema, channelUpdateSchema, communityMemberRoleSchema, communityInviteCreateSchema, communityInviteCodeSchema, channelMessageSendSchema } from '@scale/shared';
 import { prisma } from '../lib/prisma.js';
 import { DELETED_MESSAGE_CONTENT } from '../lib/publicDto.js';
-import { findMembership, canModerate, communityRoom } from '../lib/communityAccess.js';
+import { findMembership, canModerate, communityRoom, toChannelMessage } from '../lib/communityAccess.js';
 import { isChatRateLimited, isCommunityInviteRateLimited } from '../lib/rateLimit.js';
 import { evictCommunityUser, evictCommunity } from '../socket/handler.js';
 import { purgeRoom } from '../lib/roomDeletion.js';
@@ -170,10 +170,10 @@ export async function communityRoutes(app: FastifyInstance): Promise<void> {
     if (!await findMembership(room.communityId, meOf(request))) return missing(reply);
     let cursorDate: Date | undefined;
     if (query.data.cursor) { const cursor = await prisma.chatMessage.findUnique({ where: { id: query.data.cursor } }); if (!cursor || cursor.roomId !== room.id) return missing(reply); cursorDate = cursor.createdAt; }
-    const rows = await prisma.chatMessage.findMany({ where: { roomId: room.id, ...(cursorDate && query.data.cursor ? { OR: [{ createdAt: { lt: cursorDate } }, { createdAt: cursorDate, id: { lt: query.data.cursor } }] } : {}) }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: query.data.limit });
+    const rows = await prisma.chatMessage.findMany({ where: { roomId: room.id, ...(cursorDate && query.data.cursor ? { OR: [{ createdAt: { lt: cursorDate } }, { createdAt: cursorDate, id: { lt: query.data.cursor } }] } : {}) }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: query.data.limit, include: { files: true } });
     const authors = await prisma.user.findMany({ where: { id: { in: rows.flatMap(row => row.authorId ? [row.authorId] : []) } }, include: { username: true } });
     const users = new Map(authors.map(user => [user.id, user]));
-    const messages = rows.reverse().map(row => { const user = row.authorId ? users.get(row.authorId) : undefined; return { id: row.id, channelId: room.id, author: { id: row.authorId, name: user?.name ?? row.guestName ?? 'Usuário', username: user?.username?.name ?? null }, content: row.content, createdAt: row.createdAt.toISOString(), editedAt: row.editedAt?.toISOString() ?? null, deletedAt: row.deletedAt?.toISOString() ?? null }; });
+    const messages = rows.reverse().map(row => { const user = row.authorId ? users.get(row.authorId) : undefined; return toChannelMessage(row, { id: row.authorId, name: user?.name ?? row.guestName ?? 'Usuário', username: user?.username?.name ?? null }); });
     return reply.send({ messages, nextCursor: rows.length === query.data.limit ? rows[0]?.id ?? null : null });
   });
   app.post('/api/channels/:id/messages', auth, async (request, reply) => {
@@ -183,7 +183,7 @@ export async function communityRoutes(app: FastifyInstance): Promise<void> {
     if (isChatRateLimited(`user:${me}`)) return reply.code(429).header('Retry-After', '5').send({ error: 'Too many messages' });
     const user = await prisma.user.findUnique({ where: { id: me }, include: { username: true } }); if (!user) return missing(reply);
     const row = await prisma.chatMessage.create({ data: { roomId: room.id, authorId: me, content: body.data.content } });
-    const message = { id: row.id, channelId: room.id, author: { id: user.id, name: user.name, username: user.username?.name ?? null }, content: row.content, createdAt: row.createdAt.toISOString(), editedAt: null, deletedAt: null };
+    const message = toChannelMessage(row, { id: user.id, name: user.name, username: user.username?.name ?? null });
     ioOf(app)?.to(communityRoom(room.communityId)).emit('channel:message', message); return reply.code(201).send({ message });
   });
   app.patch('/api/channels/:id/messages/:messageId', auth, async (request, reply) => {

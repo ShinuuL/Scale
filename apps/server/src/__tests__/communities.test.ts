@@ -4,6 +4,7 @@ import type { Server as HttpServer } from 'node:http';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import Fastify, { type FastifyInstance, type InjectOptions } from 'fastify';
 import cookie from '@fastify/cookie';
+import multipart from '@fastify/multipart';
 import { io as ioClient, type Socket } from 'socket.io-client';
 import { prisma } from '../lib/prisma.js';
 import { signToken } from '../lib/auth.js';
@@ -77,6 +78,7 @@ describe('comunidades', () => {
     await app.register(communityRoutes);
     await app.register(roomRoutes);
     await app.register(messagesRoutes);
+    await app.register(multipart, { limits: { fileSize: 15_000_000, files: 5 } });
     await app.register(filesRoutes);
     await app.register(turnRoutes);
     await app.listen({ port: 0, host: '127.0.0.1' });
@@ -323,6 +325,33 @@ describe('comunidades', () => {
     const old = await prisma.chatMessage.create({ data: { roomId: channel.id, authorId: users.member.id, content: 'antiga', createdAt: new Date(Date.now() - 16 * 60_000) } });
     expect((await inject('member', 'PATCH', `/api/channels/${channel.id}/messages/${old.id}`, { content: 'tarde' })).statusCode).toBe(400);
     expect((await inject('member', 'GET', `/api/channels/${channel.id}/messages`)).json()).toMatchObject({ messages: expect.arrayContaining([expect.objectContaining({ id: messageId, deletedAt: expect.any(String) })]) });
+  });
+
+  it('membro envia imagem no canal de texto; fora da comunidade e nao-imagem sao recusados', async () => {
+    const id = await create();
+    await join(id, 'member');
+    const text = (await detail(id)).channels.find((channel) => channel.kind === 'TEXT')!;
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52]);
+    const upload = (who: Who, filename: string, type: string, content: Buffer) => {
+      const boundary = `----scale${Math.random().toString(16).slice(2)}`;
+      const crlf = '\r\n';
+      const head = [`--${boundary}`, 'Content-Disposition: form-data; name="content"', '', 'olha', `--${boundary}`, `Content-Disposition: form-data; name="file"; filename="${filename}"`, `Content-Type: ${type}`, '', ''].join(crlf);
+      const payload = Buffer.concat([Buffer.from(head), content, Buffer.from(`${crlf}--${boundary}--${crlf}`)]);
+      return app.inject({ method: 'POST', url: `/api/rooms/${text.id}/files`, payload, headers: { cookie: `token=${users[who].token}`, 'content-type': `multipart/form-data; boundary=${boundary}` } });
+    };
+    const observer = await connect('owner');
+    await ack(observer, 'community:subscribe', { communityId: id });
+    const event = next<{ channelId: string; files: Array<{ id: string }> }>(observer, 'channel:message');
+    const sent = await upload('member', 'foto.png', 'image/png', png);
+    expect(sent.statusCode).toBe(201);
+    const message = sent.json().message as { id: string; content: string; files: Array<{ id: string; mime: string }> };
+    expect(message).toMatchObject({ content: 'olha', files: [{ mime: 'image/png' }] });
+    expect(await event).toMatchObject({ channelId: text.id, files: [{ id: message.files[0]!.id }] });
+    expect((await inject('member', 'GET', `/api/channels/${text.id}/messages`)).json()).toMatchObject({ messages: [{ id: message.id, files: [{ id: message.files[0]!.id }] }] });
+    expect((await inject('owner', 'GET', `/api/files/${message.files[0]!.id}`)).statusCode).toBe(200);
+    expect((await inject('outsider', 'GET', `/api/files/${message.files[0]!.id}`)).statusCode).toBe(403);
+    expect((await upload('outsider', 'foto.png', 'image/png', png)).statusCode).toBe(403);
+    expect((await upload('member', 'nota.txt', 'text/plain', Buffer.from('oi'))).statusCode).toBe(400);
   });
 
   it('recusa criar comunidade acima do limite e aceitar convite de comunidade cheia', async () => {

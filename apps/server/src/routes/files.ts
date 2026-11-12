@@ -8,6 +8,7 @@ import { prisma } from '../lib/prisma.js';
 import { sanitizeFilename, detectMagicBytes, prepareFilePath, readFileHead, getQuotaUsage, UPLOADS_ROOT } from '../lib/uploads.js';
 import { ALLOWED_MIME_RE, CHAT_MESSAGE_MAX, MAX_FILES_PER_MESSAGE, ROOM_FILE_QUOTA_BYTES, parseGuestName } from '@scale/shared';
 import { guardRoomParticipation } from '../lib/roomAccess.js';
+import { communityRoom, toChannelMessage } from '../lib/communityAccess.js';
 import { addChatFilesBytes, incQuotaExceeded } from '../lib/metrics.js';
 import { toPublicFile } from '../lib/publicDto.js';
 import { emitChatMessage } from '../socket/handler.js';
@@ -83,7 +84,8 @@ export async function filesRoutes(fastify: FastifyInstance): Promise<void> {
           }
 
           const mime = part.mimetype;
-          if (!ALLOWED_MIME_RE.test(mime)) {
+          // Canal de texto de comunidade: so imagens (o resto da allowlist e das salas).
+          if (!ALLOWED_MIME_RE.test(mime) || (room.communityId && !mime.startsWith('image/'))) {
             part.file.resume();
             return await reject(400, { error: 'Tipo não permitido', mime });
           }
@@ -162,6 +164,13 @@ export async function filesRoutes(fastify: FastifyInstance): Promise<void> {
       // broadcast como chat:message
       // DTO publico por destinatario: sem path/uploadedBy/authorId.
       const io = (fastify as unknown as { io?: import('socket.io').Server }).io;
+      if (room.communityId) {
+        // Canal de comunidade fala o protocolo channel:* (a pagina da comunidade nao entra na sala).
+        const author = userId ? await prisma.user.findUnique({ where: { id: userId }, include: { username: true } }) : null;
+        const channelMessage = toChannelMessage({ ...message, files: createdFiles }, { id: userId, name: author?.name ?? guestName, username: author?.username?.name ?? null });
+        io?.to(communityRoom(room.communityId)).emit('channel:message', channelMessage);
+        return reply.code(201).send({ files: createdFiles.map(toPublicFile), messageId: message.id, message: channelMessage });
+      }
       if (io) emitChatMessage(io, roomId, { ...message, files: createdFiles });
 
       return reply.code(201).send({ files: createdFiles.map(toPublicFile), messageId: message.id });
