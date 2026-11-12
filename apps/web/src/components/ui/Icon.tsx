@@ -25,6 +25,7 @@ export type IconName =
   | 'arrowRight'
   | 'ban'
   | 'book'
+  | 'chart'
   | 'chat'
   | 'check'
   | 'checkCircle'
@@ -33,6 +34,7 @@ export type IconName =
   | 'close'
   | 'document'
   | 'eye'
+  | 'flag'
   | 'hash'
   | 'plus'
   | 'github'
@@ -50,11 +52,13 @@ export type IconName =
   | 'mic'
   | 'micOff'
   | 'monitor'
+  | 'more'
   | 'music'
   | 'paperclip'
   | 'phone'
   | 'search'
   | 'settings'
+  | 'shield'
   | 'speaker'
   | 'speakerOff'
   | 'trash'
@@ -142,6 +146,7 @@ export const ICONS: Record<IconName, IconShape[]> = {
     { d: 'M9.9 13.3a4.5 4.5 0 0 0 6.8.5l2.7-2.7a4.5 4.5 0 0 0-6.4-6.4l-1.5 1.5' },
     { d: 'M14.1 10.7a4.5 4.5 0 0 0-6.8-.5l-2.7 2.7a4.5 4.5 0 0 0 6.4 6.4l1.5-1.5' },
   ],
+  chart: [{ d: 'M4 20h16' }, { d: 'M7 16.5v-5' }, { d: 'M12 16.5V7' }, { d: 'M17 16.5v-7.5' }],
   chat: [
     { d: 'M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v10a2.5 2.5 0 0 1-2.5 2.5H9.6L4 21.5V5.5Z' },
   ],
@@ -270,6 +275,15 @@ export const ICONS: Record<IconName, IconShape[]> = {
       d: 'M12 2.2a9.8 9.8 0 0 0-3.1 19.1c.5.1.7-.2.7-.5v-1.7c-2.7.6-3.3-1.3-3.3-1.3-.4-1.1-1.1-1.4-1.1-1.4-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.5 2.3 1.1 2.9.8.1-.6.3-1.1.6-1.3-2.2-.2-4.5-1.1-4.5-4.9 0-1.1.4-2 1-2.6-.1-.3-.4-1.3.1-2.6 0 0 .8-.3 2.7 1a9.3 9.3 0 0 1 4.9 0c1.9-1.3 2.7-1 2.7-1 .5 1.3.2 2.3.1 2.6.6.7 1 1.6 1 2.6 0 3.8-2.3 4.6-4.5 4.9.4.3.7.9.7 1.8v2.7c0 .3.2.6.7.5A9.8 9.8 0 0 0 12 2.2Z',
       filled: true,
     },
+  ],
+  // Reticências verticais: menu de ações de um item (participante).
+  more: [{ d: 'M12 5.2h.01' }, { d: 'M12 12h.01' }, { d: 'M12 18.8h.01' }],
+  // Bandeira: denunciar.
+  flag: [{ d: 'M5.5 20.5V4' }, { d: 'M5.5 4.6h11.2l-2.3 4 2.3 4H5.5' }],
+  // Escudo: privacidade e dados pessoais.
+  shield: [
+    { d: 'M12 3.2 5 5.8v5.3c0 4.3 2.9 7.6 7 9.1 4.1-1.5 7-4.8 7-9.1V5.8L12 3.2Z' },
+    { d: 'M9.4 12.1l1.8 1.8 3.5-3.6' },
   ],
   // Lixeira: tampa com alça, corpo afunilado e dois frisos.
   trash: [

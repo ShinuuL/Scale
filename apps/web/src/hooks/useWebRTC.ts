@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
-import type { UseSocketReturn, PeerInfo } from './useSocket';
+import { ScreenShareNotAllowedError, type UseSocketReturn, type PeerInfo } from './useSocket';
 import { getSavedDeviceId } from '@/lib/audioDevices';
 import { roomTicketHeaders } from '@/lib/roomAccess';
 
@@ -15,6 +15,30 @@ export interface PeerConnection {
   audioMuted: boolean;
   videoMuted: boolean;
   isScreenSharing: boolean;
+}
+
+/**
+ * Quem encerrou a partilha de tela a forca: 'assistant' (veredito automatico
+ * da moderacao), 'owner' (dono da sala) ou 'gate' (o servidor recusou o sinal
+ * `signal:screen-share-state` por falta de idade/consentimento).
+ */
+export type ScreenShareStopCause = 'assistant' | 'owner' | 'gate';
+
+/**
+ * Resultado de `toggleScreenShare`: `true` compartilhando, `false` parou,
+ * `null` bloqueado (contexto inseguro / captura indisponivel / cancelado) e
+ * `'gated'` quando o pre-check recusou ANTES de pedir a captura (a UI abre o
+ * dialogo do gate).
+ */
+export type ScreenShareToggleResult = boolean | null | 'gated';
+
+export interface ScreenShareToggleOptions {
+  /**
+   * Pre-check do gate (idade + consentimento + nao convidado). So e consultado
+   * ao INICIAR a partilha; parar nunca e bloqueado. `false` = devolve 'gated'
+   * sem chamar getDisplayMedia.
+   */
+  canShare?: () => boolean;
 }
 
 export interface UseWebRTCHReturn {
@@ -42,10 +66,15 @@ export interface UseWebRTCHReturn {
    */
   toggleDeafen: () => boolean | null;
   /**
-   * Alterna screen share. Retorna `true` (compartilhando) / `false` (parou) ou
-   * `null` quando bloqueado (contexto inseguro / getDisplayMedia indisponível).
+   * Alterna screen share. Retorna `true` (compartilhando) / `false` (parou),
+   * `null` quando bloqueado (contexto inseguro / getDisplayMedia indisponível)
+   * ou `'gated'` quando `options.canShare` recusou antes da captura.
    */
-  toggleScreenShare: () => Promise<boolean | null>;
+  toggleScreenShare: (options?: ScreenShareToggleOptions) => Promise<ScreenShareToggleResult>;
+  /** Partilha encerrada pelo assistente, pelo dono ou pelo gate do servidor. */
+  screenShareStoppedBy: ScreenShareStopCause | null;
+  /** A UI ja mostrou o aviso de `screenShareStoppedBy`. */
+  clearScreenShareStop: () => void;
   /**
    * Troca o microfone ao vivo ('' = padrão do sistema): replaceTrack em todos
    * os peers, sem renegociar, preservando o mudo. Falhou = mantém a faixa
@@ -279,6 +308,11 @@ export function useWebRTC(
   const mediaRequestRef = useRef<Promise<boolean> | null>(null);
   const [isChangingMicrophone, setIsChangingMicrophone] = useState(false);
   const [screenShareError, setScreenShareError] = useState<string | null>(null);
+  const [screenShareStoppedBy, setScreenShareStoppedBy] = useState<ScreenShareStopCause | null>(null);
+  // Anuncio de partilha com tratamento do ack (definido mais abaixo); por ref
+  // para os callbacks de peer-joined/offer, criados antes, usarem a versao atual.
+  const announceScreenShareRef = useRef<(peerId: string, sharing: boolean) => void>(() => undefined);
+  const clearScreenShareStop = useCallback(() => setScreenShareStoppedBy(null), []);
   const [screenAudioAvailable, setScreenAudioAvailable] = useState(false);
   const screenPendingRef = useRef(false);
   const screenGenerationRef = useRef(0);
@@ -816,7 +850,7 @@ export function useWebRTC(
           const offer = tuneOpus(await pc.createOffer());
           await pc.setLocalDescription(offer);
           await socketHook.emitOffer(roomId, peer.peerId, offer);
-          socketHook.emitScreenShareState(roomId, peer.peerId, Boolean(localScreenStreamRef.current));
+          announceScreenShareRef.current(peer.peerId, Boolean(localScreenStreamRef.current));
           console.debug('[WebRTC] sent offer to existing peer', peer.peerId);
         } catch (err) {
           console.error(`[WebRTC] failed to negotiate with existing peer ${peer.peerId}:`, err);
@@ -1029,9 +1063,42 @@ export function useWebRTC(
     }
   }, [roomId, socketHook, syncScreenTracks, requestNegotiation]);
 
-  const toggleScreenShare = useCallback(async (): Promise<boolean | null> => {
+  // Ref para o handler do ack (criado antes de stopScreenShare existir no
+  // closure dos emits de peer-joined/offer) sempre parar a captura ATUAL.
+  const stopScreenShareRef = useRef<() => Promise<void>>(async () => undefined);
+  stopScreenShareRef.current = stopScreenShare;
+
+  /**
+   * Anuncia a partilha a um peer. O servidor pode recusar `true` com
+   * `SCREEN_SHARE_NOT_ALLOWED` (gate de idade/consentimento): ai a captura e
+   * parada na hora e a UI recebe o motivo. Outros erros so vao para o log.
+   */
+  const announceScreenShare = useCallback((peerId: string, sharing: boolean): void => {
+    socketHook.emitScreenShareState(roomId, peerId, sharing).catch((error: unknown) => {
+      if (sharing && error instanceof ScreenShareNotAllowedError) {
+        if (!localScreenStreamRef.current) return;
+        void stopScreenShareRef.current();
+        setScreenShareStoppedBy('gate');
+        setScreenShareError(
+          error.reason === 'guest'
+            ? 'Entre com uma conta para compartilhar a tela.'
+            : error.reason === 'age'
+              ? 'Partilha de tela indisponível para a sua idade.'
+              : 'Aceite o termo de partilha de tela em Configurações > Privacidade.',
+        );
+        return;
+      }
+      console.debug('[WebRTC] screen-share-state não aceito', error);
+    });
+  }, [roomId, socketHook]);
+  announceScreenShareRef.current = announceScreenShare;
+
+  const toggleScreenShare = useCallback(async (options?: ScreenShareToggleOptions): Promise<ScreenShareToggleResult> => {
     if (localScreenStreamRef.current) { await stopScreenShare(); return false; }
     if (screenPendingRef.current) return null;
+    // Gate (idade + consentimento) ANTES de pedir a tela ao navegador: a UI
+    // abre o dialogo e chama de novo quando liberar.
+    if (options?.canShare && !options.canShare()) return 'gated';
     if (!window.isSecureContext || !navigator.mediaDevices?.getDisplayMedia) {
       setScreenShareError('Compartilhamento indisponível. Use HTTPS e um navegador com captura de tela.');
       return null;
@@ -1039,6 +1106,7 @@ export function useWebRTC(
     const generation = ++screenGenerationRef.current;
     screenPendingRef.current = true;
     setScreenShareError(null);
+    setScreenShareStoppedBy(null);
     try {
       // O navegador/SO escolhe se a fonte suporta áudio. Ausência de faixa é
       // sucesso de vídeo e tem feedback próprio; nunca prometemos loopback.
@@ -1076,7 +1144,7 @@ export function useWebRTC(
       });
       for (const [peerId, peer] of peersRef.current) {
         syncScreenTracks(peerId, peer.connection);
-        socketHook.emitScreenShareState(roomId, peerId, true);
+        announceScreenShare(peerId, true);
         void requestNegotiation(peerId);
       }
       return true;
@@ -1089,7 +1157,7 @@ export function useWebRTC(
     } finally {
       if (generation === screenGenerationRef.current) screenPendingRef.current = false;
     }
-  }, [stopScreenShare, roomId, socketHook, syncScreenTracks, requestNegotiation]);
+  }, [stopScreenShare, announceScreenShare, syncScreenTracks, requestNegotiation]);
 
   // ─── Socket event handlers ────────────────────────────────────
   useEffect(() => {
@@ -1124,7 +1192,7 @@ export function useWebRTC(
         const offer = tuneOpus(await pc.createOffer());
         await pc.setLocalDescription(offer);
         await socketHook.emitOffer(roomId, peer.peerId, offer);
-          socketHook.emitScreenShareState(roomId, peer.peerId, Boolean(localScreenStreamRef.current));
+          announceScreenShareRef.current(peer.peerId, Boolean(localScreenStreamRef.current));
         console.debug('[WebRTC] sent offer to', peer.peerId);
       } catch (err) {
         console.error(`[WebRTC] failed to offer to ${peer.peerId}:`, err);
@@ -1225,7 +1293,7 @@ export function useWebRTC(
       const answer = tuneOpus(await pc.createAnswer());
       await pc.setLocalDescription(answer);
       socketHook.emitAnswer(roomId, data.fromPeerId, answer);
-      socketHook.emitScreenShareState(roomId, data.fromPeerId, Boolean(localScreenStreamRef.current));
+      announceScreenShareRef.current(data.fromPeerId, Boolean(localScreenStreamRef.current));
       if (pendingNegotiationsRef.current.has(data.fromPeerId)) void requestNegotiation(data.fromPeerId);
       console.debug('[WebRTC] sent answer to', data.fromPeerId);
       if (isNew) {
@@ -1283,6 +1351,15 @@ export function useWebRTC(
 
     const unsubScreenShare = socketHook.onScreenShareState(handleScreenShareState);
 
+    // Moderacao: o servidor manda parar a partilha (veredito do assistente ou
+    // pedido do dono). Para na hora; a UI mostra a causa.
+    const unsubModeration = socketHook.onModerationAction((data) => {
+      if (data.roomId !== roomId || data.action !== 'stop-screen-share') return;
+      if (!localScreenStreamRef.current) return;
+      void stopScreenShare();
+      setScreenShareStoppedBy(data.by);
+    });
+
     const unsubAudioState = socketHook.onPeerAudioState(({ peerId, muted }) => {
       remoteMutedRef.current.set(peerId, muted);
       const existing = peersRef.current.get(peerId);
@@ -1299,9 +1376,10 @@ export function useWebRTC(
       unsubAnswer();
       unsubIce();
       unsubScreenShare();
+      unsubModeration();
       unsubAudioState();
     };
-  }, [roomId, socketHook, createPeerConnection, cleanupPeer, broadcastPeersUpdate, shouldInitiate, syncScreenTracks, requestNegotiation]);
+  }, [roomId, socketHook, createPeerConnection, cleanupPeer, broadcastPeersUpdate, shouldInitiate, syncScreenTracks, requestNegotiation, stopScreenShare]);
 
   // ─── Reconexão do socket ────────────────────────────────────────────────
   // O re-join após queda vive na página da sala (room/[id]/page.tsx,
@@ -1335,6 +1413,8 @@ export function useWebRTC(
       toggleMute,
       toggleDeafen,
       toggleScreenShare,
+      screenShareStoppedBy,
+      clearScreenShareStop,
       switchMicrophone,
       initMedia,
       cleanupMedia,
@@ -1356,6 +1436,8 @@ export function useWebRTC(
       toggleMute,
       toggleDeafen,
       toggleScreenShare,
+      screenShareStoppedBy,
+      clearScreenShareStop,
       switchMicrophone,
       initMedia,
       cleanupMedia,
