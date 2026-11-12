@@ -11,7 +11,7 @@ import {
   type ModerationVerdict,
 } from '@scale/shared';
 import { prisma } from '../lib/prisma.js';
-import { isSystemAdmin } from '../lib/env.js';
+import { isAdminUser } from '../lib/adminRole.js';
 import { isAdminSettingsRateLimited } from '../lib/rateLimit.js';
 import { encryptSecret } from '../lib/settingsCrypto.js';
 import {
@@ -74,7 +74,7 @@ export async function adminModerationRoutes(fastify: FastifyInstance): Promise<v
   async function requireAdmin(request: FastifyRequest, reply: FastifyReply): Promise<void> {
     await fastify.authenticate(request, reply);
     if (reply.sent) return;
-    if (!isSystemAdmin(request.userEmail)) {
+    if (!(await isAdminUser({ userId: request.userId, email: request.userEmail }))) {
       await reply.code(403).send({ error: 'Forbidden' });
       return;
     }

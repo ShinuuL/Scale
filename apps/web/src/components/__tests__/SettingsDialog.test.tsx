@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { getSavedDeviceId } from '@/lib/audioDevices';
 import { isBluetoothCallMic } from '@/components/ui/AudioSettings';
+import { RouterProvider } from 'react-aria-components';
 import { SettingsDialog } from '@/components/ui/SettingsDialog';
 
 beforeEach(() => {
@@ -106,5 +107,39 @@ describe('isBluetoothCallMic', () => {
     expect(isBluetoothCallMic('Microfone Bluetooth')).toBe(true);
     expect(isBluetoothCallMic('Microfone (Realtek High Definition Audio)')).toBe(false);
     expect(isBluetoothCallMic(undefined)).toBe(false);
+  });
+});
+
+describe('SettingsDialog: seção Administração', () => {
+  const base = { id: 'ana', name: 'Ana', email: 'ana@example.test', createdAt: '2026-11-06T10:00:00.000Z' };
+
+  it('aparece só para admin, com os três links, e fecha o diálogo ao navegar', async () => {
+    const onClose = vi.fn();
+    const navigate = vi.fn();
+    // Mesmo papel do AriaRouter: o link navega pelo roteador, sem recarregar.
+    const { unmount } = render(
+      <RouterProvider navigate={navigate}>
+        <SettingsDialog user={{ ...base, isAdmin: true }} onClose={onClose} />
+      </RouterProvider>,
+    );
+    const moderation = await screen.findByRole('link', { name: 'Moderação' });
+    expect(moderation).toHaveAttribute('href', '/admin/moderation');
+    expect(screen.getByRole('link', { name: 'Métricas' })).toHaveAttribute('href', '/metrics');
+    expect(screen.getByRole('link', { name: 'Administradores' })).toHaveAttribute('href', '/admin/users');
+    fireEvent.click(screen.getByRole('link', { name: 'Administradores' }));
+    expect(onClose).toHaveBeenCalled();
+    expect(navigate).toHaveBeenCalledWith('/admin/users', undefined);
+    unmount();
+  });
+
+  it('não aparece para conta comum nem convidado', async () => {
+    const { unmount } = render(<SettingsDialog user={{ ...base, isAdmin: false }} onClose={vi.fn()} />);
+    await screen.findByRole('dialog');
+    expect(screen.queryByRole('heading', { name: 'Administração' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Administradores' })).not.toBeInTheDocument();
+    unmount();
+    render(<SettingsDialog user={null} onClose={vi.fn()} />);
+    await screen.findByRole('dialog');
+    expect(screen.queryByRole('link', { name: 'Moderação' })).not.toBeInTheDocument();
   });
 });

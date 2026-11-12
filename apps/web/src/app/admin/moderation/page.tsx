@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import type { AdminModerationState, ModerationAuditEntry } from '@scale/shared';
 import { AppShell } from '@/components/layout/AppShell';
 import { ModerationAuditTable } from '@/components/admin/ModerationAuditTable';
@@ -12,9 +11,10 @@ import { Icon } from '@/components/ui/Icon';
 import { ProfileMenu } from '@/components/ui/ProfileMenu';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { ToastProvider, useToast } from '@/components/ui/Toast';
-import { api, type MeUser } from '@/lib/api';
-import { setFlash } from '@/lib/flash';
-import { ADMIN_ONLY_FLASH, PROVIDER_LABELS } from '@/components/admin/moderationLabels';
+import { api } from '@/lib/api';
+import { PROVIDER_LABELS } from '@/components/admin/moderationLabels';
+import { useAdminGuard } from '@/components/admin/useAdminGuard';
+import { BackToAdminLink } from '@/components/admin/BackToAdminLink';
 
 export default function AdminModerationPage() {
   return (
@@ -24,13 +24,9 @@ export default function AdminModerationPage() {
   );
 }
 
-type AuthState = 'loading' | 'ready' | 'error';
-
 function AdminModerationContent() {
-  const router = useRouter();
   const { toast } = useToast();
-  const [me, setMe] = useState<MeUser | null>(null);
-  const [authState, setAuthState] = useState<AuthState>('loading');
+  const { me, setMe, authState, denied } = useAdminGuard();
   const [state, setState] = useState<AdminModerationState | null>(null);
   const [stateError, setStateError] = useState<string | null>(null);
   const [audit, setAudit] = useState<ModerationAuditEntry[] | null>(null);
@@ -46,39 +42,18 @@ function AdminModerationContent() {
     }
   }, []);
 
-  // Sessao e permissao: sem login vai para /login; logado sem isAdmin volta
-  // para a home com aviso. O servidor repete a checagem (403) em toda rota.
+  // Dados so depois da guarda (sessao + isAdmin). O servidor repete a checagem.
   useEffect(() => {
+    if (authState !== 'ready') return;
     let alive = true;
     (async () => {
-      let user: MeUser;
-      try {
-        user = (await api.getMe()).user;
-      } catch (err) {
-        if (!alive) return;
-        if ((err as { status?: number }).status === 401) {
-          router.replace('/login');
-          return;
-        }
-        setAuthState('error');
-        return;
-      }
-      if (!alive) return;
-      if (user.isAdmin !== true) {
-        setFlash(ADMIN_ONLY_FLASH, 'error');
-        router.replace('/');
-        return;
-      }
-      setMe(user);
-      setAuthState('ready');
       try {
         const current = await api.getAdminModeration();
         if (alive) setState(current);
       } catch (err) {
         if (!alive) return;
         if ((err as { status?: number }).status === 403) {
-          setFlash(ADMIN_ONLY_FLASH, 'error');
-          router.replace('/');
+          denied();
           return;
         }
         setStateError('Não foi possível carregar a configuração da moderação.');
@@ -88,7 +63,7 @@ function AdminModerationContent() {
     return () => {
       alive = false;
     };
-  }, [router, loadAudit]);
+  }, [authState, denied, loadAudit]);
 
   const onStateChange = (next: AdminModerationState) => {
     setState(next);
@@ -108,6 +83,7 @@ function AdminModerationContent() {
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-8 sm:px-8">
         <div className="mx-auto max-w-3xl space-y-6">
           <header>
+            <BackToAdminLink />
             <h2 className="text-[28px] font-semibold leading-9 tracking-tight">Moderação</h2>
             <p className="mt-2 text-sm text-ink-secondary">
               Configuração em tempo de execução do assistente de moderação. O que for definido aqui vale

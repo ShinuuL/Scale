@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import { Link } from 'react-aria-components';
 import {
   AVATAR_FILE_ACCEPT,
   MAX_AVATAR_SIZE_BYTES,
@@ -8,6 +9,7 @@ import {
   USERNAME_MAX,
   usernameSchema,
 } from '@scale/shared';
+import { ADMIN_SECTIONS } from '@/components/admin/adminSections';
 import { AppModal } from '@/components/ui/AppModal';
 import { AudioSettings } from '@/components/ui/AudioSettings';
 import { Button } from '@/components/ui/Button';
@@ -264,6 +266,33 @@ export function SettingsDialog({ user, onClose, onUserChange }: SettingsDialogPr
           >
             {error ?? saved}
           </p>
+        )}
+
+        {user?.isAdmin === true && (
+          <section
+            aria-labelledby="settings-admin"
+            className="space-y-3 border-t border-white/[0.08] pt-4"
+          >
+            <h3 id="settings-admin" className="text-xs font-medium  text-ink-muted">
+              Administração
+            </h3>
+            {/* Link do react-aria: navega pelo roteador do Next (AriaRouter),
+                sem recarregar a página, então a chamada em andamento continua. */}
+            <ul className="grid gap-1">
+              {ADMIN_SECTIONS.map((section) => (
+                <li key={section.id}>
+                  <Link
+                    href={section.href}
+                    onPress={onClose}
+                    className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-ink-primary outline-none transition-colors hover:bg-white/[0.06] data-[focus-visible]:ring-2 data-[focus-visible]:ring-brand-400"
+                  >
+                    <Icon name={section.icon} size={16} className="text-ink-muted" />
+                    {section.label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </section>
         )}
 
         {user && <LinkedAccounts />}

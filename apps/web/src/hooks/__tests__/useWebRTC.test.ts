@@ -240,6 +240,7 @@ function createHookMock(myId: string) {
     onModerationConfig: vi.fn(() => () => {}),
     onModerationNotice: vi.fn(() => () => {}),
     onMeScreenShare: vi.fn(() => () => {}),
+    onMeAdmin: vi.fn(() => () => {}),
     emitModerationReport: vi.fn().mockResolvedValue(undefined),
     emitModerationStopShare: vi.fn().mockResolvedValue(undefined),
     guestName: 'Test',

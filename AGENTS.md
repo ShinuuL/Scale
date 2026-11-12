@@ -279,6 +279,19 @@ docker compose up --build -d
   (não-admin = 403; balde `adminSettings` 30 / 10 min por usuário).
   Override no banco > `.env`, campo a campo; `null` volta ao `.env`. Toda
   mudança vai para `ModerationAuditLog` e emite `moderation:config`.
+- Administradores (guia `docs/administracao.md`): papel **raiz** (`env`, e-mail
+  em `ADMIN_EMAILS`/`METRICS_ADMIN_EMAILS`, só sai pelo `.env`) ou
+  **concedido** (`db`, tabela `AdminGrant`). `GET /api/auth/me` devolve
+  `isAdmin` e `adminSource: 'env'|'db'|null`. Rotas (só admin, balde
+  `adminSettings`): `GET /api/admin/users?q=&filter=all|admins&cursor=&limit=`
+  (e-mail mascarado), `PUT|DELETE /api/admin/users/:userId/admin` (409
+  `env_admin`, 400 `cannot_revoke_self`), `GET /api/admin/users/audit`
+  (`AdminRoleAudit`). Após grant/revoke o servidor emite `me:admin`
+  `{ isAdmin, adminSource }` em `user:<targetId>`; o front atualiza o usuário
+  em memória (`useSocket`/`useUserEvents`) sem recarregar.
+- Telas: hub `/admin` (Moderação, Métricas, Administradores), menu de perfil
+  "Administração" abre `/admin`; Configurações tem seção "Administração" (só
+  admin). Guarda única: `components/admin/useAdminGuard.ts`.
 - Chave de API do painel: AES-256-GCM com chave derivada do `JWT_SECRET`
   (HMAC, rótulo `scale:settings-key:v1`); nunca em DTO/log. Trocar o
   `JWT_SECRET` exige recadastrar a chave.

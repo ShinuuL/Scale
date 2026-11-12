@@ -177,7 +177,7 @@ export function ProfileMenu({
               Configurações
             </MenuItem>
             {isAuthenticated && user?.isAdmin === true && (
-              <MenuItem id="admin" href="/admin/moderation" textValue="Administração" className={itemClass}>
+              <MenuItem id="admin" href="/admin" textValue="Administração" className={itemClass}>
                 <Icon name="shield" size={16} className="text-ink-muted" />
                 Administração
               </MenuItem>
