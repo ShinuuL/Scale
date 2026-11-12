@@ -4,6 +4,7 @@ import type { Server as HttpServer } from 'node:http';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import Fastify, { type FastifyInstance, type InjectOptions } from 'fastify';
 import cookie from '@fastify/cookie';
+import multipart from '@fastify/multipart';
 import { io as ioClient, type Socket } from 'socket.io-client';
 import { prisma } from '../lib/prisma.js';
 import { signToken } from '../lib/auth.js';
@@ -77,6 +78,7 @@ describe('comunidades', () => {
     await app.register(communityRoutes);
     await app.register(roomRoutes);
     await app.register(messagesRoutes);
+    await app.register(multipart, { limits: { fileSize: 15_000_000, files: 5 } });
     await app.register(filesRoutes);
     await app.register(turnRoutes);
     await app.listen({ port: 0, host: '127.0.0.1' });
@@ -323,6 +325,68 @@ describe('comunidades', () => {
     const old = await prisma.chatMessage.create({ data: { roomId: channel.id, authorId: users.member.id, content: 'antiga', createdAt: new Date(Date.now() - 16 * 60_000) } });
     expect((await inject('member', 'PATCH', `/api/channels/${channel.id}/messages/${old.id}`, { content: 'tarde' })).statusCode).toBe(400);
     expect((await inject('member', 'GET', `/api/channels/${channel.id}/messages`)).json()).toMatchObject({ messages: expect.arrayContaining([expect.objectContaining({ id: messageId, deletedAt: expect.any(String) })]) });
+  });
+
+  it('membro envia imagem no canal de texto; fora da comunidade e nao-imagem sao recusados', async () => {
+    const id = await create();
+    await join(id, 'member');
+    const text = (await detail(id)).channels.find((channel) => channel.kind === 'TEXT')!;
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52]);
+    const upload = (who: Who, filename: string, type: string, content: Buffer) => {
+      const boundary = `----scale${Math.random().toString(16).slice(2)}`;
+      const crlf = '\r\n';
+      const head = [`--${boundary}`, 'Content-Disposition: form-data; name="content"', '', 'olha', `--${boundary}`, `Content-Disposition: form-data; name="file"; filename="${filename}"`, `Content-Type: ${type}`, '', ''].join(crlf);
+      const payload = Buffer.concat([Buffer.from(head), content, Buffer.from(`${crlf}--${boundary}--${crlf}`)]);
+      return app.inject({ method: 'POST', url: `/api/rooms/${text.id}/files`, payload, headers: { cookie: `token=${users[who].token}`, 'content-type': `multipart/form-data; boundary=${boundary}` } });
+    };
+    const observer = await connect('owner');
+    await ack(observer, 'community:subscribe', { communityId: id });
+    const event = next<{ channelId: string; files: Array<{ id: string }> }>(observer, 'channel:message');
+    const sent = await upload('member', 'foto.png', 'image/png', png);
+    expect(sent.statusCode).toBe(201);
+    const message = sent.json().message as { id: string; content: string; files: Array<{ id: string; mime: string }> };
+    expect(message).toMatchObject({ content: 'olha', files: [{ mime: 'image/png' }] });
+    expect(await event).toMatchObject({ channelId: text.id, files: [{ id: message.files[0]!.id }] });
+    expect((await inject('member', 'GET', `/api/channels/${text.id}/messages`)).json()).toMatchObject({ messages: [{ id: message.id, files: [{ id: message.files[0]!.id }] }] });
+    expect((await inject('owner', 'GET', `/api/files/${message.files[0]!.id}`)).statusCode).toBe(200);
+    expect((await inject('outsider', 'GET', `/api/files/${message.files[0]!.id}`)).statusCode).toBe(403);
+    expect((await upload('outsider', 'foto.png', 'image/png', png)).statusCode).toBe(403);
+    expect((await upload('member', 'nota.txt', 'text/plain', Buffer.from('oi'))).statusCode).toBe(400);
+  });
+
+  it('cargo personalizado: so o dono gerencia; permissao soma ao MEMBER', async () => {
+    const id = await create();
+    await join(id, 'member');
+    await join(id, 'admin');
+    const input = { name: 'Moderador', color: '#22AA88', permissions: { manageChannels: true, manageInvites: false, manageMessages: true, kickMembers: false } };
+    expect((await inject('member', 'POST', `/api/communities/${id}/roles`, input)).statusCode).toBe(403);
+    expect((await inject('owner', 'POST', `/api/communities/${id}/roles`, { ...input, color: 'verde' })).statusCode).toBe(400);
+    const created = await inject('owner', 'POST', `/api/communities/${id}/roles`, input);
+    expect(created.statusCode).toBe(201);
+    const roleId = (created.json() as { role: { id: string } }).role.id;
+    // Sem cargo: MEMBER nao cria canal.
+    expect((await inject('member', 'POST', `/api/communities/${id}/channels`, { name: 'antes', kind: 'TEXT' })).statusCode).toBe(403);
+    const assign = (who: Who, customRoleId: string | null) => app.inject({ method: 'PUT', url: `/api/communities/${id}/members/${users.member.id}/custom-role`, headers: { cookie: `token=${users[who].token}` }, payload: { customRoleId } });
+    expect((await assign('member', roleId)).statusCode).toBe(403);
+    expect((await assign('owner', '00000000-0000-4000-8000-000000000000')).statusCode).toBe(404);
+    expect((await assign('owner', roleId)).statusCode).toBe(200);
+    const asMember = (await inject('member', 'GET', `/api/communities/${id}`)).json() as { myPermissions: Record<string, boolean>; roles: Array<{ id: string; color: string }>; members: Array<{ userId: string; customRoleId: string | null }> };
+    expect(asMember.myPermissions).toEqual({ manageChannels: true, manageInvites: false, manageMessages: true, kickMembers: false });
+    expect(asMember.roles).toEqual([expect.objectContaining({ id: roleId, color: '#22aa88' })]);
+    expect(asMember.members.find((m) => m.userId === users.member.id)?.customRoleId).toBe(roleId);
+    expect((await inject('member', 'POST', `/api/communities/${id}/channels`, { name: 'com-cargo', kind: 'TEXT' })).statusCode).toBe(201);
+    expect((await inject('member', 'GET', `/api/communities/${id}/invites`)).statusCode).toBe(403);
+    expect((await inject('member', 'DELETE', `/api/communities/${id}/members/${users.admin.id}`)).statusCode).toBe(403);
+    const text = (await detail(id)).channels.find((channel) => channel.kind === 'TEXT')!;
+    const adminMsg = (await inject('admin', 'POST', `/api/channels/${text.id}/messages`, { content: 'do admin' })).json() as { message: { id: string } };
+    expect((await inject('member', 'DELETE', `/api/channels/${text.id}/messages/${adminMsg.message.id}`)).statusCode).toBe(200);
+    expect((await inject('owner', 'PATCH', `/api/community-roles/${roleId}`, { ...input, permissions: { ...input.permissions, manageChannels: false } })).statusCode).toBe(200);
+    expect((await inject('member', 'POST', `/api/communities/${id}/channels`, { name: 'depois', kind: 'TEXT' })).statusCode).toBe(403);
+    expect((await inject('member', 'DELETE', `/api/community-roles/${roleId}`)).statusCode).toBe(403);
+    expect((await inject('owner', 'DELETE', `/api/community-roles/${roleId}`)).statusCode).toBe(200);
+    const after = (await inject('member', 'GET', `/api/communities/${id}`)).json() as { roles: unknown[]; members: Array<{ userId: string; customRoleId: string | null }> };
+    expect(after.roles).toEqual([]);
+    expect(after.members.find((m) => m.userId === users.member.id)?.customRoleId).toBeNull();
   });
 
   it('recusa criar comunidade acima do limite e aceitar convite de comunidade cheia', async () => {

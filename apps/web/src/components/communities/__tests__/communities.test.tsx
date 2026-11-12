@@ -19,6 +19,7 @@ function message(
     content: `Texto ${id}`,
     createdAt: new Date(now - age).toISOString(),
     editedAt: null,
+    files: [],
     deletedAt,
   };
 }

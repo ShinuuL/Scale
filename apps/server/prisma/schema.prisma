@@ -135,9 +135,28 @@ model Community {
   createdAt DateTime @default(now())
 
   owner   User              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  members CommunityMember[]
-  invites CommunityInvite[]
-  rooms   Room[]
+  members     CommunityMember[]
+  invites     CommunityInvite[]
+  rooms       Room[]
+  customRoles CommunityCustomRole[]
+}
+
+/// Cargo personalizado (nome, cor, permissoes). Soma-se ao cargo base; nunca tira poder.
+model CommunityCustomRole {
+  id             String   @id @default(uuid())
+  communityId    String
+  name           String
+  color          String
+  manageChannels Boolean  @default(false)
+  manageInvites  Boolean  @default(false)
+  manageMessages Boolean  @default(false)
+  kickMembers    Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  community Community         @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  members   CommunityMember[]
+
+  @@index([communityId])
 }
 
 model CommunityMember {
@@ -146,6 +165,10 @@ model CommunityMember {
   userId      String
   role        CommunityRole @default(MEMBER)
   joinedAt    DateTime      @default(now())
+  /// Cargo personalizado (opcional). Coluna nova anulavel: db push aplica sem perda.
+  customRoleId String?
+
+  customRole CommunityCustomRole? @relation(fields: [customRoleId], references: [id], onDelete: SetNull)
 
   community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)

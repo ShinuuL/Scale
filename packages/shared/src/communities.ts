@@ -10,6 +10,16 @@ export const communityUpdateSchema = communityCreateSchema;
 export const channelCreateSchema = z.object({ name: channelNameSchema, kind: channelKindSchema });
 export const channelUpdateSchema = z.object({ name: channelNameSchema });
 export const communityMemberRoleSchema = z.object({ role: z.enum(['ADMIN', 'MEMBER']) });
+export const MAX_CUSTOM_ROLES = 20;
+export const communityPermissionsSchema = z.object({
+  manageChannels: z.boolean(), manageInvites: z.boolean(), manageMessages: z.boolean(), kickMembers: z.boolean(),
+});
+export const customRoleInputSchema = z.object({
+  name: z.string().trim().min(1).max(32),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  permissions: communityPermissionsSchema,
+});
+export const memberCustomRoleSchema = z.object({ customRoleId: z.string().uuid().nullable() });
 export const communityInviteCreateSchema = z.object({
   expiresIn: z.enum(['1h', '24h', '7d']).default('7d'),
   maxUses: z.number().int().min(1).max(100).optional(),
@@ -36,6 +46,8 @@ export const channelMessageDeleteEventSchema = z.object({
   channelId: z.string().uuid(), messageId: z.string().uuid(), deletedAt: z.string(),
 });
 
+export type CommunityPermissions = z.infer<typeof communityPermissionsSchema>;
+export type CustomRoleInput = z.infer<typeof customRoleInputSchema>;
 export type CommunityRole = z.infer<typeof communityRoleSchema>;
 export type ChannelKind = z.infer<typeof channelKindSchema>;
 export type CommunitySubscription = z.infer<typeof communitySubscriptionSchema>;

@@ -7,7 +7,8 @@ import { Banner } from '@/components/ui/Banner';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Skeleton } from '@/components/ui/Skeleton';
-import { api, type CommunityDetail, type CommunityInvite } from '@/lib/api';
+import { api, type CommunityCustomRole, type CommunityDetail, type CommunityInvite } from '@/lib/api';
+import type { CommunityPermissions } from '@scale/shared';
 import { ConfirmDialog } from './ConfirmDialog';
 import type { Channel, Member } from './CommunityParts';
 
@@ -266,23 +267,96 @@ function ChannelSettingsRow({
   );
 }
 
+const PERMISSION_LABELS: Array<[keyof CommunityPermissions, string]> = [
+  ['manageChannels', 'Gerenciar canais'],
+  ['manageInvites', 'Gerenciar convites'],
+  ['manageMessages', 'Apagar mensagens de outros'],
+  ['kickMembers', 'Expulsar membros'],
+];
+const EMPTY_ROLE = { name: '', color: '#7c6cf2', permissions: { manageChannels: false, manageInvites: false, manageMessages: false, kickMembers: false } };
+
+/** Formulario de cargo (criar ou editar). */
+function RoleForm({ initial, submitLabel, onSubmit, onCancel }: { initial: typeof EMPTY_ROLE; submitLabel: string; onSubmit: (value: typeof EMPTY_ROLE) => Promise<boolean>; onCancel?: () => void }) {
+  const [value, setValue] = useState(initial);
+  return (
+    <form
+      className="space-y-2 rounded-lg border border-line p-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void onSubmit(value).then((ok) => { if (ok && !onCancel) setValue(EMPTY_ROLE); });
+      }}
+    >
+      <div className="flex flex-wrap items-end gap-2">
+        <Input label="Nome do cargo" maxLength={32} required value={value.name} onChange={(event) => setValue({ ...value, name: event.target.value })} />
+        <label className="text-sm text-ink-primary">
+          Cor
+          <input type="color" className="mt-1 block h-10 w-14 cursor-pointer rounded-lg border border-line bg-surface-secondary" value={value.color} onChange={(event) => setValue({ ...value, color: event.target.value })} />
+        </label>
+      </div>
+      <fieldset className="grid gap-1 sm:grid-cols-2">
+        <legend className="mb-1 text-sm text-ink-secondary">Permissões</legend>
+        {PERMISSION_LABELS.map(([key, label]) => (
+          <label key={key} className="flex items-center gap-2 text-sm text-ink-primary">
+            <input type="checkbox" checked={value.permissions[key]} onChange={(event) => setValue({ ...value, permissions: { ...value.permissions, [key]: event.target.checked } })} />
+            {label}
+          </label>
+        ))}
+      </fieldset>
+      <div className="flex gap-2">
+        <Button type="submit" size="sm">{submitLabel}</Button>
+        {onCancel && <Button type="button" variant="ghost" size="sm" onClick={onCancel}>Cancelar</Button>}
+      </div>
+    </form>
+  );
+}
+
+function RoleRow({ role, onSave, onDelete }: { role: CommunityCustomRole; onSave: (value: typeof EMPTY_ROLE) => Promise<boolean>; onDelete: () => void }) {
+  const [editing, setEditing] = useState(false);
+  if (editing) return <RoleForm initial={{ name: role.name, color: role.color, permissions: role.permissions }} submitLabel="Salvar cargo" onSubmit={(value) => onSave(value).then((ok) => { if (ok) setEditing(false); return ok; })} onCancel={() => setEditing(false)} />;
+  const granted = PERMISSION_LABELS.filter(([key]) => role.permissions[key]).map(([, label]) => label);
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-sm text-ink-primary">
+      <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: role.color }} aria-hidden="true" />
+      <span className="flex-1">
+        <span style={{ color: role.color }} className="font-medium">{role.name}</span>
+        <span className="block text-xs text-ink-muted">{granted.length ? granted.join(', ') : 'Só identificação, sem permissões extras'}</span>
+      </span>
+      <Button size="sm" variant="ghost" aria-label={`Editar cargo ${role.name}`} onClick={() => setEditing(true)}>Editar</Button>
+      <Button size="sm" variant="ghost" aria-label={`Apagar cargo ${role.name}`} onClick={onDelete}>Apagar</Button>
+    </div>
+  );
+}
+
 function MemberRow({
   member,
   owner,
+  roles,
   onRole,
+  onCustomRole,
   onRemove,
 }: {
   member: Member;
   owner: boolean;
+  roles: CommunityCustomRole[];
   onRole: () => void;
+  onCustomRole: (roleId: string | null) => void;
   onRemove?: () => void;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2 text-sm text-ink-primary">
       <span className="flex-1">
-        {member.name} ({member.role === 'ADMIN' ? 'Administrador' : 'Membro'})
+        {member.name} ({member.role === 'OWNER' ? 'Dono' : member.role === 'ADMIN' ? 'Administrador' : 'Membro'})
       </span>
-      {owner && (
+      {owner && roles.length > 0 && (
+        <label className="text-sm text-ink-primary">
+          <span className="sr-only">Cargo de {member.name}</span>
+          <select className={selectClass} value={member.customRoleId ?? ''} onChange={(event) => onCustomRole(event.target.value || null)}>
+            <option value="">Sem cargo</option>
+            {roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}
+          </select>
+        </label>
+      )}
+      {owner && member.role !== 'OWNER' && (
         <Button size="sm" variant="ghost" onClick={onRole}>
           {member.role === 'ADMIN' ? 'Tornar membro' : 'Tornar administrador'}
         </Button>
@@ -316,7 +390,8 @@ export function CommunitySettingsDialog({
   onChanged: () => void;
   onGone: () => void;
 }) {
-  const { community, channels, members, myRole } = detail;
+  const { community, channels, members, myRole, myPermissions, roles } = detail;
+  const owner = myRole === 'OWNER';
   const [name, setName] = useState(community.name);
   const [newChannelName, setNewChannelName] = useState('');
   const [kind, setKind] = useState<'TEXT' | 'VOICE'>('TEXT');
@@ -347,6 +422,10 @@ export function CommunitySettingsDialog({
   };
   useEffect(() => {
     let active = true;
+    if (!myPermissions.manageInvites) {
+      setInvitesLoading(false);
+      return;
+    }
     setInvitesLoading(true);
     setInvitesFailed(false);
     api
@@ -363,7 +442,7 @@ export function CommunitySettingsDialog({
     return () => {
       active = false;
     };
-  }, [community.id]);
+  }, [community.id, myPermissions.manageInvites]);
   return (
     <Frame title={`Configurações de ${community.name}`} onClose={onClose}>
       {error && <Banner variant="error">{error}</Banner>}
@@ -387,7 +466,7 @@ export function CommunitySettingsDialog({
           </Button>
         </form>
       )}
-      <section className="space-y-2">
+      {myPermissions.manageChannels && <section className="space-y-2">
         <h3 className="font-semibold text-ink-primary">Canais</h3>
         {channels.map((channel) => (
           <ChannelSettingsRow
@@ -438,16 +517,43 @@ export function CommunitySettingsDialog({
             Criar canal
           </Button>
         </form>
-      </section>
+      </section>}
+      {owner && (
+        <section className="space-y-2">
+          <h3 className="font-semibold text-ink-primary">Cargos</h3>
+          <p className="text-sm text-ink-muted">O cargo dá cor ao nome no chat e soma permissões ao membro. Administradores já têm todas.</p>
+          {roles.map((role) => (
+            <RoleRow
+              key={role.id}
+              role={role}
+              onSave={(value) => run(() => api.updateCommunityRole(role.id, value))}
+              onDelete={() =>
+                setConfirm({
+                  title: `Apagar cargo ${role.name}?`,
+                  description: 'Quem tem este cargo volta a ficar sem cargo.',
+                  label: 'Apagar cargo',
+                  action: async () => {
+                    await api.deleteCommunityRole(role.id);
+                    onChanged();
+                  },
+                })
+              }
+            />
+          ))}
+          <RoleForm initial={EMPTY_ROLE} submitLabel="Criar cargo" onSubmit={(value) => run(() => api.createCommunityRole(community.id, value))} />
+        </section>
+      )}
       <section className="space-y-2">
         <h3 className="font-semibold text-ink-primary">Membros</h3>
         {members
-          .filter((member) => member.role !== 'OWNER' && member.userId !== meId)
+          .filter((member) => owner || (member.role !== 'OWNER' && member.userId !== meId))
           .map((member) => (
             <MemberRow
               key={member.userId}
               member={member}
-              owner={myRole === 'OWNER'}
+              owner={owner}
+              roles={roles}
+              onCustomRole={(roleId) => void run(() => api.setMemberCustomRole(community.id, member.userId, roleId))}
               onRole={() =>
                 void run(() =>
                   api.updateCommunityMemberRole(
@@ -458,7 +564,7 @@ export function CommunitySettingsDialog({
                 )
               }
               onRemove={
-                myRole === 'OWNER' || member.role === 'MEMBER'
+                member.role !== 'OWNER' && member.userId !== meId && myPermissions.kickMembers && (owner || member.role === 'MEMBER')
                   ? () =>
                       setConfirm({
                         title: `Expulsar ${member.name}?`,
@@ -474,7 +580,7 @@ export function CommunitySettingsDialog({
             />
           ))}
       </section>
-      <section className="space-y-2">
+      {myPermissions.manageInvites && <section className="space-y-2">
         <h3 className="font-semibold text-ink-primary">Convites</h3>
         {invitesLoading && (
           <div role="status" className="text-sm text-ink-muted">
@@ -505,7 +611,7 @@ export function CommunitySettingsDialog({
             )}
           </div>
         ))}
-      </section>
+      </section>}
       {myRole === 'OWNER' && (
         <Button
           variant="danger"
