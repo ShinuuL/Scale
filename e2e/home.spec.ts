@@ -16,6 +16,7 @@ function createButton(page: import('@playwright/test').Page) {
 test.describe('criar sala na home', () => {
   test('anônimo: mostra aviso de login e não cria a sala', async ({ page }) => {
     await page.goto('/');
+    await page.getByRole('button', { name: 'Continuar como convidado' }).click();
 
     await page.getByLabel('Nome da sala').fill('Sala anonima');
     await createButton(page).click();
@@ -29,6 +30,7 @@ test.describe('criar sala na home', () => {
 
   test('nome curto: mostra erro de validação', async ({ page }) => {
     await page.goto('/');
+    await page.getByRole('button', { name: 'Continuar como convidado' }).click();
 
     const name = page.getByLabel('Nome da sala');
     await name.fill('ab');
@@ -56,4 +58,12 @@ test.describe('criar sala na home', () => {
       timeout: 15_000,
     });
   });
+});
+
+test('visitante sem sessão cai na landing, não direto como convidado', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('heading', { level: 1, name: 'Sua sala de voz, sem complicação.' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Perfil de Convidado' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Continuar como convidado' }).click();
+  await expect(page.getByRole('button', { name: 'Perfil de Convidado' })).toBeVisible();
 });
