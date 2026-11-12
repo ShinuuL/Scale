@@ -83,9 +83,10 @@
   .badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 7px; border-radius: 4px; font-size: 11px; line-height: 16px; font-weight: 500; }
   .app-shell { height: 100dvh; min-height: 0; display: grid; grid-template-columns: 72px 232px minmax(0, 1fr); overflow: hidden; }
   .app-shell-no-context { grid-template-columns: 72px minmax(0, 1fr); }
-  .app-rail { background: #111217; border-right: 1px solid var(--border); padding: 18px 10px; display: flex; flex-direction: column; align-items: center; gap: 24px; }
+  .app-rail { background: #111217; border-right: 1px solid var(--border); padding: 18px 6px; display: flex; flex-direction: column; align-items: center; gap: 24px; }
   .app-rail-nav { display: flex; flex-direction: column; gap: 8px; width: 100%; }
   .app-nav-item { display: flex; min-height: 52px; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: var(--text-muted); border-radius: 8px; font-size: 10px; font-weight: 500; }
+  .app-nav-item > span { max-width: 100%; padding: 0 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: -.01em; }
   .app-nav-item[aria-current='page'] { color: var(--accent); background: var(--accent-subtle); }
   .app-context { min-height: 0; overflow-y: auto; background: var(--bg-secondary); border-right: 1px solid var(--border); padding: 24px 16px; }
   .app-workspace { display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; }

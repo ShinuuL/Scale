@@ -754,7 +754,7 @@ export function RoomSession({
           }
           actions={
             <div className="flex items-center gap-2">
-              {communityId && <Link href={`/communities?c=${encodeURIComponent(communityId)}`} className="btn-secondary text-sm px-3 py-2">Voltar à comunidade</Link>}
+              {communityId && <Link href={`/communities?c=${encodeURIComponent(communityId)}`} className="btn-secondary text-sm px-3 py-2" aria-label="Voltar à comunidade">Voltar</Link>}
               <Badge variant={socket.connected ? 'success' : 'error'}>
                 {socket.connected ? 'Conectado' : 'Reconectando'}
               </Badge>

@@ -79,6 +79,15 @@ function addRecentRoom(roomId: string) {
   localStorage.setItem(RECENT_ROOMS_KEY, JSON.stringify(rooms.slice(0, 10)));
 }
 
+/** Tira a sala so do historico local; nunca toca na sala no servidor. */
+function forgetRecentRoom(roomId: string) {
+  try {
+    localStorage.setItem(RECENT_ROOMS_KEY, JSON.stringify(getRecentRooms().filter((id) => id !== roomId)));
+  } catch {
+    /* Storage indisponivel: some so desta visita. */
+  }
+}
+
 function SkeletonCard() {
   return (
     <div className="space-y-3">
@@ -548,7 +557,10 @@ function HomePageInner() {
                       <RoomCard
                         room={room}
                         onEnter={() => handleEnterRoom(room.id)}
-                        onDelete={() => setRoomToDelete(room)}
+                        onForget={() => {
+                          forgetRecentRoom(room.id);
+                          setRecentRooms((rooms) => rooms.filter((r) => r.id !== room.id));
+                        }}
                       />
                     </li>
                   ))}
