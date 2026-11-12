@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { SCREEN_SHARE_CONSENT_VERSION, type ModerationConfig } from '@scale/shared';
 
 /**
  * Minimo do JWT_SECRET em producao. Quem conhece este segredo forja sessao de
@@ -92,38 +91,6 @@ export function getAllowedOrigins(): string[] {
 
 export function resetEnv(): void {
   _env = undefined;
-  screenWarned = false;
-}
-
-let screenWarned = false;
-
-/**
- * Amostragem de tela EFETIVA: MODERATION_SCREEN=true so vale com o provedor
- * `claude` (o unico que classifica imagem). Com outro provedor fica false e
- * avisa uma vez no log — a rota de frame descarta sem chamar ninguem.
- */
-export function isScreenModerationEnabled(log?: { warn: (msg: string) => void }): boolean {
-  const env = getEnv();
-  if (!env.MODERATION_SCREEN) return false;
-  if (env.MODERATION_PROVIDER === 'claude') return true;
-  if (!screenWarned) {
-    screenWarned = true;
-    log?.warn('MODERATION_SCREEN=true exige MODERATION_PROVIDER=claude; amostragem de tela desligada');
-  }
-  return false;
-}
-
-/** DTO publico de `GET /api/moderation/config` (sem chave, sem modelo). */
-export function getModerationConfig(): ModerationConfig {
-  const env = getEnv();
-  return {
-    provider: env.MODERATION_PROVIDER,
-    screen: isScreenModerationEnabled(),
-    minAge: env.SCREEN_SHARE_MIN_AGE,
-    consentVersion: SCREEN_SHARE_CONSENT_VERSION,
-    frameIntervalSec: env.MODERATION_FRAME_INTERVAL_SEC,
-    privacyContactEmail: env.PRIVACY_CONTACT_EMAIL || null,
-  };
 }
 
 const adminAuthSchema = z.object({
@@ -143,8 +110,8 @@ function parseEmailCsv(csv: string): string[] {
 
 /**
  * Emails dos administradores do sistema: ADMIN_EMAILS ∪ METRICS_ADMIN_EMAILS
- * (legado). Lido do ambiente a cada chamada (barato; os testes trocam a lista
- * sem reiniciar o cache do getEnv). Fonte UNICA para toda checagem de admin.
+ * (legado) = admins RAIZ. Lido do ambiente a cada chamada (barato; os testes trocam a lista
+ * sem reiniciar o cache do getEnv). Checagem de admin (raiz OU AdminGrant): lib/adminRole.ts.
  */
 export function getAdminEmails(): Set<string> {
   const parsed = adminAuthSchema.parse(process.env);
@@ -152,13 +119,6 @@ export function getAdminEmails(): Set<string> {
     ...parseEmailCsv(parsed.ADMIN_EMAILS),
     ...parseEmailCsv(parsed.METRICS_ADMIN_EMAILS),
   ]);
-}
-
-/** true quando o email (do JWT) pertence a um administrador do sistema. */
-export function isSystemAdmin(email: string | null | undefined): boolean {
-  const normalized = email?.trim().toLowerCase();
-  if (!normalized) return false;
-  return getAdminEmails().has(normalized);
 }
 
 export interface MetricsAuthConfig {

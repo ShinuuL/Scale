@@ -11,6 +11,8 @@ import { signToken } from '../lib/auth.js';
 import { readFileHead, UPLOADS_ROOT } from '../lib/uploads.js';
 import { isProfileUpdateRateLimited } from '../lib/rateLimit.js';
 import { computeScreenShareGate, screenShareGateSelect } from '../lib/screenShareGate.js';
+import { getEffectiveMinAge } from '../lib/moderation/settings.js';
+import { adminSourceOf } from '../lib/adminRole.js';
 import { userRoom } from '../socket/handler.js';
 import type { Server } from 'socket.io';
 import { setBirthDateSchema, screenShareConsentSchema, SCREEN_SHARE_CONSENT_VERSION, type ScreenShareGate } from '@scale/shared';
@@ -72,6 +74,7 @@ export const meSelect = {
   createdAt: true,
   avatarUpdatedAt: true,
   username: { select: { name: true } },
+  adminGrant: { select: { userId: true } },
   ...screenShareGateSelect,
 } as const;
 
@@ -82,6 +85,7 @@ type MeRow = {
   createdAt: Date;
   avatarUpdatedAt: Date | null;
   username: { name: string } | null;
+  adminGrant: { userId: string } | null;
   birthDate: Date | null;
   ageVerifiedAt: Date | null;
   screenShareConsentAt: Date | null;
@@ -89,16 +93,23 @@ type MeRow = {
 };
 
 /**
- * Achata o @nome (tabela Username) para `username: string | null` e troca as
- * colunas do gate por `screenShare` (computeScreenShareGate). `birthDate`
- * NUNCA sai daqui — so o booleano isAdult.
+ * Achata o @nome (tabela Username) para `username: string | null`, troca as
+ * colunas do gate por `screenShare` (computeScreenShareGate, com a idade
+ * minima EFETIVA — override do admin ?? .env) e acrescenta `isAdmin`/`adminSource`
+ * ('env' = e-mail em ADMIN_EMAILS, 'db' = AdminGrant, sem consulta extra:
+ * vem do meSelect; a rota ja garante que a linha e a do usuario da
+ * sessao). `birthDate` NUNCA sai daqui — so o booleano isAdult.
  */
-export function toMe(u: MeRow) {
-  const { birthDate, ageVerifiedAt, screenShareConsentAt, screenShareConsentVersion, username, ...rest } = u;
+export async function toMe(u: MeRow) {
+  const { birthDate, ageVerifiedAt, screenShareConsentAt, screenShareConsentVersion, username, adminGrant, ...rest } = u;
+  const adminSource = adminSourceOf(u.email, adminGrant !== null);
+  const minAge = await getEffectiveMinAge();
   return {
     ...rest,
     username: username?.name ?? null,
-    screenShare: computeScreenShareGate({ birthDate, ageVerifiedAt, screenShareConsentAt, screenShareConsentVersion }),
+    isAdmin: adminSource !== null,
+    adminSource,
+    screenShare: computeScreenShareGate({ birthDate, ageVerifiedAt, screenShareConsentAt, screenShareConsentVersion }, { minAge }),
   };
 }
 
@@ -259,7 +270,7 @@ export async function profileRoutes(fastify: FastifyInstance): Promise<void> {
       orderBy: { createdAt: 'desc' },
       select: { id: true, kind: true, source: true, roomId: true, category: true, severity: true, action: true, excerpt: true, createdAt: true, reporterId: true },
     });
-    const me = toMe(user);
+    const me = await toMe(user);
     reply.header('Content-Disposition', 'attachment; filename="scale-privacidade.json"');
     return reply.send({
       exportedAt: new Date().toISOString(),

@@ -149,6 +149,48 @@ documenta. Nenhuma delas precisa de override no `docker-compose.prod.yml`.
 
 ---
 
+## 4.1 Painel de administração
+
+Página `/admin/moderation` (menu de perfil > "Administração" > Moderação, ou
+Configurações > Administração), visível só para admin do sistema (raiz em
+`ADMIN_EMAILS` ou concedido; ver `docs/administracao.md`; `GET /api/auth/me`
+devolve `isAdmin` e `adminSource`).
+Quem não é admin é mandado para a home com aviso; o backend repete a checagem
+(403) em toda rota. Spec: `docs/superpowers/specs/2026-11-11-admin-moderacao-design.md`.
+
+- **O que dá para mudar** sem redeploy: provedor (`off`/`heuristic`/`claude`),
+  modelo, chave de API, análise de tela, intervalo das amostras (10..120 s),
+  retenção (1..365 dias), idade mínima (13..21) e contato do encarregado.
+- **Precedência**: `banco > .env`, campo a campo. Cada campo mostra
+  "Usando .env: <valor>" quando não há override; "Voltar ao .env" envia
+  `null`. O boot continua validando só o `.env`.
+- **Validações** (400 `{ error, field }`): análise de tela exige provedor
+  efetivo `claude`; `claude` exige chave efetiva.
+- **Chave de API**: gravada cifrada (AES-256-GCM, chave derivada do
+  `JWT_SECRET` por HMAC com rótulo `scale:settings-key:v1`). Nunca volta ao
+  cliente (só `hasApiKey`/`apiKeySource`) nem vai para log. **Trocar o
+  `JWT_SECRET` invalida a chave guardada**: cadastre-a de novo no painel.
+  Remover (`DELETE /api/admin/moderation/api-key`) pede confirmação e volta à
+  chave do `.env`, se houver.
+- **Testar**: `POST /api/admin/moderation/test { text }` classifica com o
+  provedor efetivo sem gravar evento (502 `provider_error` mostra o detalhe,
+  sem a chave).
+- **Auditoria**: toda alteração grava `ModerationAuditLog` (admin, data, diff
+  `{ campo: { from, to } }`; a chave aparece só como `set`/`cleared`). A
+  tabela fica no próprio painel (`GET /api/admin/moderation/audit?limit=50`).
+- **Tempo real**: após salvar, o servidor emite `moderation:config` (broadcast)
+  com a config pública nova; quem está em chamada passa a usar o novo
+  intervalo/estado da amostragem sem sair da sala.
+- Rotas: `GET|PUT /api/admin/moderation`, `DELETE .../api-key`,
+  `POST .../test`, `GET .../audit`. Balde `adminSettings`: 30 / 10 min por
+  usuário.
+- **Transparência obrigatória**: tudo o que se configura aqui aparece para o
+  usuário em `/privacy` e no termo de partilha de tela (via
+  `GET /api/moderation/config`). Não existe modo oculto; o painel exibe esse
+  aviso fixo no topo.
+
+---
+
 ## 5. Como testar
 
 ### Configuração ativa

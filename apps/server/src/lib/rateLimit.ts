@@ -488,6 +488,20 @@ export function resetModerationReportRateLimit(socketId: string): void {
   reset(moderationReportStore, socketId);
 }
 
+// Painel de administracao da moderacao: 30 / 10 min por USUARIO (admin). Cada
+// PUT grava settings + auditoria e o /test chama o provedor de IA.
+const ADMIN_SETTINGS_WINDOW_MS = 10 * 60_000;
+const ADMIN_SETTINGS_MAX = 30;
+const adminSettingsStore = createBucket('adminSettings');
+
+export function isAdminSettingsRateLimited(userId: string): RateLimitResult {
+  return take(adminSettingsStore, userId, ADMIN_SETTINGS_WINDOW_MS, ADMIN_SETTINGS_MAX);
+}
+
+export function resetAdminSettingsRateLimit(userId: string): void {
+  reset(adminSettingsStore, userId);
+}
+
 // Convidado de comunidade: 30 / 10 min por IP, na previa e no aceite do codigo.
 // Enumera o espaco de codigos (22 chars base64url) para descobrir comunidades
 // ou colar gente de graca em comunidades alheias.

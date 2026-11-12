@@ -40,6 +40,7 @@ model User {
   username               Username?
   githubAccount          GithubAccount?
   googleAccount          GoogleAccount?
+  adminGrant             AdminGrant?
   friendRequestsSent     Friendship[]    @relation("FriendshipRequester")
   friendRequestsReceived Friendship[]    @relation("FriendshipAddressee")
   directMessagesSent     DirectMessage[] @relation("DirectMessageSender")
@@ -273,4 +274,57 @@ model ModerationEvent {
 
   @@index([roomId, createdAt])
   @@index([userId, createdAt])
+}
+
+// Overrides da moderacao gravados pelo admin do sistema (singleton 'default').
+// `null` em cada campo = usa o valor do .env. `apiKeyCiphertext`: AES-256-GCM
+// com chave derivada do JWT_SECRET (lib/settingsCrypto.ts); nunca sai em DTO
+// nem em log. Spec: docs/superpowers/specs/2026-11-11-admin-moderacao-design.md
+model ModerationSettings {
+  id                  String   @id @default("default")
+  provider            String?
+  model               String?
+  screenEnabled       Boolean?
+  frameIntervalSec    Int?
+  retentionDays       Int?
+  minAge              Int?
+  privacyContactEmail String?
+  apiKeyCiphertext    String?
+  updatedById         String?
+  updatedAt           DateTime @updatedAt
+}
+
+// Auditoria das alteracoes do painel de moderacao. `changes` e JSON
+// `{ campo: { from, to } }`; a chave de API aparece so como 'set' | 'cleared'.
+model ModerationAuditLog {
+  id        String   @id @default(uuid())
+  adminId   String
+  adminName String
+  changes   String
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+// Admin concedido pela UI (spec docs/superpowers/specs/2026-11-11-admin-usuarios-design.md).
+// Admin raiz (ADMIN_EMAILS) NAO tem linha aqui: vem do .env.
+model AdminGrant {
+  userId      String   @id
+  grantedById String
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Auditoria de concessao/remocao de admin. Nomes copiados no momento do ato
+// (sobrevive a renomeacao/remocao da conta).
+model AdminRoleAudit {
+  id         String   @id @default(uuid())
+  actorId    String
+  actorName  String
+  targetId   String
+  targetName String
+  action     String // 'grant' | 'revoke'
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
 }

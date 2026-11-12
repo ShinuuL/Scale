@@ -3,6 +3,16 @@ import type { CreateRoomInput, RoomResponse, RoomListItem, AuthResponse, LoginIn
 import {
   acceptCallResponseSchema,
   activeCallsSchema,
+  adminModerationStateSchema,
+  adminRoleAuditEntrySchema,
+  adminUserRowSchema,
+  adminUsersPageSchema,
+  type AdminRoleAuditEntry,
+  type AdminSource,
+  type AdminUserRow,
+  type AdminUsersPage,
+  moderationAuditEntrySchema,
+  moderationVerdictSchema,
   directMessageSchema,
   dmSendSchema,
   friendsListSchema,
@@ -11,7 +21,11 @@ import {
   startCallResponseSchema,
   SCREEN_SHARE_CONSENT_VERSION,
   type ActiveCalls,
+  type AdminModerationState,
+  type AdminModerationUpdate,
   type DirectMessage,
+  type ModerationAuditEntry,
+  type ModerationVerdict,
   type FriendsList,
   type ModerationConfig,
   type ScreenShareGate,
@@ -38,9 +52,13 @@ export type CommunityInvite = z.infer<typeof inviteSchema>;
 // next.config.js reescreve `/api` para o backend no host. Nao ha SSR.
 const BASE_URL = '';
 
-interface ApiError {
+export interface ApiError {
   error: string;
   details?: Record<string, string[]>;
+  /** Campo invalido (400 do painel de administracao: `{ error, field }`). */
+  field?: string;
+  /** Detalhe legivel (502 `provider_error` do teste de moderacao; nunca traz a chave). */
+  detail?: string;
   status: number;
 }
 
@@ -112,6 +130,40 @@ export interface MeUser {
    * data de nascimento. Ausente = servidor antigo (trata como nao liberado).
    */
   screenShare?: ScreenShareGate;
+  /** Admin do sistema (`ADMIN_EMAILS`): ve o painel /admin/moderation. Ausente = nao. */
+  isAdmin?: boolean;
+  /** Origem do papel: 'env' = raiz (.env), 'db' = concedido, null = usuario comum. */
+  adminSource?: AdminSource | null;
+}
+
+/** Evento `me:admin` (socket `user:<id>`): papel de admin mudou para esta conta. */
+export const meAdminEventSchema = z.object({
+  isAdmin: z.boolean(),
+  adminSource: z.enum(['env', 'db']).nullable(),
+});
+export type MeAdminEvent = z.infer<typeof meAdminEventSchema>;
+
+/** Aplica `me:admin` no usuario em memoria. */
+export function applyMeAdmin(user: MeUser, event: MeAdminEvent): MeUser {
+  return { ...user, isAdmin: event.isAdmin, adminSource: event.adminSource };
+}
+
+export interface AdminUsersParams {
+  q?: string;
+  filter?: 'all' | 'admins';
+  cursor?: string | null;
+  limit?: number;
+}
+
+/** Mensagem PT-BR para erros da gestao de administradores. */
+export function adminRoleErrorMessage(err: unknown, fallback: string): string {
+  const e = (typeof err === 'object' && err !== null ? err : {}) as Partial<ApiError>;
+  if (e.status === 409 && e.error === 'env_admin') return 'Admin raiz: só pode ser removido no .env.';
+  if (e.status === 400 && e.error === 'cannot_revoke_self') return 'Você não pode remover o seu próprio acesso.';
+  if (e.status === 404) return 'Usuário não encontrado.';
+  if (e.status === 403) return 'Somente administradores podem fazer isso.';
+  if (e.status === 429) return 'Muitas alterações seguidas. Tente de novo em alguns minutos.';
+  return fallback;
 }
 
 /** Gate quando o DTO nao trouxe o campo (ou convidado). */
@@ -182,6 +234,8 @@ class ApiClient {
       const error: ApiError = {
         error: body.error || `HTTP ${response.status}`,
         details: body.details,
+        field: typeof body.field === 'string' ? body.field : undefined,
+        detail: typeof body.detail === 'string' ? body.detail : undefined,
         status: response.status,
       };
       throw error;
@@ -437,6 +491,43 @@ class ApiClient {
     return directMessageSchema.parse(data.message);
   }
 
+  // ─── Administracao da moderacao (so admin do sistema; 403 para os demais) ──
+  async getAdminModeration(): Promise<AdminModerationState> {
+    return adminModerationStateSchema.parse(await this.request<unknown>('/api/admin/moderation'));
+  }
+
+  /** Parcial: so os campos alterados; `null` = volta ao valor do .env. */
+  async updateAdminModeration(update: AdminModerationUpdate): Promise<AdminModerationState> {
+    const data = await this.request<unknown>('/api/admin/moderation', {
+      method: 'PUT',
+      body: JSON.stringify(update),
+    });
+    return adminModerationStateSchema.parse(data);
+  }
+
+  async deleteAdminModerationApiKey(): Promise<AdminModerationState> {
+    const data = await this.request<unknown>('/api/admin/moderation/api-key', {
+      method: 'DELETE',
+      body: '{}',
+    });
+    return adminModerationStateSchema.parse(data);
+  }
+
+  /** Classifica um texto com o provedor efetivo sem gravar evento (valida chave/modelo). */
+  async testAdminModeration(text: string): Promise<ModerationVerdict> {
+    const data = await this.request<unknown>('/api/admin/moderation/test', {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    });
+    return moderationVerdictSchema.parse(data);
+  }
+
+  async getAdminModerationAudit(limit = 50): Promise<{ entries: ModerationAuditEntry[] }> {
+    const data = await this.request<{ entries: unknown[] }>(
+      `/api/admin/moderation/audit?limit=${encodeURIComponent(String(limit))}`,
+    );
+    return { entries: z.array(moderationAuditEntrySchema).parse(data.entries) };
+  }
   // ─── Comunidades ─────────────────────────────────────────────
   async listCommunities() { return communityListSchema.parse(await this.request('/api/communities')); }
   async getCommunity(id: string) { return communityDetailSchema.parse(await this.request(`/api/communities/${encodeURIComponent(id)}`)); }
@@ -464,6 +555,41 @@ class ApiClient {
   async revokeCommunityInvite(id: string): Promise<void> { okSchema.parse(await this.request(`/api/invites/${encodeURIComponent(id)}`, { method: 'DELETE', body: '{}' })); }
   async previewCommunityInvite(code: string) { return z.object({ community: z.object({ id: z.string(), name: z.string(), memberCount: z.number() }), alreadyMember: z.boolean() }).parse(await this.request('/api/invites/preview', { method: 'POST', body: JSON.stringify(communityInviteCodeSchema.parse({ code })) })); }
   async acceptCommunityInvite(code: string) { return z.object({ communityId: z.string() }).parse(await this.request('/api/invites/accept', { method: 'POST', body: JSON.stringify(communityInviteCodeSchema.parse({ code })) })); }
+
+  // ─── Gestao de administradores (so admin; 403 para os demais) ──
+  async getAdminUsers(params: AdminUsersParams = {}): Promise<AdminUsersPage> {
+    const qs = new URLSearchParams();
+    const q = params.q?.trim();
+    if (q) qs.set('q', q);
+    qs.set('filter', params.filter ?? 'all');
+    if (params.cursor) qs.set('cursor', params.cursor);
+    qs.set('limit', String(params.limit ?? 25));
+    return adminUsersPageSchema.parse(await this.request<unknown>(`/api/admin/users?${qs.toString()}`));
+  }
+
+  async grantAdmin(userId: string): Promise<AdminUserRow> {
+    const data = await this.request<unknown>(`/api/admin/users/${encodeURIComponent(userId)}/admin`, {
+      method: 'PUT',
+      body: '{}',
+    });
+    return adminUserRowSchema.parse(data);
+  }
+
+  /** 409 `env_admin` (raiz) e 400 `cannot_revoke_self`: ver `adminRoleErrorMessage`. */
+  async revokeAdmin(userId: string): Promise<AdminUserRow> {
+    const data = await this.request<unknown>(`/api/admin/users/${encodeURIComponent(userId)}/admin`, {
+      method: 'DELETE',
+      body: '{}',
+    });
+    return adminUserRowSchema.parse(data);
+  }
+
+  async getAdminRoleAudit(limit = 50): Promise<{ entries: AdminRoleAuditEntry[] }> {
+    const data = await this.request<{ entries: unknown[] }>(
+      `/api/admin/users/audit?limit=${encodeURIComponent(String(limit))}`,
+    );
+    return { entries: z.array(adminRoleAuditEntrySchema).parse(data.entries) };
+  }
 
   // ─── Health ─────────────────────────────────────────────────
   async health(): Promise<{ status: string; timestamp: string }> {

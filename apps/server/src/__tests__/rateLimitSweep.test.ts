@@ -30,6 +30,7 @@ const IP_B = '198.51.100.202';
 describe('expurgo dos baldes de rate limit', () => {
   it('registra TODOS os baldes no expurgo', () => {
     expect(Object.keys(rateLimitStoreSizes()).sort()).toEqual([
+      'adminSettings',
       'call',
       'chat',
       'communityInvite',

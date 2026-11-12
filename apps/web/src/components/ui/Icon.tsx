@@ -25,6 +25,7 @@ export type IconName =
   | 'arrowRight'
   | 'ban'
   | 'book'
+  | 'chart'
   | 'chat'
   | 'check'
   | 'checkCircle'
@@ -145,6 +146,7 @@ export const ICONS: Record<IconName, IconShape[]> = {
     { d: 'M9.9 13.3a4.5 4.5 0 0 0 6.8.5l2.7-2.7a4.5 4.5 0 0 0-6.4-6.4l-1.5 1.5' },
     { d: 'M14.1 10.7a4.5 4.5 0 0 0-6.8-.5l-2.7 2.7a4.5 4.5 0 0 0 6.4 6.4l1.5-1.5' },
   ],
+  chart: [{ d: 'M4 20h16' }, { d: 'M7 16.5v-5' }, { d: 'M12 16.5V7' }, { d: 'M17 16.5v-7.5' }],
   chat: [
     { d: 'M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v10a2.5 2.5 0 0 1-2.5 2.5H9.6L4 21.5V5.5Z' },
   ],
