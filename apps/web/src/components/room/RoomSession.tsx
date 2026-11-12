@@ -70,13 +70,21 @@ export interface RoomSessionProps {
   /** false: a pessoa navegou para outra área; a chamada continua montada. */
   visible: boolean;
   onJoinedChange: (joined: boolean) => void;
+  /** Entrada oculta (segundo plano) precisa da tela: senha, erro, sala expirada. */
+  onNeedsScreen?: () => void;
 }
 
 /**
  * Sessão da sala (socket, WebRTC e chat). Vive no `RoomHost` do layout raiz, não
  * na rota: navegar para Amigos ou Ajuda esconde a tela e mantém a ligação.
  */
-export function RoomSession({ roomId, communityId, visible, onJoinedChange }: RoomSessionProps) {
+export function RoomSession({
+  roomId,
+  communityId,
+  visible,
+  onJoinedChange,
+  onNeedsScreen,
+}: RoomSessionProps) {
   const { toast } = useToast();
   const [room, setRoom] = useState<RoomData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -567,6 +575,14 @@ export function RoomSession({ roomId, communityId, visible, onJoinedChange }: Ro
 
   const isFull = false; // Would need to check participant count
 
+  // Entrada em segundo plano (canal de voz da comunidade): nada de tela cheia
+  // por cima de outra página. Se precisar de interação, pede a tela da chamada.
+  const hiddenBlocked = !visible && !joined && !loading && (!!error || isExpired || requiresPassword);
+  useEffect(() => {
+    if (hiddenBlocked) onNeedsScreen?.();
+  }, [hiddenBlocked, onNeedsScreen]);
+  if (!visible && !joined && (loading || hiddenBlocked)) return null;
+
   // ─── Error / Loading states ──────────────────────────────────
   if (loading) {
     return (
@@ -981,6 +997,7 @@ export function RoomSession({ roomId, communityId, visible, onJoinedChange }: Ro
       {!visible && joined && (
         <MiniCallBar
           roomId={roomId}
+          communityId={communityId}
           roomName={roomName}
           connected={socket.connected}
           participants={webrtc.peers.size + 1}
