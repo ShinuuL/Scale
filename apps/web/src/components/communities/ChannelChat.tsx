@@ -70,6 +70,7 @@ function MessageItem({
   message,
   meId,
   canManage,
+  color,
   editing,
   editDraft,
   busy,
@@ -82,6 +83,7 @@ function MessageItem({
   message: ChannelMessage;
   meId: string;
   canManage: boolean;
+  color?: string;
   editing: boolean;
   editDraft: string;
   busy: boolean;
@@ -94,7 +96,7 @@ function MessageItem({
   return (
     <article className="group py-3">
       <div className="flex flex-wrap items-baseline gap-2">
-        <strong className="text-sm text-ink-primary">{message.author.name}</strong>
+        <strong className="text-sm text-ink-primary" style={color ? { color } : undefined}>{message.author.name}</strong>
         <time className="text-xs text-ink-muted" dateTime={message.createdAt}>
           {timeFormatter.format(new Date(message.createdAt))}
         </time>
@@ -248,6 +250,7 @@ export function ChannelChat({
   name,
   meId,
   canManage,
+  authorColors,
   state,
   dispatch,
 }: {
@@ -255,6 +258,7 @@ export function ChannelChat({
   name: string;
   meId: string;
   canManage: boolean;
+  authorColors?: ReadonlyMap<string, string>;
   state: ChannelMessagesState;
   dispatch: Dispatch<ChannelMessagesAction>;
 }) {
@@ -393,6 +397,7 @@ export function ChannelChat({
               message={message}
               meId={meId}
               canManage={canManage}
+              color={message.author.id ? authorColors?.get(message.author.id) : undefined}
               editing={editing === message.id}
               editDraft={editDraft}
               busy={busy}

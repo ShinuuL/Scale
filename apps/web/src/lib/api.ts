@@ -13,14 +13,17 @@ import {
 } from '@scale/shared';
 import { createRoomSchema, authResponseSchema, roomResponseSchema, roomListItemSchema, metricsSchema } from './validation';
 
-import { communityCreateSchema, channelCreateSchema, channelUpdateSchema, communityMemberRoleSchema, communityInviteCreateSchema, communityInviteCodeSchema, channelMessageSendSchema, communityRoleSchema, channelKindSchema } from '@scale/shared';
+import { communityCreateSchema, channelCreateSchema, channelUpdateSchema, communityMemberRoleSchema, communityInviteCreateSchema, communityInviteCodeSchema, channelMessageSendSchema, communityRoleSchema, channelKindSchema, communityPermissionsSchema, customRoleInputSchema, memberCustomRoleSchema, type CustomRoleInput } from '@scale/shared';
 
 const okSchema = z.object({ ok: z.literal(true) });
 const communitySchema = z.object({ id: z.string(), name: z.string(), ownerId: z.string() });
 const channelSchema = z.object({ id: z.string(), name: z.string(), kind: channelKindSchema, position: z.number() });
-const memberSchema = z.object({ userId: z.string(), name: z.string(), username: z.string().nullable(), role: communityRoleSchema });
+const memberSchema = z.object({ userId: z.string(), name: z.string(), username: z.string().nullable(), role: communityRoleSchema, customRoleId: z.string().nullable().default(null) });
+const customRoleSchema = z.object({ id: z.string(), name: z.string(), color: z.string(), permissions: communityPermissionsSchema });
+const noPermissions = { manageChannels: false, manageInvites: false, manageMessages: false, kickMembers: false };
 export const channelMessageSchema = z.object({ id: z.string(), channelId: z.string(), author: z.object({ id: z.string().nullable(), name: z.string(), username: z.string().nullable() }), content: z.string(), createdAt: z.string(), editedAt: z.string().nullable(), deletedAt: z.string().nullable(), files: z.array(z.object({ id: z.string(), filename: z.string(), mime: z.string(), size: z.number() })).default([]) });
-const communityDetailSchema = z.object({ community: communitySchema, myRole: communityRoleSchema, channels: z.array(channelSchema), members: z.array(memberSchema) });
+const communityDetailSchema = z.object({ community: communitySchema, myRole: communityRoleSchema, myPermissions: communityPermissionsSchema.default(noPermissions), roles: z.array(customRoleSchema).default([]), channels: z.array(channelSchema), members: z.array(memberSchema) });
+export type CommunityCustomRole = z.infer<typeof customRoleSchema>;
 const communityListSchema = z.object({ communities: z.array(z.object({ id: z.string(), name: z.string(), role: communityRoleSchema })) });
 const inviteSchema = z.object({ id: z.string(), createdById: z.string(), expiresAt: z.string(), maxUses: z.number().nullable(), uses: z.number(), revokedAt: z.string().nullable(), createdAt: z.string() });
 export type ChannelMessage = z.infer<typeof channelMessageSchema>;
@@ -384,6 +387,10 @@ class ApiClient {
   async deleteChannelMessage(id: string, messageId: string): Promise<void> { okSchema.parse(await this.request(`/api/channels/${encodeURIComponent(id)}/messages/${encodeURIComponent(messageId)}`, { method: 'DELETE', body: '{}' })); }
   async createCommunityInvite(id: string, input: { expiresIn?: '1h' | '24h' | '7d'; maxUses?: number }) { return z.object({ invite: z.object({ id: z.string(), code: z.string(), expiresAt: z.string(), maxUses: z.number().nullable() }) }).parse(await this.request(`/api/communities/${encodeURIComponent(id)}/invites`, { method: 'POST', body: JSON.stringify(communityInviteCreateSchema.parse(input)) })); }
   async listCommunityInvites(id: string) { return z.object({ invites: z.array(inviteSchema) }).parse(await this.request(`/api/communities/${encodeURIComponent(id)}/invites`)); }
+  async createCommunityRole(id: string, input: CustomRoleInput): Promise<void> { await this.request(`/api/communities/${encodeURIComponent(id)}/roles`, { method: 'POST', body: JSON.stringify(customRoleInputSchema.parse(input)) }); }
+  async updateCommunityRole(roleId: string, input: CustomRoleInput): Promise<void> { okSchema.parse(await this.request(`/api/community-roles/${encodeURIComponent(roleId)}`, { method: 'PATCH', body: JSON.stringify(customRoleInputSchema.parse(input)) })); }
+  async deleteCommunityRole(roleId: string): Promise<void> { okSchema.parse(await this.request(`/api/community-roles/${encodeURIComponent(roleId)}`, { method: 'DELETE', body: '{}' })); }
+  async setMemberCustomRole(id: string, userId: string, customRoleId: string | null): Promise<void> { okSchema.parse(await this.request(`/api/communities/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}/custom-role`, { method: 'PUT', body: JSON.stringify(memberCustomRoleSchema.parse({ customRoleId })) })); }
   async revokeCommunityInvite(id: string): Promise<void> { okSchema.parse(await this.request(`/api/invites/${encodeURIComponent(id)}`, { method: 'DELETE', body: '{}' })); }
   async previewCommunityInvite(code: string) { return z.object({ community: z.object({ id: z.string(), name: z.string(), memberCount: z.number() }), alreadyMember: z.boolean() }).parse(await this.request('/api/invites/preview', { method: 'POST', body: JSON.stringify(communityInviteCodeSchema.parse({ code })) })); }
   async acceptCommunityInvite(code: string) { return z.object({ communityId: z.string() }).parse(await this.request('/api/invites/accept', { method: 'POST', body: JSON.stringify(communityInviteCodeSchema.parse({ code })) })); }

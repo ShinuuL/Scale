@@ -127,7 +127,13 @@ export function CommunityView({
       ]),
     onError: () => setError('Não foi possível acompanhar a comunidade em tempo real.'),
   });
-  const canManage = detail?.myRole === 'OWNER' || detail?.myRole === 'ADMIN';
+  const perms = detail?.myPermissions;
+  // Configuracoes abrem para quem tem QUALQUER poder de gestao (cargo base ou personalizado).
+  const canManage = detail?.myRole === 'OWNER' || Boolean(perms && Object.values(perms).some(Boolean));
+  const authorColors = new Map((detail?.members ?? []).flatMap((member) => {
+    const color = detail?.roles.find((role) => role.id === member.customRoleId)?.color;
+    return color ? [[member.userId, color] as const] : [];
+  }));
   const channels = detail && (
     <ChannelList
       name={detail.community.name}
@@ -193,7 +199,8 @@ export function CommunityView({
             channelId={selected.id}
             name={selected.name}
             meId={meId}
-            canManage={!!canManage}
+            canManage={Boolean(perms?.manageMessages)}
+            authorColors={authorColors}
             state={messages}
             dispatch={dispatch}
           />

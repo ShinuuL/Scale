@@ -354,6 +354,41 @@ describe('comunidades', () => {
     expect((await upload('member', 'nota.txt', 'text/plain', Buffer.from('oi'))).statusCode).toBe(400);
   });
 
+  it('cargo personalizado: so o dono gerencia; permissao soma ao MEMBER', async () => {
+    const id = await create();
+    await join(id, 'member');
+    await join(id, 'admin');
+    const input = { name: 'Moderador', color: '#22AA88', permissions: { manageChannels: true, manageInvites: false, manageMessages: true, kickMembers: false } };
+    expect((await inject('member', 'POST', `/api/communities/${id}/roles`, input)).statusCode).toBe(403);
+    expect((await inject('owner', 'POST', `/api/communities/${id}/roles`, { ...input, color: 'verde' })).statusCode).toBe(400);
+    const created = await inject('owner', 'POST', `/api/communities/${id}/roles`, input);
+    expect(created.statusCode).toBe(201);
+    const roleId = (created.json() as { role: { id: string } }).role.id;
+    // Sem cargo: MEMBER nao cria canal.
+    expect((await inject('member', 'POST', `/api/communities/${id}/channels`, { name: 'antes', kind: 'TEXT' })).statusCode).toBe(403);
+    const assign = (who: Who, customRoleId: string | null) => app.inject({ method: 'PUT', url: `/api/communities/${id}/members/${users.member.id}/custom-role`, headers: { cookie: `token=${users[who].token}` }, payload: { customRoleId } });
+    expect((await assign('member', roleId)).statusCode).toBe(403);
+    expect((await assign('owner', '00000000-0000-4000-8000-000000000000')).statusCode).toBe(404);
+    expect((await assign('owner', roleId)).statusCode).toBe(200);
+    const asMember = (await inject('member', 'GET', `/api/communities/${id}`)).json() as { myPermissions: Record<string, boolean>; roles: Array<{ id: string; color: string }>; members: Array<{ userId: string; customRoleId: string | null }> };
+    expect(asMember.myPermissions).toEqual({ manageChannels: true, manageInvites: false, manageMessages: true, kickMembers: false });
+    expect(asMember.roles).toEqual([expect.objectContaining({ id: roleId, color: '#22aa88' })]);
+    expect(asMember.members.find((m) => m.userId === users.member.id)?.customRoleId).toBe(roleId);
+    expect((await inject('member', 'POST', `/api/communities/${id}/channels`, { name: 'com-cargo', kind: 'TEXT' })).statusCode).toBe(201);
+    expect((await inject('member', 'GET', `/api/communities/${id}/invites`)).statusCode).toBe(403);
+    expect((await inject('member', 'DELETE', `/api/communities/${id}/members/${users.admin.id}`)).statusCode).toBe(403);
+    const text = (await detail(id)).channels.find((channel) => channel.kind === 'TEXT')!;
+    const adminMsg = (await inject('admin', 'POST', `/api/channels/${text.id}/messages`, { content: 'do admin' })).json() as { message: { id: string } };
+    expect((await inject('member', 'DELETE', `/api/channels/${text.id}/messages/${adminMsg.message.id}`)).statusCode).toBe(200);
+    expect((await inject('owner', 'PATCH', `/api/community-roles/${roleId}`, { ...input, permissions: { ...input.permissions, manageChannels: false } })).statusCode).toBe(200);
+    expect((await inject('member', 'POST', `/api/communities/${id}/channels`, { name: 'depois', kind: 'TEXT' })).statusCode).toBe(403);
+    expect((await inject('member', 'DELETE', `/api/community-roles/${roleId}`)).statusCode).toBe(403);
+    expect((await inject('owner', 'DELETE', `/api/community-roles/${roleId}`)).statusCode).toBe(200);
+    const after = (await inject('member', 'GET', `/api/communities/${id}`)).json() as { roles: unknown[]; members: Array<{ userId: string; customRoleId: string | null }> };
+    expect(after.roles).toEqual([]);
+    expect(after.members.find((m) => m.userId === users.member.id)?.customRoleId).toBeNull();
+  });
+
   it('recusa criar comunidade acima do limite e aceitar convite de comunidade cheia', async () => {
     const id = await create();
     const owned = await prisma.community.count({ where: { ownerId: users.owner.id } });

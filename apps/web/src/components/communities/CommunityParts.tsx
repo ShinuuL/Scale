@@ -21,6 +21,7 @@ export interface Member {
   name: string;
   username: string | null;
   role: CommunityRole;
+  customRoleId?: string | null;
 }
 
 const item =

@@ -1,4 +1,4 @@
-import type { CommunityRole } from '@scale/shared';
+import type { CommunityPermissions, CommunityRole } from '@scale/shared';
 import { prisma } from './prisma.js';
 import { toPublicFile } from './publicDto.js';
 
@@ -39,16 +39,29 @@ export function canModerate(role: CommunityRole): boolean {
   return roleAtLeast(role, 'ADMIN');
 }
 
+export interface Membership { id: string; role: CommunityRole; customRoleId: string | null; customRole: CommunityPermissions | null }
+
+/**
+ * Permissoes efetivas: OWNER/ADMIN tem todas; o cargo personalizado so SOMA.
+ * Expulsar ADMIN continua exclusivo do OWNER (regra na rota).
+ */
+export function permissionsOf(member: Pick<Membership, 'role' | 'customRole'>): CommunityPermissions {
+  const all = canModerate(member.role);
+  const custom = member.customRole;
+  return {
+    manageChannels: all || Boolean(custom?.manageChannels),
+    manageInvites: all || Boolean(custom?.manageInvites),
+    manageMessages: all || Boolean(custom?.manageMessages),
+    kickMembers: all || Boolean(custom?.kickMembers),
+  };
+}
+
 /** Membro com cargo, ou null quando nao e membro. */
-export async function findMembership(
-  communityId: string,
-  userId: string,
-): Promise<{ id: string; role: CommunityRole } | null> {
-  const member = await prisma.communityMember.findUnique({
+export async function findMembership(communityId: string, userId: string): Promise<Membership | null> {
+  return prisma.communityMember.findUnique({
     where: { communityId_userId: { communityId, userId } },
-    select: { id: true, role: true },
+    select: { id: true, role: true, customRoleId: true, customRole: { select: { manageChannels: true, manageInvites: true, manageMessages: true, kickMembers: true } } },
   });
-  return member;
 }
 
 /** Membro com role >= minimum, ou null. */
