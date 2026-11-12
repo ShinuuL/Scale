@@ -4,12 +4,15 @@ import { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import { directMessageSchema, type DirectMessage } from '@scale/shared';
 import { getWsUrl } from '@/hooks/useSocket';
+import { meAdminEventSchema, type MeAdminEvent } from '@/lib/api';
 
 export interface UserEventHandlers {
   /** A lista de amigos/pedidos mudou: refazer GET /api/friends. */
   onFriendsChanged?: () => void;
   /** Mensagem privada nova (enviada ou recebida por esta conta). */
   onDirectMessage?: (message: DirectMessage) => void;
+  /** Papel de admin desta conta mudou (`me:admin`). */
+  onMeAdmin?: (event: MeAdminEvent) => void;
 }
 
 /**
@@ -40,6 +43,10 @@ export function useUserEvents(enabled: boolean, handlers: UserEventHandlers): { 
     sock.on('dm:message', (raw: unknown) => {
       const parsed = directMessageSchema.safeParse(raw);
       if (parsed.success) handlersRef.current.onDirectMessage?.(parsed.data);
+    });
+    sock.on('me:admin', (raw: unknown) => {
+      const parsed = meAdminEventSchema.safeParse(raw);
+      if (parsed.success) handlersRef.current.onMeAdmin?.(parsed.data);
     });
     return () => {
       sock.disconnect();

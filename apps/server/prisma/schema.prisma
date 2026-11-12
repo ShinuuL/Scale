@@ -23,16 +23,24 @@ model User {
   avatarMime      String?
   avatarUpdatedAt DateTime?
 
+  // Gate de partilha de tela (spec docs/superpowers/specs/2026-11-11-moderacao-assistente-design.md).
+  // birthDate NUNCA sai em DTO publico: so o booleano isAdult.
+  birthDate                 DateTime?
+  ageVerifiedAt             DateTime?
+  screenShareConsentAt      DateTime?
+  screenShareConsentVersion String?
   ownedCommunities Community[]
   communityMemberships CommunityMember[]
   communityInvites CommunityInvite[]
 
   ownedRooms  Room[]
+  moderationEvents ModerationEvent[]
   roomMembers RoomMember[]
 
   username               Username?
   githubAccount          GithubAccount?
   googleAccount          GoogleAccount?
+  adminGrant             AdminGrant?
   friendRequestsSent     Friendship[]    @relation("FriendshipRequester")
   friendRequestsReceived Friendship[]    @relation("FriendshipAddressee")
   directMessagesSent     DirectMessage[] @relation("DirectMessageSender")
@@ -267,4 +275,79 @@ model RoomMember {
   user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@unique([roomId, userId])
+}
+
+// Evento de moderacao (texto, amostra de tela ou denuncia). Retencao:
+// MODERATION_RETENTION_DAYS (default 90) pelo sweep. `excerpt` e SEMPRE null
+// para frames (o quadro nunca persiste) e truncado a 120 chars para texto.
+model ModerationEvent {
+  id         String   @id @default(uuid())
+  kind       String // 'text' | 'frame' | 'report'
+  source     String // 'chat' | 'dm' | 'screen' | 'user'
+  roomId     String?
+  userId     String?
+  guestId    String?
+  reporterId String?
+  category   String
+  severity   String
+  action     String // 'blocked' | 'warned' | 'stopped-share' | 'reported' | 'none'
+  excerpt    String?
+  createdAt  DateTime @default(now())
+  user       User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([roomId, createdAt])
+  @@index([userId, createdAt])
+}
+
+// Overrides da moderacao gravados pelo admin do sistema (singleton 'default').
+// `null` em cada campo = usa o valor do .env. `apiKeyCiphertext`: AES-256-GCM
+// com chave derivada do JWT_SECRET (lib/settingsCrypto.ts); nunca sai em DTO
+// nem em log. Spec: docs/superpowers/specs/2026-11-11-admin-moderacao-design.md
+model ModerationSettings {
+  id                  String   @id @default("default")
+  provider            String?
+  model               String?
+  screenEnabled       Boolean?
+  frameIntervalSec    Int?
+  retentionDays       Int?
+  minAge              Int?
+  privacyContactEmail String?
+  apiKeyCiphertext    String?
+  updatedById         String?
+  updatedAt           DateTime @updatedAt
+}
+
+// Auditoria das alteracoes do painel de moderacao. `changes` e JSON
+// `{ campo: { from, to } }`; a chave de API aparece so como 'set' | 'cleared'.
+model ModerationAuditLog {
+  id        String   @id @default(uuid())
+  adminId   String
+  adminName String
+  changes   String
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+// Admin concedido pela UI (spec docs/superpowers/specs/2026-11-11-admin-usuarios-design.md).
+// Admin raiz (ADMIN_EMAILS) NAO tem linha aqui: vem do .env.
+model AdminGrant {
+  userId      String   @id
+  grantedById String
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Auditoria de concessao/remocao de admin. Nomes copiados no momento do ato
+// (sobrevive a renomeacao/remocao da conta).
+model AdminRoleAudit {
+  id         String   @id @default(uuid())
+  actorId    String
+  actorName  String
+  targetId   String
+  targetName String
+  action     String // 'grant' | 'revoke'
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
 }

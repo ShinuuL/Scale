@@ -17,6 +17,7 @@ beforeEach(() => {
   vi.mocked(api.listRooms).mockReset();
   vi.mocked(api.createRoom).mockReset();
   localStorage.clear();
+  sessionStorage.clear();
   localStorage.setItem('scale.onboardingDone', 'true');
 });
 
@@ -40,11 +41,28 @@ describe('home session states', () => {
   it.each([401, 403])('keeps the guest invitation flow for an explicit %i response', async (status) => {
     vi.mocked(api.getMe).mockRejectedValueOnce({ status });
     render(<HomePage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Continuar como convidado' }));
     expect(await screen.findByRole('button', { name: 'Perfil de Convidado' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Entrar na conta' })).toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(api.listRooms).not.toHaveBeenCalled();
     fireEvent.change(screen.getByRole('textbox', { name: 'Código da sala' }), { target: { value: 'room-code' } });
     expect(screen.getByRole('button', { name: 'Entrar' })).toBeEnabled();
+  });
+
+  it('receives a visitor without session on the landing page', async () => {
+    vi.mocked(api.getMe).mockRejectedValueOnce({ status: 401 });
+    render(<HomePage />);
+    expect(await screen.findByRole('heading', { level: 1, name: 'Sua sala de voz, sem complicação.' })).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: 'Criar conta' })[0]).toHaveAttribute('href', '/register');
+    expect(screen.getByRole('button', { name: 'Entrar na sala' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Perfil de Convidado' })).not.toBeInTheDocument();
+  });
+
+  it('skips the landing when the guest choice was made in this tab', async () => {
+    sessionStorage.setItem('scale.guestBrowse', 'true');
+    vi.mocked(api.getMe).mockRejectedValueOnce({ status: 401 });
+    render(<HomePage />);
+    expect(await screen.findByRole('button', { name: 'Perfil de Convidado' })).toBeInTheDocument();
   });
 });

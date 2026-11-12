@@ -153,3 +153,33 @@ describe('useSocket — room:deleted', () => {
     expect(cb).toHaveBeenCalledWith({ roomId: '44444444-4444-4444-8444-444444444444' });
   });
 });
+
+describe('useSocket — moderation:config', () => {
+  it('repassa config valida para onModerationConfig, ignora invalida e cancela a inscricao', () => {
+    const { result } = renderHook(() => useSocket());
+    const cb = vi.fn();
+    let unsub: () => void = () => {};
+    act(() => {
+      unsub = result.current.onModerationConfig(cb);
+    });
+    const valid = {
+      provider: 'claude',
+      screen: true,
+      minAge: 18,
+      consentVersion: '2026-11',
+      frameIntervalSec: 45,
+      privacyContactEmail: null,
+    };
+    act(() => {
+      socketHandlers.get('moderation:config')?.({ provider: 'claude', frameIntervalSec: 'x' });
+      socketHandlers.get('moderation:config')?.(valid);
+    });
+    expect(cb).toHaveBeenCalledTimes(1);
+    expect(cb).toHaveBeenCalledWith(valid);
+    act(() => {
+      unsub();
+      socketHandlers.get('moderation:config')?.(valid);
+    });
+    expect(cb).toHaveBeenCalledTimes(1);
+  });
+});

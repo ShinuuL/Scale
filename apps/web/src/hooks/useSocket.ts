@@ -3,9 +3,25 @@
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { io, Socket } from 'socket.io-client';
 import type { ChatMessage } from '@/hooks/useChat';
-import { roomDeletedEventSchema } from '@scale/shared';
+import { meAdminEventSchema, type MeAdminEvent } from '@/lib/api';
+import {
+  moderationActionSchema,
+  moderationConfigSchema,
+  moderationNoticeSchema,
+  moderationReportSchema,
+  moderationStopShareSchema,
+  moderationWarningSchema,
+  roomDeletedEventSchema,
+  screenShareGateSchema,
+} from '@scale/shared';
 import type {
   JoinRoomPayload,
+  ModerationActionPayload,
+  ModerationConfig,
+  ModerationNoticePayload,
+  ModerationReportPayload,
+  ModerationWarningPayload,
+  ScreenShareGate,
   PeerAudioStateEvent,
   PeerInfo,
   PeerLeftEvent,
@@ -30,6 +46,25 @@ export function getWsUrl(): string {
 
 // Shape do wire definido uma vez para web e server.
 export type { PeerInfo } from '@scale/shared';
+
+/** Motivo do servidor para recusar `isScreenSharing: true` (gate de partilha). */
+export type ScreenShareDeniedReason = 'guest' | 'age' | 'consent';
+
+/**
+ * Ack de `signal:screen-share-state` com `code: 'SCREEN_SHARE_NOT_ALLOWED'`:
+ * o servidor nao liberou a partilha (convidado, idade ou consentimento). O
+ * useWebRTC para a captura ao receber este erro.
+ */
+export class ScreenShareNotAllowedError extends Error {
+  readonly code = 'SCREEN_SHARE_NOT_ALLOWED' as const;
+  constructor(
+    message: string,
+    readonly reason: ScreenShareDeniedReason,
+  ) {
+    super(message);
+    this.name = 'ScreenShareNotAllowedError';
+  }
+}
 
 export interface JoinRoomResult {
   success: boolean;
@@ -70,6 +105,23 @@ export interface UseSocketReturn {
   onReconnect: (cb: () => void) => () => void;
   /** A sala foi apagada (dono ou admin): o servidor ja tirou este socket dela. */
   onRoomDeleted: (cb: (data: RoomDeletedEvent) => void) => () => void;
+  // ─── Moderacao ────────────────────────────────────────────────
+  /** Acao do servidor sobre ESTE socket (ex.: parar a partilha de tela). */
+  onModerationAction: (cb: (data: ModerationActionPayload) => void) => () => void;
+  /** Aviso so para o autor (texto ou tela com severidade media). */
+  onModerationWarning: (cb: (data: ModerationWarningPayload) => void) => () => void;
+  /** Dono da sala: denuncia ou alerta sobre um peer. */
+  onModerationNotice: (cb: (data: ModerationNoticePayload) => void) => () => void;
+  /** Admin mudou a configuracao da moderacao (broadcast): config publica nova. */
+  onModerationConfig: (cb: (config: ModerationConfig) => void) => () => void;
+  /** Gate de partilha de tela mudou (idade/consentimento salvos pelo REST). */
+  onMeScreenShare: (cb: (gate: ScreenShareGate) => void) => () => void;
+  /** Papel de admin desta conta mudou (concedido/removido por outro admin). */
+  onMeAdmin: (cb: (data: MeAdminEvent) => void) => () => void;
+  /** Denuncia um participante (balde no servidor: 10 / 10 min). */
+  emitModerationReport: (payload: ModerationReportPayload) => Promise<void>;
+  /** Dono da sala: encerra a partilha de tela de um peer. */
+  emitModerationStopShare: (roomId: string, targetPeerId: string) => Promise<void>;
   guestName: string;
   setGuestName: (name: string) => void;
 }
@@ -94,6 +146,12 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
     peerAudioState: [] as Array<(data: PeerAudioStateEvent) => void>,
     reconnect: [] as Array<() => void>,
     roomDeleted: [] as Array<(data: RoomDeletedEvent) => void>,
+    moderationAction: [] as Array<(data: ModerationActionPayload) => void>,
+    moderationWarning: [] as Array<(data: ModerationWarningPayload) => void>,
+    moderationNotice: [] as Array<(data: ModerationNoticePayload) => void>,
+    moderationConfig: [] as Array<(config: ModerationConfig) => void>,
+    meScreenShare: [] as Array<(gate: ScreenShareGate) => void>,
+    meAdmin: [] as Array<(data: MeAdminEvent) => void>,
   });
 
   useEffect(() => {
@@ -175,6 +233,39 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
       const parsed = roomDeletedEventSchema.safeParse(data);
       if (!parsed.success) return;
       callbacksRef.current.roomDeleted.forEach((cb) => cb(parsed.data));
+    });
+
+    // Moderacao: payloads validados com os schemas do @scale/shared; o que nao
+    // bate e ignorado (nunca derruba a chamada).
+    sock.on('moderation:action', (data: unknown) => {
+      const parsed = moderationActionSchema.safeParse(data);
+      if (!parsed.success) return;
+      callbacksRef.current.moderationAction.forEach((cb) => cb(parsed.data));
+    });
+    sock.on('moderation:warning', (data: unknown) => {
+      const parsed = moderationWarningSchema.safeParse(data);
+      if (!parsed.success) return;
+      callbacksRef.current.moderationWarning.forEach((cb) => cb(parsed.data));
+    });
+    sock.on('moderation:notice', (data: unknown) => {
+      const parsed = moderationNoticeSchema.safeParse(data);
+      if (!parsed.success) return;
+      callbacksRef.current.moderationNotice.forEach((cb) => cb(parsed.data));
+    });
+    sock.on('moderation:config', (data: unknown) => {
+      const parsed = moderationConfigSchema.safeParse(data);
+      if (!parsed.success) return;
+      callbacksRef.current.moderationConfig.forEach((cb) => cb(parsed.data));
+    });
+    sock.on('me:screen-share', (data: unknown) => {
+      const parsed = screenShareGateSchema.safeParse(data);
+      if (!parsed.success) return;
+      callbacksRef.current.meScreenShare.forEach((cb) => cb(parsed.data));
+    });
+    sock.on('me:admin', (data: unknown) => {
+      const parsed = meAdminEventSchema.safeParse(data);
+      if (!parsed.success) return;
+      callbacksRef.current.meAdmin.forEach((cb) => cb(parsed.data));
     });
 
     // Reconexão: ver o handler de 'connect' acima. Os consumidores recebem o
@@ -338,9 +429,17 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
         socket.emit(
           'signal:screen-share-state',
           { roomId, targetPeerId, isScreenSharing },
-          (response: { success?: boolean; error?: string }) => {
-            if (response.error) reject(new Error(response.error));
-            else resolve();
+          (response: { success?: boolean; error?: string; code?: string; reason?: string }) => {
+            if (response.error) {
+              // Gate de partilha: erro tipado para o useWebRTC parar a captura.
+              if (response.code === 'SCREEN_SHARE_NOT_ALLOWED') {
+                const reason: ScreenShareDeniedReason =
+                  response.reason === 'guest' || response.reason === 'age' ? response.reason : 'consent';
+                reject(new ScreenShareNotAllowedError(response.error, reason));
+                return;
+              }
+              reject(new Error(response.error));
+            } else resolve();
           },
         );
       });
@@ -426,6 +525,81 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
     };
   }, []);
 
+  // ─── Moderacao ────────────────────────────────────────────────
+  const onModerationAction = useCallback((cb: (data: ModerationActionPayload) => void): (() => void) => {
+    callbacksRef.current.moderationAction.push(cb);
+    return () => {
+      const idx = callbacksRef.current.moderationAction.indexOf(cb);
+      if (idx >= 0) callbacksRef.current.moderationAction.splice(idx, 1);
+    };
+  }, []);
+
+  const onModerationWarning = useCallback((cb: (data: ModerationWarningPayload) => void): (() => void) => {
+    callbacksRef.current.moderationWarning.push(cb);
+    return () => {
+      const idx = callbacksRef.current.moderationWarning.indexOf(cb);
+      if (idx >= 0) callbacksRef.current.moderationWarning.splice(idx, 1);
+    };
+  }, []);
+
+  const onModerationNotice = useCallback((cb: (data: ModerationNoticePayload) => void): (() => void) => {
+    callbacksRef.current.moderationNotice.push(cb);
+    return () => {
+      const idx = callbacksRef.current.moderationNotice.indexOf(cb);
+      if (idx >= 0) callbacksRef.current.moderationNotice.splice(idx, 1);
+    };
+  }, []);
+
+  const onModerationConfig = useCallback((cb: (config: ModerationConfig) => void): (() => void) => {
+    callbacksRef.current.moderationConfig.push(cb);
+    return () => {
+      const idx = callbacksRef.current.moderationConfig.indexOf(cb);
+      if (idx >= 0) callbacksRef.current.moderationConfig.splice(idx, 1);
+    };
+  }, []);
+
+  const onMeScreenShare = useCallback((cb: (gate: ScreenShareGate) => void): (() => void) => {
+    callbacksRef.current.meScreenShare.push(cb);
+    return () => {
+      const idx = callbacksRef.current.meScreenShare.indexOf(cb);
+      if (idx >= 0) callbacksRef.current.meScreenShare.splice(idx, 1);
+    };
+  }, []);
+
+  const onMeAdmin = useCallback((cb: (data: MeAdminEvent) => void): (() => void) => {
+    callbacksRef.current.meAdmin.push(cb);
+    return () => {
+      const idx = callbacksRef.current.meAdmin.indexOf(cb);
+      if (idx >= 0) callbacksRef.current.meAdmin.splice(idx, 1);
+    };
+  }, []);
+
+  const emitModerationReport = useCallback((payload: ModerationReportPayload): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      const socket = socketRef.current;
+      if (!socket || !socket.connected) return reject(new Error('Socket not connected'));
+      const parsed = moderationReportSchema.safeParse(payload);
+      if (!parsed.success) return reject(new Error('Denúncia inválida'));
+      socket.emit('moderation:report', parsed.data, (response: { success?: boolean; error?: string }) => {
+        if (response?.error) reject(new Error(response.error));
+        else resolve();
+      });
+    });
+  }, []);
+
+  const emitModerationStopShare = useCallback((roomId: string, targetPeerId: string): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      const socket = socketRef.current;
+      if (!socket || !socket.connected) return reject(new Error('Socket not connected'));
+      const parsed = moderationStopShareSchema.safeParse({ roomId, targetPeerId });
+      if (!parsed.success) return reject(new Error('Pedido inválido'));
+      socket.emit('moderation:stop-share', parsed.data, (response: { success?: boolean; error?: string }) => {
+        if (response?.error) reject(new Error(response.error));
+        else resolve();
+      });
+    });
+  }, []);
+
   // Retorno memoizado: a identidade do objeto `socketHook` só muda quando um
   // dep realmente muda (socket novo, connected flip, guestName). Consumidores
   // (useWebRTC, page.tsx, useChat) dependem dele sem recriar listeners a cada
@@ -451,6 +625,14 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
       onPeerAudioState,
       onReconnect,
       onRoomDeleted,
+      onModerationAction,
+      onModerationWarning,
+      onModerationNotice,
+      onModerationConfig,
+      onMeScreenShare,
+      onMeAdmin,
+      emitModerationReport,
+      emitModerationStopShare,
       guestName,
       setGuestName,
     }),
@@ -475,6 +657,14 @@ export function useSocket(guestNameOverride?: string): UseSocketReturn {
       onPeerAudioState,
       onReconnect,
       onRoomDeleted,
+      onModerationAction,
+      onModerationWarning,
+      onModerationNotice,
+      onModerationConfig,
+      onMeScreenShare,
+      onMeAdmin,
+      emitModerationReport,
+      emitModerationStopShare,
       setGuestName,
     ],
   );
