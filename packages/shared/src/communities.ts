@@ -8,7 +8,12 @@ export const channelNameSchema = z.string().trim().min(1).max(CHANNEL_NAME_MAX);
 export const communityCreateSchema = z.object({ name: communityNameSchema });
 export const communityUpdateSchema = communityCreateSchema;
 export const channelCreateSchema = z.object({ name: channelNameSchema, kind: channelKindSchema });
-export const channelUpdateSchema = z.object({ name: channelNameSchema });
+/** Topico do canal (Fase 2): texto curto no cabecalho; vazio limpa (vira null). */
+export const CHANNEL_TOPIC_MAX = 200;
+export const channelTopicSchema = z.string().trim().max(CHANNEL_TOPIC_MAX);
+export const channelUpdateSchema = z
+  .object({ name: channelNameSchema.optional(), topic: channelTopicSchema.nullable().optional() })
+  .refine((v) => v.name !== undefined || v.topic !== undefined, { message: 'Nada para alterar' });
 export const communityMemberRoleSchema = z.object({ role: z.enum(['ADMIN', 'MEMBER']) });
 export const MAX_CUSTOM_ROLES = 20;
 export const communityPermissionsSchema = z.object({
@@ -109,3 +114,19 @@ export const communityImageKindSchema = z.enum(['icon', 'banner']);
 export type CategoryInput = z.infer<typeof categoryInputSchema>;
 export type CommunityLayout = z.infer<typeof communityLayoutSchema>;
 export type CommunityImageKind = z.infer<typeof communityImageKindSchema>;
+
+/** `channel:typing` (cliente -> servidor): comecou/parou de digitar num canal de texto. */
+export const channelTypingSendSchema = z.object({ channelId: z.string().uuid(), typing: z.boolean() });
+/** `channel:typing` (servidor -> comunidade): repassado sem guardar; o remetente nao recebe. */
+export const channelTypingEventSchema = z.object({
+  communityId: z.string().uuid(), channelId: z.string().uuid(), userId: z.string(), name: z.string(), typing: z.boolean(),
+});
+export type ChannelTypingSend = z.infer<typeof channelTypingSendSchema>;
+export type ChannelTypingEvent = z.infer<typeof channelTypingEventSchema>;
+/** Texto do indicador: 1, 2 ou "varias pessoas"; lista vazia = null. */
+export const formatTypingText = (names: string[]): string | null => {
+  if (names.length === 0) return null;
+  if (names.length === 1) return `${names[0]} está digitando`;
+  if (names.length === 2) return `${names[0]} e ${names[1]} estão digitando`;
+  return 'Várias pessoas estão digitando';
+};

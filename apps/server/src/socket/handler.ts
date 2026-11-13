@@ -42,6 +42,7 @@ import {
   MAX_PARTICIPANTS,
   CHAT_EDIT_WINDOW_MS,
   communitySubscriptionSchema,
+  channelTypingSendSchema,
   parseGuestName,
   moderationReportSchema,
   moderationStopShareSchema,
@@ -310,6 +311,26 @@ export function createSocketServer(httpServer: HttpServer): Server {
     socket.on('community:unsubscribe', (data) => {
       const parsed = communitySubscriptionSchema.safeParse(data);
       if (parsed.success) void socket.leave(`community:${parsed.data.communityId}`);
+    });
+    // "digitando": efemero, nao grava nada. Exige membro inscrito na comunidade
+    // e canal de TEXTO dela; repassa aos outros sockets da comunidade.
+    socket.on('channel:typing', async (data) => {
+      if (isRateLimited(`socket:${socket.id}`) || !user.userId) return;
+      const parsed = channelTypingSendSchema.safeParse(data);
+      if (!parsed.success) return;
+      try {
+        const room = await prisma.room.findUnique({ where: { id: parsed.data.channelId }, select: { communityId: true, channelKind: true } });
+        if (!room?.communityId || room.channelKind !== 'TEXT') return;
+        const communityRoom = `community:${room.communityId}`;
+        if (!socket.rooms.has(communityRoom)) return;
+        const member = await prisma.communityMember.findUnique({ where: { communityId_userId: { communityId: room.communityId, userId: user.userId } }, select: { id: true } });
+        if (!member) return;
+        socket.to(communityRoom).emit('channel:typing', {
+          communityId: room.communityId, channelId: parsed.data.channelId, userId: user.userId, name: user.name, typing: parsed.data.typing,
+        });
+      } catch {
+        // Sinal efemero: falha de banco so descarta o aviso.
+      }
     });
 
     socket.on('join-room', async (data, callback) => {
