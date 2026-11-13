@@ -237,6 +237,57 @@ describe('comunidades', () => {
     expect(await disconnected).toMatchObject({ channelId: voice.id, members: [] });
   });
 
+  it('presenca: estado inicial no subscribe e transicoes online/offline por comunidade', async () => {
+    const id = await create();
+    await join(id, 'member');
+    const observer = await connect('owner');
+    const first = await ack(observer, 'community:subscribe', { communityId: id });
+    expect(first.onlineUserIds).toEqual(expect.arrayContaining([users.owner.id]));
+    expect(first.onlineUserIds).not.toContain(users.member.id);
+    const online = next<{ communityId: string; userId: string; online: boolean }>(observer, 'community:presence');
+    const tab1 = await connect('member');
+    expect(await online).toEqual({ communityId: id, userId: users.member.id, online: true });
+    const tab2 = await connect('member');
+    expect((await ack(observer, 'community:subscribe', { communityId: id })).onlineUserIds).toContain(users.member.id);
+    let sawOffline = false;
+    const watch = (data: { online: boolean }) => { if (!data.online) sawOffline = true; };
+    observer.on('community:presence', watch);
+    tab1.disconnect();
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(sawOffline).toBe(false);
+    observer.off('community:presence', watch);
+    const offline = next<{ online: boolean; userId: string }>(observer, 'community:presence');
+    tab2.disconnect();
+    expect(await offline).toMatchObject({ userId: users.member.id, online: false });
+  });
+
+  it('indicadores de voz: mudo, deafen, tela e falando chegam a comunidade', async () => {
+    const id = await create();
+    await join(id, 'member');
+    const voice = (await detail(id)).channels.find((channel) => channel.kind === 'VOICE');
+    if (!voice) throw new Error('sem canal de voz');
+    const observer = await connect('owner');
+    const member = await connect('member');
+    await ack(observer, 'community:subscribe', { communityId: id });
+    const entered = next<{ members: Array<Record<string, unknown>> }>(observer, 'community:voice-state');
+    expect((await ack(member, 'join-room', { roomId: voice.id })).success).toBe(true);
+    expect((await entered).members[0]).toMatchObject({ muted: false, deafened: false, screenSharing: false });
+    const muted = next<{ members: Array<Record<string, unknown>> }>(observer, 'community:voice-state');
+    await ack(member, 'peer:audio-state', { roomId: voice.id, muted: true });
+    expect((await muted).members[0]).toMatchObject({ muted: true });
+    const deaf = next<{ members: Array<Record<string, unknown>> }>(observer, 'community:voice-state');
+    expect((await ack(member, 'peer:voice-flags', { roomId: voice.id, deafened: true })).success).toBe(true);
+    expect((await deaf).members[0]).toMatchObject({ deafened: true });
+    const speaking = next(observer, 'community:voice-speaking');
+    await ack(member, 'peer:voice-flags', { roomId: voice.id, speaking: true });
+    // Mudo nunca aparece falando.
+    expect(await speaking).toEqual({ channelId: voice.id, userId: users.member.id, speaking: false });
+    expect((await ack(member, 'peer:voice-flags', { roomId: voice.id, bogus: true })).error).toBeDefined();
+    expect((await ack(observer, 'peer:voice-flags', { roomId: voice.id, deafened: true })).error).toBe('Not in room');
+    const sub = await ack(observer, 'community:subscribe', { communityId: id });
+    expect(sub.voiceStates).toEqual([expect.objectContaining({ members: [expect.objectContaining({ muted: true, deafened: true })] })]);
+  });
+
   it('protege chat REST e entrega mensagens e paginacao aos membros', async () => {
     const id = await create();
     await join(id, 'member');

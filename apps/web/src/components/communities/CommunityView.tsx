@@ -64,6 +64,18 @@ export function CommunityView({
   const [loading, setLoading] = useState(true);
   const [dialog, setDialog] = useState<DialogName>(null);
   const [voice, setVoice] = useState<CommunityVoiceState[]>([]);
+  // Presenca e "falando" (Fase 1): sets imutaveis, trocados a cada evento.
+  const [onlineIds, setOnlineIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [speakingIds, setSpeakingIds] = useState<ReadonlySet<string>>(() => new Set());
+  // Quem saiu da voz deixa de "falar" (o evento de fim pode nunca chegar).
+  useEffect(() => {
+    const present = new Set(voice.flatMap((state) => state.members.map((member) => member.userId)));
+    setSpeakingIds((previous) =>
+      [...previous].every((id) => present.has(id))
+        ? previous
+        : new Set([...previous].filter((id) => present.has(id))),
+    );
+  }, [voice]);
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [order, setOrder] = useState<string[]>([]);
   const [friends, setFriends] = useState<FriendsList | null>(null);
@@ -117,6 +129,7 @@ export function CommunityView({
       onAddFriend={addFriend}
       onMessage={(member) => router.push(`/friends?dm=${encodeURIComponent(member.userId)}`)}
       roleName={(member) => detail.roles.find((role) => role.id === member.customRoleId)?.name}
+      isOnline={(member) => onlineIds.has(member.userId)}
     />
   );
   const activeCall = useActiveCall();
@@ -161,6 +174,8 @@ export function CommunityView({
   useEffect(() => {
     setDetail(null);
     setVoice([]);
+    setOnlineIds(new Set());
+    setSpeakingIds(new Set());
     setError('');
     refresh();
   }, [refresh]);
@@ -200,6 +215,10 @@ export function CommunityView({
         ...previous.filter((item) => item.channelId !== state.channelId),
         state,
       ]),
+    onOnlineUsers: (ids) => setOnlineIds(new Set(ids)),
+    onPresence: ({ userId, online }) => setOnlineIds((previous) => toggled(previous, userId, online)),
+    onVoiceSpeaking: ({ userId, speaking }) =>
+      setSpeakingIds((previous) => toggled(previous, userId, speaking)),
     onError: () => setError('Não foi possível acompanhar a comunidade em tempo real.'),
   });
   const perms = detail?.myPermissions;
@@ -215,6 +234,7 @@ export function CommunityView({
       channels={detail.channels}
       selected={selected?.id}
       voiceStates={voice}
+      speakingUserIds={speakingIds}
       onSelect={(channel) => {
         setDialog(null);
         setError('');
@@ -396,4 +416,13 @@ export function CommunityView({
       )}
     </div>
   );
+}
+
+/** Copia do set com `id` presente ou ausente (mesma referencia se nada muda). */
+function toggled(set: ReadonlySet<string>, id: string, present: boolean): ReadonlySet<string> {
+  if (set.has(id) === present) return set;
+  const next = new Set(set);
+  if (present) next.add(id);
+  else next.delete(id);
+  return next;
 }

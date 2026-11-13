@@ -148,6 +148,7 @@ export function ChannelList({
   channels,
   selected,
   voiceStates,
+  speakingUserIds,
   onSelect,
   onInvite,
   onSettings,
@@ -161,6 +162,8 @@ export function ChannelList({
   channels: Channel[];
   selected?: string;
   voiceStates: CommunityVoiceState[];
+  /** Quem esta falando agora nos canais de voz (`community:voice-speaking`). */
+  speakingUserIds?: ReadonlySet<string>;
   onSelect: (channel: Channel) => void;
   onInvite: () => void;
   onSettings: () => void;
@@ -236,6 +239,7 @@ export function ChannelList({
                           voiceStates.find((state) => state.channelId === channel.id)?.members ??
                           []
                         }
+                        speakingUserIds={speakingUserIds}
                         active={channel.id === activeVoiceId}
                         joined={channel.id === activeVoiceId && activeVoiceJoined}
                         onSelect={() => onSelect(channel)}
@@ -265,6 +269,7 @@ export function ChannelList({
 function VoiceChannelItem({
   channel,
   members,
+  speakingUserIds,
   active,
   joined,
   onSelect,
@@ -272,6 +277,7 @@ function VoiceChannelItem({
 }: {
   channel: Channel;
   members: CommunityVoiceState['members'];
+  speakingUserIds?: ReadonlySet<string>;
   active: boolean;
   joined: boolean;
   onSelect: () => void;
@@ -316,19 +322,68 @@ function VoiceChannelItem({
       {members.length > 0 && (
         <ul aria-label={`Conectados em ${channel.name}`} className="mb-1">
           {members.map((member) => (
-            <li key={member.userId} className="flex items-center gap-2 py-1 pl-9 pr-2">
-              <span
-                aria-hidden="true"
-                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-surface-hover text-[11px] font-semibold text-ink-primary"
-              >
-                {member.name.slice(0, 1).toLocaleUpperCase('pt-BR')}
-              </span>
-              <span className="truncate text-sm text-ink-secondary">{member.name}</span>
-            </li>
+            <VoiceMemberRow
+              key={member.userId}
+              member={member}
+              speaking={speakingUserIds?.has(member.userId) === true}
+            />
           ))}
         </ul>
       )}
     </>
+  );
+}
+
+/** Descricao falada do estado de voz (leitor de tela le junto com o nome). */
+export function voiceMemberStatus(
+  member: CommunityVoiceState['members'][number],
+  speaking: boolean,
+): string[] {
+  const parts: string[] = [];
+  if (speaking && !member.muted) parts.push('falando');
+  if (member.muted) parts.push('microfone desligado');
+  if (member.deafened) parts.push('sem áudio');
+  if (member.screenSharing) parts.push('ao vivo');
+  return parts;
+}
+
+function VoiceMemberRow({
+  member,
+  speaking,
+}: {
+  member: CommunityVoiceState['members'][number];
+  speaking: boolean;
+}) {
+  const status = voiceMemberStatus(member, speaking);
+  const talking = speaking && !member.muted;
+  return (
+    <li className="flex items-center gap-2 py-1 pl-9 pr-2">
+      <span
+        aria-hidden="true"
+        data-speaking={talking ? 'true' : undefined}
+        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-surface-hover text-[11px] font-semibold text-ink-primary motion-safe:transition-shadow ${talking ? 'ring-2 ring-emerald-400' : ''}`}
+      >
+        {member.name.slice(0, 1).toLocaleUpperCase('pt-BR')}
+      </span>
+      <span
+        className={`min-w-0 flex-1 truncate text-sm ${talking ? 'text-ink-primary' : 'text-ink-secondary'}`}
+      >
+        {member.name}
+        {status.length > 0 && <span className="sr-only">, {status.join(', ')}</span>}
+      </span>
+      {member.screenSharing && (
+        <span
+          aria-hidden="true"
+          className="shrink-0 rounded bg-red-600 px-1.5 py-0.5 text-[10px] font-bold uppercase leading-none text-white"
+        >
+          Ao vivo
+        </span>
+      )}
+      {member.muted && <Icon name="micOff" size={14} className="shrink-0 text-ink-muted" />}
+      {member.deafened && (
+        <Icon name="speakerOff" size={14} className="shrink-0 text-ink-muted" />
+      )}
+    </li>
   );
 }
 
@@ -347,6 +402,7 @@ export function MemberList({
   onAddFriend,
   onMessage,
   roleName,
+  isOnline,
 }: {
   members: Member[];
   friendStatus?: (member: Member) => FriendStatus;
@@ -356,6 +412,8 @@ export function MemberList({
   onMessage?: (member: Member) => void;
   /** Nome do cargo personalizado, se houver. */
   roleName?: (member: Member) => string | undefined;
+  /** Presenca (`community:presence`); ausente = lista sem grupos Online/Offline. */
+  isOnline?: (member: Member) => boolean;
 }) {
   const roles: CommunityRole[] = ['OWNER', 'ADMIN', 'MEMBER'];
   const [busy, setBusy] = useState<string | null>(null);
@@ -380,115 +438,152 @@ export function MemberList({
   const canAdd = (member: Member, status: FriendStatus) =>
     (status === 'none' || status === 'incoming') && Boolean(onAddFriend && member.username);
   const profileStatus = profile ? statusOf(profile) : 'self';
+  const renderMember = (member: Member) => {
+    const presence = isOnline ? (isOnline(member) ? 'online' : 'offline') : null;
+    const status = statusOf(member);
+    const incoming = status === 'incoming';
+    return (
+      <div
+        key={member.userId}
+        className={`flex items-center gap-1 ${presence === 'offline' ? 'opacity-60' : ''}`}
+      >
+        <MenuTrigger
+          isOpen={menuFor === member.userId}
+          onOpenChange={(open) => setMenuFor(open ? member.userId : null)}
+        >
+          <AriaButton
+            aria-label={`Opções de ${member.name}${presence ? `, ${presence}` : ''}`}
+            onContextMenu={(event: React.MouseEvent) => {
+              event.preventDefault();
+              setMenuFor(member.userId);
+            }}
+            className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-2 text-left outline-none hover:bg-surface-hover data-[focus-visible]:outline data-[focus-visible]:outline-2 data-[focus-visible]:outline-accent"
+          >
+            <span className="relative shrink-0">
+              <span
+                aria-hidden="true"
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-hover text-xs font-semibold text-ink-primary"
+              >
+                {member.name.slice(0, 1).toLocaleUpperCase('pt-BR')}
+              </span>
+              {presence && (
+                <span
+                  role="img"
+                  aria-label={presence === 'online' ? 'Online' : 'Offline'}
+                  title={presence === 'online' ? 'Online' : 'Offline'}
+                  className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-surface-secondary ${presence === 'online' ? 'bg-emerald-500' : 'bg-ink-muted'}`}
+                />
+              )}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-sm text-ink-primary">
+              {member.name}
+              {status === 'self' && friendStatus && (
+                <span className="ml-1 text-ink-muted">(você)</span>
+              )}
+            </span>
+            {status === 'friend' && (
+              <span className="shrink-0 text-[11px] text-ink-muted">Amigo</span>
+            )}
+            {status === 'outgoing' && (
+              <span className="shrink-0 text-[11px] text-ink-muted">Pedido enviado</span>
+            )}
+          </AriaButton>
+          <Popover
+            placement="left top"
+            className="z-50 min-w-52 rounded-xl border border-line bg-surface-secondary p-1 shadow-xl data-[entering]:animate-menu-in"
+          >
+            <Menu
+              aria-label={`Opções de ${member.name}`}
+              className="outline-none"
+              onAction={(key) => runAction(member, String(key))}
+            >
+              <MenuItem id="profile" textValue="Ver perfil" className={item}>
+                <Icon name="info" />
+                Ver perfil
+              </MenuItem>
+              {status === 'friend' && onMessage && (
+                <MenuItem id="message" textValue="Mensagem privada" className={item}>
+                  <Icon name="chat" />
+                  Mensagem privada
+                </MenuItem>
+              )}
+              {canAdd(member, status) && (
+                <MenuItem
+                  id="friend"
+                  textValue={incoming ? 'Aceitar amizade' : 'Adicionar amigo'}
+                  className={item}
+                >
+                  <Icon name={incoming ? 'check' : 'userPlus'} />
+                  {incoming ? 'Aceitar amizade' : 'Adicionar amigo'}
+                </MenuItem>
+              )}
+              {member.username && (
+                <MenuItem id="copy" textValue="Copiar @nome" className={item}>
+                  <Icon name="document" />
+                  Copiar @{member.username}
+                </MenuItem>
+              )}
+            </Menu>
+          </Popover>
+        </MenuTrigger>
+        {canAdd(member, status) && (
+          <Tooltip label={incoming ? 'Aceitar amizade' : 'Adicionar amigo'}>
+            <AriaButton
+              aria-label={
+                incoming
+                  ? `Aceitar amizade de ${member.name}`
+                  : `Adicionar ${member.name} como amigo`
+              }
+              isDisabled={busy === member.userId}
+              onPress={() => add(member)}
+              className="shrink-0 rounded-lg p-1.5 text-ink-muted hover:bg-surface-hover hover:text-ink-primary data-[disabled]:opacity-50"
+            >
+              <Icon name={incoming ? 'check' : 'userPlus'} />
+            </AriaButton>
+          </Tooltip>
+        )}
+      </div>
+    );
+  };
+  const byRole = (list: Member[], Heading: 'h3' | 'h4') =>
+    roles.map((role) => {
+      const group = list.filter((member) => member.role === role);
+      return group.length ? (
+        <div key={role} className="mb-6">
+          <Heading className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">
+            {{ OWNER: 'Proprietário', ADMIN: 'Administradores', MEMBER: 'Membros' }[role]} —{' '}
+            {group.length}
+          </Heading>
+          {group.map(renderMember)}
+        </div>
+      ) : null;
+    });
+  // Presenca: online agrupado por cargo; offline numa lista so, esmaecida.
+  const online = isOnline ? members.filter(isOnline) : members;
+  const offline = isOnline ? members.filter((member) => !isOnline(member)) : [];
   return (
     <aside
       aria-label="Membros"
       className="h-full w-full overflow-y-auto border-l border-line bg-surface-secondary p-4"
     >
-      {roles.map((role) => {
-        const group = members.filter((member) => member.role === role);
-        return group.length ? (
-          <div key={role} className="mb-6">
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">
-              {{ OWNER: 'Proprietário', ADMIN: 'Administradores', MEMBER: 'Membros' }[role]} —{' '}
-              {group.length}
-            </h3>
-            {group.map((member) => {
-              const status = statusOf(member);
-              const incoming = status === 'incoming';
-              return (
-                <div key={member.userId} className="flex items-center gap-1">
-                  <MenuTrigger
-                    isOpen={menuFor === member.userId}
-                    onOpenChange={(open) => setMenuFor(open ? member.userId : null)}
-                  >
-                    <AriaButton
-                      aria-label={`Opções de ${member.name}`}
-                      onContextMenu={(event: React.MouseEvent) => {
-                        event.preventDefault();
-                        setMenuFor(member.userId);
-                      }}
-                      className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-2 text-left outline-none hover:bg-surface-hover data-[focus-visible]:outline data-[focus-visible]:outline-2 data-[focus-visible]:outline-accent"
-                    >
-                      <span
-                        aria-hidden="true"
-                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-hover text-xs font-semibold text-ink-primary"
-                      >
-                        {member.name.slice(0, 1).toLocaleUpperCase('pt-BR')}
-                      </span>
-                      <span className="min-w-0 flex-1 truncate text-sm text-ink-primary">
-                        {member.name}
-                        {status === 'self' && friendStatus && (
-                          <span className="ml-1 text-ink-muted">(você)</span>
-                        )}
-                      </span>
-                      {status === 'friend' && (
-                        <span className="shrink-0 text-[11px] text-ink-muted">Amigo</span>
-                      )}
-                      {status === 'outgoing' && (
-                        <span className="shrink-0 text-[11px] text-ink-muted">Pedido enviado</span>
-                      )}
-                    </AriaButton>
-                    <Popover
-                      placement="left top"
-                      className="z-50 min-w-52 rounded-xl border border-line bg-surface-secondary p-1 shadow-xl data-[entering]:animate-menu-in"
-                    >
-                      <Menu
-                        aria-label={`Opções de ${member.name}`}
-                        className="outline-none"
-                        onAction={(key) => runAction(member, String(key))}
-                      >
-                        <MenuItem id="profile" textValue="Ver perfil" className={item}>
-                          <Icon name="info" />
-                          Ver perfil
-                        </MenuItem>
-                        {status === 'friend' && onMessage && (
-                          <MenuItem id="message" textValue="Mensagem privada" className={item}>
-                            <Icon name="chat" />
-                            Mensagem privada
-                          </MenuItem>
-                        )}
-                        {canAdd(member, status) && (
-                          <MenuItem
-                            id="friend"
-                            textValue={incoming ? 'Aceitar amizade' : 'Adicionar amigo'}
-                            className={item}
-                          >
-                            <Icon name={incoming ? 'check' : 'userPlus'} />
-                            {incoming ? 'Aceitar amizade' : 'Adicionar amigo'}
-                          </MenuItem>
-                        )}
-                        {member.username && (
-                          <MenuItem id="copy" textValue="Copiar @nome" className={item}>
-                            <Icon name="document" />
-                            Copiar @{member.username}
-                          </MenuItem>
-                        )}
-                      </Menu>
-                    </Popover>
-                  </MenuTrigger>
-                  {canAdd(member, status) && (
-                    <Tooltip label={incoming ? 'Aceitar amizade' : 'Adicionar amigo'}>
-                      <AriaButton
-                        aria-label={
-                          incoming
-                            ? `Aceitar amizade de ${member.name}`
-                            : `Adicionar ${member.name} como amigo`
-                        }
-                        isDisabled={busy === member.userId}
-                        onPress={() => add(member)}
-                        className="shrink-0 rounded-lg p-1.5 text-ink-muted hover:bg-surface-hover hover:text-ink-primary data-[disabled]:opacity-50"
-                      >
-                        <Icon name={incoming ? 'check' : 'userPlus'} />
-                      </AriaButton>
-                    </Tooltip>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        ) : null;
-      })}
+      {isOnline ? (
+        <>
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-ink-primary">
+            Online — {online.length}
+          </h3>
+          {byRole(online, 'h4')}
+          {offline.length > 0 && (
+            <div className="mb-6">
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">
+                Offline — {offline.length}
+              </h3>
+              {offline.map(renderMember)}
+            </div>
+          )}
+        </>
+      ) : (
+        byRole(members, 'h3')
+      )}
       {profile && (
         <AppModal title="Perfil" onClose={() => setProfile(null)} closeLabel="Fechar perfil" size="sm">
           <div className="flex flex-col items-center gap-3 text-center">
