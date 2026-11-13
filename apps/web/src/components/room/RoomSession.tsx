@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Link from 'next/link';
 import { useSocket } from '@/hooks/useSocket';
 import { useWebRTC } from '@/hooks/useWebRTC';
+import { useCallKeepAlive } from '@/hooks/useCallKeepAlive';
 import { useDisconnectNotice } from '@/hooks/useDisconnectNotice';
 import { useRoomDeleted } from '@/hooks/useRoomDeleted';
 import { useSpeaking } from '@/hooks/useSpeaking';
@@ -367,7 +368,16 @@ export function RoomSession({
           });
       });
     },
-    [socket, roomId, initMedia, connectToPeers, isMutedNow, inviteToken, requiresPassword, roomPassword],
+    [
+      socket,
+      roomId,
+      initMedia,
+      connectToPeers,
+      isMutedNow,
+      inviteToken,
+      requiresPassword,
+      roomPassword,
+    ],
   );
 
   useEffect(() => {
@@ -430,6 +440,16 @@ export function RoomSession({
     [socket, roomId, webrtc, allowNavigation],
   );
 
+  // Celular: tela acesa, controles na tela de bloqueio e áudio retomado.
+  useCallKeepAlive({
+    active: joined,
+    roomName: room?.room.name ?? 'Sala',
+    onHangup: () => handleLeave(),
+    onToggleMicrophone: () => {
+      window.dispatchEvent(new Event('scale:toggle-mute'));
+    },
+  });
+
   // Logoff (menu de perfil): encerra a chamada sem o aviso de "sair da página";
   // quem disparou recarrega a página em seguida.
   useEffect(() => {
@@ -475,7 +495,8 @@ export function RoomSession({
 
   // Entrada em segundo plano (canal de voz da comunidade): nada de tela cheia
   // por cima de outra página. Se precisar de interação, pede a tela da chamada.
-  const hiddenBlocked = !visible && !joined && !loading && (!!error || isExpired || requiresPassword);
+  const hiddenBlocked =
+    !visible && !joined && !loading && (!!error || isExpired || requiresPassword);
   useEffect(() => {
     if (hiddenBlocked) onNeedsScreen?.();
   }, [hiddenBlocked, onNeedsScreen]);
@@ -484,7 +505,7 @@ export function RoomSession({
   // ─── Error / Loading states ──────────────────────────────────
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="min-h-[100dvh] flex items-center justify-center p-4">
         <div className="w-full max-w-md space-y-4">
           <Skeleton className="h-12 !rounded-2xl" />
           <Skeleton className="h-64 !rounded-2xl" />
@@ -496,7 +517,7 @@ export function RoomSession({
 
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="min-h-[100dvh] flex items-center justify-center p-4">
         <div className="text-center space-y-4 max-w-md">
           <div className="text-5xl">
             {error.includes('expirou') ? (
@@ -516,7 +537,7 @@ export function RoomSession({
 
   if (isExpired || isFull) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="min-h-[100dvh] flex items-center justify-center p-4">
         <div className="text-center space-y-4 max-w-md">
           <div className="text-5xl">
             {isExpired ? <Icon name="clock" size={48} /> : <Icon name="users" size={48} />}
@@ -541,7 +562,7 @@ export function RoomSession({
   // dispara o join effect acima e nunca vai para localStorage.
   if (requiresPassword && !joined) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="min-h-[100dvh] flex items-center justify-center p-4">
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -567,7 +588,7 @@ export function RoomSession({
             aria-label="Senha da sala"
             minLength={8}
             required
-            className="w-full rounded bg-surface-tertiary p-2 text-sm text-ink-primary placeholder:text-ink-muted focus:outline-none focus:ring-1 focus:ring-accent"
+            className="w-full rounded bg-surface-tertiary p-2 text-base sm:text-sm text-ink-primary placeholder:text-ink-muted focus:outline-none focus:ring-1 focus:ring-accent"
           />
           <Button type="submit" size="md" disabled={roomPassword.trim().length < 8}>
             Entrar na sala
@@ -620,7 +641,14 @@ export function RoomSession({
           }
           actions={
             <div className="flex items-center gap-2">
-              {communityId && <Link href={`/communities?c=${encodeURIComponent(communityId)}`} className="btn-secondary text-sm px-3 py-2">Voltar à comunidade</Link>}
+              {communityId && (
+                <Link
+                  href={`/communities?c=${encodeURIComponent(communityId)}`}
+                  className="btn-secondary text-sm px-3 py-2"
+                >
+                  Voltar à comunidade
+                </Link>
+              )}
               <Badge variant={socket.connected ? 'success' : 'error'}>
                 {socket.connected ? 'Conectado' : 'Reconectando'}
               </Badge>
@@ -640,6 +668,16 @@ export function RoomSession({
           }
         >
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            {joined && !socket.connected && (
+              <div
+                role="status"
+                aria-live="polite"
+                className="fixed inset-x-0 top-0 z-50 flex items-center justify-center gap-2 bg-amber-500 px-4 pb-1.5 pt-[calc(0.375rem+env(safe-area-inset-top))] text-sm font-medium text-black"
+              >
+                <Icon name="warning" size={16} />
+                Reconectando à sala...
+              </div>
+            )}
             <a href="#room-controls" className="skip-link">
               Ir para os controles da sala
             </a>
