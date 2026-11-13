@@ -30,6 +30,7 @@ import {
   type ModerationConfig,
   type ScreenShareGate,
 } from '@scale/shared';
+import { messageSearchQuerySchema, type MessageSearchQuery, type MessageSearchResponse } from '@scale/shared';
 import { createRoomSchema, authResponseSchema, roomResponseSchema, roomListItemSchema, metricsSchema } from './validation';
 
 import { communityCreateSchema, channelCreateSchema, channelUpdateSchema, communityMemberRoleSchema, communityInviteCreateSchema, communityInviteCodeSchema, channelMessageSendSchema, communityRoleSchema, channelKindSchema, communityPermissionsSchema, customRoleInputSchema, memberCustomRoleSchema, categoryInputSchema, communityLayoutSchema, type CustomRoleInput, type CommunityImageKind, type CommunityLayout } from '@scale/shared';
@@ -43,6 +44,7 @@ const memberSchema = z.object({ userId: z.string(), name: z.string(), username: 
 const customRoleSchema = z.object({ id: z.string(), name: z.string(), color: z.string(), permissions: communityPermissionsSchema });
 const noPermissions = { manageChannels: false, manageInvites: false, manageMessages: false, kickMembers: false };
 export const channelMessageSchema = z.object({ id: z.string(), channelId: z.string(), author: z.object({ id: z.string().nullable(), name: z.string(), username: z.string().nullable() }), content: z.string(), createdAt: z.string(), editedAt: z.string().nullable(), deletedAt: z.string().nullable(), files: z.array(z.object({ id: z.string(), filename: z.string(), mime: z.string(), size: z.number() })).default([]) });
+const messageSearchResponseSchema = z.object({ results: z.array(z.object({ id: z.string(), channelId: z.string(), channelName: z.string(), author: z.object({ id: z.string().nullable(), name: z.string(), username: z.string().nullable() }), content: z.string(), createdAt: z.string() })), nextCursor: z.string().nullable() });
 const communityDetailSchema = z.object({ community: communitySchema, myRole: communityRoleSchema, myPermissions: communityPermissionsSchema.default(noPermissions), roles: z.array(customRoleSchema).default([]), categories: z.array(categorySchema).optional(), channels: z.array(channelSchema), members: z.array(memberSchema) });
 export type CommunityCustomRole = z.infer<typeof customRoleSchema>;
 const communityListSchema = z.object({ communities: z.array(z.object({ id: z.string(), name: z.string(), role: communityRoleSchema, iconUpdatedAt: z.string().nullish(), unread: z.number().int().min(0).optional() })) });
@@ -555,6 +557,12 @@ class ApiClient {
   async createChannel(id: string, name: string, kind: 'TEXT' | 'VOICE') { return z.object({ channel: channelSchema }).parse(await this.request(`/api/communities/${encodeURIComponent(id)}/channels`, { method: 'POST', body: JSON.stringify(channelCreateSchema.parse({ name, kind })) })); }
   async updateChannel(id: string, name: string): Promise<void> { okSchema.parse(await this.request(`/api/channels/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(channelUpdateSchema.parse({ name })) })); }
   async deleteChannel(id: string): Promise<void> { okSchema.parse(await this.request(`/api/channels/${encodeURIComponent(id)}`, { method: 'DELETE', body: '{}' })); }
+  async searchCommunityMessages(communityId: string, input: MessageSearchQuery): Promise<MessageSearchResponse> {
+    const parsed = messageSearchQuerySchema.parse(input);
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(parsed)) if (value !== undefined) query.set(key, value);
+    return messageSearchResponseSchema.parse(await this.request(`/api/communities/${encodeURIComponent(communityId)}/search?${query.toString()}`));
+  }
   async getChannelMessages(id: string, cursor?: string, limit?: number) {
     const query = new URLSearchParams(); if (cursor) query.set('cursor', cursor); if (limit !== undefined) query.set('limit', String(limit));
     const suffix = query.toString();

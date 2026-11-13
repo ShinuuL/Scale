@@ -94,7 +94,7 @@ function MessageItem({
   onDelete: () => void;
 }) {
   return (
-    <article className="group py-3">
+    <article id={`channel-msg-${message.id}`} className="group rounded-lg py-3 transition-colors">
       <div className="flex flex-wrap items-baseline gap-2">
         <strong className="text-sm text-ink-primary" style={color ? { color } : undefined}>{message.author.name}</strong>
         <time className="text-xs text-ink-muted" dateTime={message.createdAt}>
@@ -253,6 +253,9 @@ export function ChannelChat({
   authorColors,
   state,
   dispatch,
+  onSearch,
+  focusMessageId,
+  onFocused,
 }: {
   channelId: string;
   name: string;
@@ -261,6 +264,11 @@ export function ChannelChat({
   authorColors?: ReadonlyMap<string, string>;
   state: ChannelMessagesState;
   dispatch: Dispatch<ChannelMessagesAction>;
+  /** Abre a busca de mensagens da comunidade (botao no cabecalho). */
+  onSearch?: () => void;
+  /** Mensagem vinda da busca: rola ate ela se estiver no historico carregado. */
+  focusMessageId?: string | null;
+  onFocused?: () => void;
 }) {
   const [draft, setDraft] = useState('');
   const [images, setImages] = useState<File[]>([]);
@@ -289,6 +297,18 @@ export function ChannelChat({
     const el = listRef.current;
     if (el && stickToBottom.current) el.scrollTop = el.scrollHeight;
   }, [messages]);
+  // Resultado da busca: so rola se a mensagem ja estiver carregada; senao o canal apenas abre.
+  useEffect(() => {
+    if (!focusMessageId || state.loading || state.channelId !== channelId) return;
+    const el = document.getElementById(`channel-msg-${focusMessageId}`);
+    if (el) {
+      stickToBottom.current = false;
+      el.scrollIntoView?.({ block: 'center' });
+      el.classList.add('bg-surface-hover');
+      window.setTimeout(() => el.classList.remove('bg-surface-hover'), 2000);
+    }
+    onFocused?.();
+  }, [focusMessageId, state.loading, state.channelId, channelId, onFocused]);
   const cancelEdit = () => {
     const id = editing;
     setEditing(null);
@@ -367,7 +387,14 @@ export function ChannelChat({
   }
   return (
     <section aria-label={`Canal ${name}`} className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
-      <h2 className="border-b border-line px-5 py-4 font-semibold text-ink-primary">{name}</h2>
+      <div className="flex items-center gap-2 border-b border-line px-5 py-4">
+        <h2 className="min-w-0 flex-1 truncate font-semibold text-ink-primary">{name}</h2>
+        {onSearch && (
+          <Button variant="ghost" size="sm" onClick={onSearch} aria-label="Buscar mensagens">
+            <Icon name="search" aria-hidden />
+          </Button>
+        )}
+      </div>
       <div
         ref={listRef}
         onScroll={(event) => {
