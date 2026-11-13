@@ -1,6 +1,7 @@
 import { CHANNEL_REACTIONS, REPLY_EXCERPT_MAX, channelReactionSchema, type ChannelReactionSummary, type ChannelReply } from '@scale/shared';
 import { prisma } from './prisma.js';
 import { toChannelMessage } from './communityAccess.js';
+import { SYSTEM_AUTHOR } from './communityWelcome.js';
 
 /**
  * Metadados da Fase 2 das mensagens de canal: citacao da resposta e reacoes.
@@ -65,7 +66,8 @@ export async function buildChannelMessages(roomId: string, rows: MessageRow[]): 
   const users = new Map(authors.map(user => [user.id, user]));
   return rows.map(row => {
     const user = row.authorId ? users.get(row.authorId) : undefined;
-    return toChannelMessage(row, { id: row.authorId, name: user?.name ?? row.guestName ?? 'Usuário', username: user?.username?.name ?? null }, {
+    const author = row.isSystem ? SYSTEM_AUTHOR : { id: row.authorId, name: user?.name ?? row.guestName ?? 'Usuário', username: user?.username?.name ?? null };
+    return toChannelMessage(row, author, {
       replyTo: row.replyToId ? replies.get(row.replyToId) ?? null : null,
       reactions: reactions.get(row.id) ?? [],
     });

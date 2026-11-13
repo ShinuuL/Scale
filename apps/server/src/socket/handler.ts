@@ -40,6 +40,8 @@ import {
   chatEditSchema,
   chatDeleteSchema,
   MAX_PARTICIPANTS,
+  VOICE_CHANNEL_FULL_ERROR,
+  isVoiceChannelFull,
   CHAT_EDIT_WINDOW_MS,
   communitySubscriptionSchema,
   channelTypingSendSchema,
@@ -410,6 +412,11 @@ export function createSocketServer(httpServer: HttpServer): Server {
 
         // Check participant limit
         const peers = roomPeers.get(roomId) ?? new Map();
+        // Canal de voz com limite (Fase 3): erro proprio, nunca acima do teto do mesh.
+        if (room.communityId && room.userLimit !== null && !peers.has(socket.id) && isVoiceChannelFull(peers.size, room.userLimit)) {
+          callback?.({ error: VOICE_CHANNEL_FULL_ERROR, userLimit: room.userLimit });
+          return;
+        }
         if (peers.size >= Math.min(room.maxParticipants, MAX_PARTICIPANTS)) {
           callback?.({ error: 'Room is full' });
           return;

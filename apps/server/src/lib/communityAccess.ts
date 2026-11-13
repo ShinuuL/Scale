@@ -4,7 +4,7 @@ import { toPublicFile } from './publicDto.js';
 
 interface ChannelMessageRow {
   id: string; roomId: string; content: string; createdAt: Date; editedAt: Date | null; deletedAt: Date | null;
-  pinnedAt?: Date | null; pinnedById?: string | null;
+  pinnedAt?: Date | null; pinnedById?: string | null; isSystem?: boolean;
   files?: Array<{ id: string; filename: string; mime: string; size: number; deletedAt: Date | null }>;
 }
 
@@ -22,6 +22,8 @@ export function toChannelMessage(
     reactions: row.deletedAt ? [] : extras.reactions ?? [],
     pinnedAt: row.pinnedAt?.toISOString() ?? null,
     pinnedById: row.pinnedById ?? null,
+    /** Mensagem de sistema (boas-vindas): sem autor editavel. */
+    system: row.isSystem ?? false,
   };
 }
 
