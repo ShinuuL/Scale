@@ -13,6 +13,23 @@ fn config_dir() -> Option<std::path::PathBuf> {
     project_dirs().map(|d| d.config_dir().to_path_buf())
 }
 
+/// Servidor de produção, fixo no app. Sobrescrevível no build:
+/// `SCALE_SERVER_ORIGIN=https://outro.servidor cargo build --release`.
+pub const PRODUCTION_ORIGIN: &str = match option_env!("SCALE_SERVER_ORIGIN") {
+    Some(origin) => origin,
+    None => "https://scale.nexushosts.tech",
+};
+
+/// Origin usada ao abrir. Release: sempre a de produção (não dá para trocar).
+/// Debug: a salva na tela "Conectar" (desenvolvimento local) ou a de produção.
+pub fn initial_origin() -> String {
+    if cfg!(debug_assertions) {
+        load_origin().unwrap_or_else(|| PRODUCTION_ORIGIN.to_string())
+    } else {
+        PRODUCTION_ORIGIN.to_string()
+    }
+}
+
 /// Carrega a origin salva (sem barra final).
 pub fn load_origin() -> Option<String> {
     let path = config_dir()?.join("origin.txt");
@@ -102,6 +119,11 @@ mod tests {
             validate_origin("https://vps:8443/login").unwrap(),
             "https://vps:8443"
         );
+    }
+
+    #[test]
+    fn production_origin_is_valid() {
+        assert_eq!(validate_origin(PRODUCTION_ORIGIN).as_deref(), Ok(PRODUCTION_ORIGIN));
     }
 
     #[test]

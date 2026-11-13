@@ -83,13 +83,10 @@ impl ScaleApp {
         let (socket_tx, socket_rx) = std::sync::mpsc::channel::<SocketEvent>();
         let socket = socketio::spawn(&rt, socket_tx);
 
-        let saved_origin = config::load_origin().unwrap_or_default();
+        // Servidor fixo (produção); a tela "Conectar" só existe em debug.
+        let saved_origin = config::initial_origin();
         let token = token_store::load();
-        let screen = if saved_origin.is_empty() {
-            Screen::Conectar
-        } else {
-            Screen::Login
-        };
+        let screen = Screen::Login;
 
         Self {
             rt,
