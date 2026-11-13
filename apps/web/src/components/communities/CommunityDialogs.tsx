@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/Input';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { api, type CommunityCustomRole, type CommunityDetail, type CommunityInvite } from '@/lib/api';
 import type { CommunityPermissions } from '@scale/shared';
+import { CHANNEL_TOPIC_MAX } from '@scale/shared';
 import { ConfirmDialog } from './ConfirmDialog';
 import type { Channel, Member } from './CommunityParts';
 import { CategoriesSection, CommunityImagesSection } from './CommunityAppearance';
@@ -211,15 +212,20 @@ function ChannelSettingsRow({
   onDelete,
   categories = [],
   onCategory,
+  onTopic,
 }: {
   channel: Channel;
   onRename: (name: string) => Promise<boolean>;
+  /** So canal de texto: grava o topico (vazio limpa). */
+  onTopic?: (topic: string) => Promise<boolean>;
   onDelete: () => void;
   categories?: Array<{ id: string; name: string }>;
   onCategory?: (categoryId: string | null) => void;
 }) {
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(channel.name);
+  const [editingTopic, setEditingTopic] = useState(false);
+  const [topic, setTopic] = useState(channel.topic ?? '');
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
@@ -252,6 +258,19 @@ function ChannelSettingsRow({
         >
           Renomear
         </Button>
+        {onTopic && (
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label={`Tópico do canal ${channel.name}`}
+            onClick={() => {
+              setTopic(channel.topic ?? '');
+              setEditingTopic(true);
+            }}
+          >
+            Tópico
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="sm"
@@ -282,6 +301,30 @@ function ChannelSettingsRow({
             Salvar
           </Button>
           <Button type="button" variant="ghost" size="sm" onClick={() => setRenaming(false)}>
+            Cancelar
+          </Button>
+        </form>
+      )}
+      {editingTopic && onTopic && (
+        <form
+          className="flex items-end gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void onTopic(topic.trim()).then((ok) => {
+              if (ok) setEditingTopic(false);
+            });
+          }}
+        >
+          <Input
+            label={`Tópico do canal ${channel.name}`}
+            value={topic}
+            onChange={(event) => setTopic(event.target.value)}
+            maxLength={CHANNEL_TOPIC_MAX}
+          />
+          <Button type="submit" size="sm">
+            Salvar tópico
+          </Button>
+          <Button type="button" variant="ghost" size="sm" onClick={() => setEditingTopic(false)}>
             Cancelar
           </Button>
         </form>
@@ -505,6 +548,7 @@ export function CommunitySettingsDialog({
               if (layout) void run(() => api.saveCommunityLayout(community.id, layout));
             }}
             onRename={(value) => run(() => api.updateChannel(channel.id, value))}
+            onTopic={channel.kind === 'TEXT' ? (value) => run(() => api.updateChannelTopic(channel.id, value)) : undefined}
             onDelete={() =>
               setConfirm({
                 title: `Apagar canal ${channel.name}?`,

@@ -384,6 +384,7 @@ docker compose up --build -d
   enviam, membros leem, mesmo desenho do avatar) e categorias de canais recolhíveis com ordem
   persistida (`/categories`, `/community-categories/:id`, `PUT /layout`; `manageChannels`)
 - Busca de mensagens na comunidade: `GET /api/communities/:id/search` (só membro; `q` 2..100, filtros canal/autor/datas, cursor, 25 por página, sem apagadas; sem caixa/acento via normalização em JS, varredura limitada a 2000 linhas por página; balde `messageSearch` 30/min por usuário). Resultado abre o canal e rola até a mensagem só se já estiver carregada.
+- Canais de texto da comunidade: "digitando" efêmero (`channel:typing`, só membro inscrito, sem gravar, expira em ~6 s) e tópico do canal (`topic` anulável, até 200, `manageChannels`)
 - Foto na chamada (cartões do canal de voz): a própria via `/api/me/avatar`; a
   dos outros via `GET /api/rooms/:roomId/peers/:peerId/avatar` — exige room
   ticket (ou dono) e só serve peer logado que está NA sala agora. O `userId`

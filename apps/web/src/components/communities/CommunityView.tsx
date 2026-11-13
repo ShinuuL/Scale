@@ -20,6 +20,7 @@ import { Tooltip } from '@/components/ui/Tooltip';
 import { ChannelList, CommunityRail, MemberList, type FriendStatus, type Member } from './CommunityParts';
 import { ChannelChat } from './ChannelChat';
 import { MessageSearchDialog } from './MessageSearchDialog';
+import { useChannelTyping } from '@/hooks/useChannelTyping';
 import { ConfirmDialog } from './ConfirmDialog';
 import {
   CommunitySettingsDialog,
@@ -282,9 +283,13 @@ export function CommunityView({
     void refreshList();
     onNavigate();
   };
-  useCommunityEvents(communityId ?? null, {
+  const typing = useChannelTyping(meId);
+  const resetTyping = typing.reset;
+  useEffect(() => resetTyping(), [communityId, resetTyping]);
+  const { emitTyping } = useCommunityEvents(communityId ?? null, {
     onMessage: (message) => {
       dispatch({ type: 'message', message });
+      if (message.author.id) typing.clearUser(message.channelId, message.author.id);
       if (message.author.id === meId) return;
       if (message.channelId === selectedRef.current && visible()) markChannelRead(message.channelId);
       else setChannelUnread(message.channelId, (count) => Math.min(count + 1, 100));
@@ -310,6 +315,7 @@ export function CommunityView({
     onPresence: ({ userId, online }) => setOnlineIds((previous) => toggled(previous, userId, online)),
     onVoiceSpeaking: ({ userId, speaking }) =>
       setSpeakingIds((previous) => toggled(previous, userId, speaking)),
+    onTyping: typing.onTyping,
     onError: () => setError('Não foi possível acompanhar a comunidade em tempo real.'),
   });
   const perms = detail?.myPermissions;
@@ -454,6 +460,10 @@ export function CommunityView({
             onSearch={() => setSearchOpen(true)}
             focusMessageId={focusMessageId}
             onFocused={clearFocus}
+            topic={selected.topic ?? null}
+            onSaveTopic={perms?.manageChannels ? (value) => api.updateChannelTopic(selected.id, value).then(() => refresh()) : undefined}
+            typingText={typing.textFor(selected.id)}
+            onTyping={(value) => emitTyping(selected.id, value)}
           />
         ) : (
           <div className="m-auto p-6 text-center text-sm text-ink-muted">

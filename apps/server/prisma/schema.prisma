@@ -234,6 +234,8 @@ model Room {
   position         Int       @default(0)
   /// Categoria do canal (anulavel; apagar a categoria solta o canal).
   categoryId       String?
+  /// Topico do canal de texto (ate 200; anulavel).
+  topic            String?
 
   community     Community?    @relation(fields: [communityId], references: [id], onDelete: Cascade)
   category      CommunityCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)

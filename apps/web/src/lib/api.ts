@@ -39,7 +39,7 @@ const okSchema = z.object({ ok: z.literal(true) });
 const communitySchema = z.object({ id: z.string(), name: z.string(), ownerId: z.string(), iconUpdatedAt: z.string().nullish(), bannerUpdatedAt: z.string().nullish() });
 const categorySchema = z.object({ id: z.string(), name: z.string(), position: z.number() });
 export type CommunityCategory = z.infer<typeof categorySchema>;
-const channelSchema = z.object({ id: z.string(), name: z.string(), kind: channelKindSchema, position: z.number(), categoryId: z.string().nullish(), unread: z.number().int().min(0).optional() });
+const channelSchema = z.object({ id: z.string(), name: z.string(), kind: channelKindSchema, position: z.number(), categoryId: z.string().nullish(), topic: z.string().nullish(), unread: z.number().int().min(0).optional() });
 const memberSchema = z.object({ userId: z.string(), name: z.string(), username: z.string().nullable(), role: communityRoleSchema, customRoleId: z.string().nullable().default(null) });
 const customRoleSchema = z.object({ id: z.string(), name: z.string(), color: z.string(), permissions: communityPermissionsSchema });
 const noPermissions = { manageChannels: false, manageInvites: false, manageMessages: false, kickMembers: false };
@@ -556,6 +556,7 @@ class ApiClient {
   async updateCommunityMemberRole(id: string, userId: string, role: 'ADMIN' | 'MEMBER'): Promise<void> { okSchema.parse(await this.request(`/api/communities/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`, { method: 'PATCH', body: JSON.stringify(communityMemberRoleSchema.parse({ role })) })); }
   async createChannel(id: string, name: string, kind: 'TEXT' | 'VOICE') { return z.object({ channel: channelSchema }).parse(await this.request(`/api/communities/${encodeURIComponent(id)}/channels`, { method: 'POST', body: JSON.stringify(channelCreateSchema.parse({ name, kind })) })); }
   async updateChannel(id: string, name: string): Promise<void> { okSchema.parse(await this.request(`/api/channels/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(channelUpdateSchema.parse({ name })) })); }
+  async updateChannelTopic(id: string, topic: string): Promise<void> { okSchema.parse(await this.request(`/api/channels/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(channelUpdateSchema.parse({ topic })) })); }
   async deleteChannel(id: string): Promise<void> { okSchema.parse(await this.request(`/api/channels/${encodeURIComponent(id)}`, { method: 'DELETE', body: '{}' })); }
   async searchCommunityMessages(communityId: string, input: MessageSearchQuery): Promise<MessageSearchResponse> {
     const parsed = messageSearchQuerySchema.parse(input);
