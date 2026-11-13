@@ -8,6 +8,7 @@ import type { FriendsList } from '@scale/shared';
 import { api, type CommunityDetail, type CommunityListItem } from '@/lib/api';
 import { callScreenPath, startBackgroundCall, useActiveCall } from '@/lib/callControl';
 import { useCommunityEvents } from '@/hooks/useCommunityEvents';
+import { useUserEvents } from '@/hooks/useUserEvents';
 import { useChannelMessages } from '@/hooks/useChannelMessages';
 import { Banner } from '@/components/ui/Banner';
 import { Button } from '@/components/ui/Button';
@@ -126,6 +127,60 @@ export function CommunityView({
     detail?.channels.find((channel) => channel.id === channelId && channel.kind === 'TEXT') ??
     detail?.channels.find((channel) => channel.kind === 'TEXT');
   const { state: messages, dispatch } = useChannelMessages(selected?.id ?? null, refreshVersion);
+  // Nao lidas. Comunidade aberta: contagem por canal no `detail`, atualizada
+  // pelos eventos `channel:message` do socket da comunidade. Outras comunidades:
+  // o socket so acompanha a aberta, entao o servidor manda `community:activity`
+  // (sem conteudo) na sala pessoal `user:<id>`; o total do rail tambem e
+  // recarregado ao focar a janela (cobre eventos perdidos em reconexao).
+  const selectedId = selected?.id;
+  const selectedRef = useRef(selectedId);
+  selectedRef.current = selectedId;
+  const readTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const setChannelUnread = useCallback((id: string, update: (count: number) => number) => {
+    setDetail((previous) =>
+      previous && {
+        ...previous,
+        channels: previous.channels.map((channel) =>
+          channel.id === id ? { ...channel, unread: update(channel.unread ?? 0) } : channel,
+        ),
+      },
+    );
+  }, []);
+  /** Zera na hora e avisa o servidor (agrupado: rajada de mensagens = um POST). */
+  const markChannelRead = useCallback(
+    (id: string) => {
+      setChannelUnread(id, () => 0);
+      const timers = readTimers.current;
+      if (timers.has(id)) return;
+      timers.set(
+        id,
+        setTimeout(() => {
+          timers.delete(id);
+          void api.markChannelRead(id).catch(() => undefined);
+        }, 400),
+      );
+    },
+    [setChannelUnread],
+  );
+  useEffect(() => {
+    const timers = readTimers.current;
+    return () => {
+      for (const timer of timers.values()) clearTimeout(timer);
+      timers.clear();
+    };
+  }, []);
+  const visible = () => typeof document === 'undefined' || document.visibilityState !== 'hidden';
+  useEffect(() => {
+    if (selectedId && visible()) markChannelRead(selectedId);
+  }, [selectedId, markChannelRead]);
+  useEffect(() => {
+    const onVisible = () => {
+      const id = selectedRef.current;
+      if (id && visible()) markChannelRead(id);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [markChannelRead]);
   const refreshList = useCallback(
     () =>
       api
@@ -143,7 +198,13 @@ export function CommunityView({
       .getCommunity(communityId)
       .then((result) => {
         if (currentId.current === communityId) {
-          setDetail(result);
+          // Canal aberto e visivel nunca mostra nao lidas (o POST de leitura pode estar a caminho).
+          const open = selectedRef.current;
+          setDetail(
+            open && visible()
+              ? { ...result, channels: result.channels.map((c) => (c.id === open ? { ...c, unread: 0 } : c)) }
+              : result,
+          );
           setError('');
         }
       })
@@ -158,6 +219,24 @@ export function CommunityView({
     setLoading(true);
     void refreshList().finally(() => setLoading(false));
   }, [refreshList]);
+  useEffect(() => {
+    const onFocus = () => void refreshList();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [refreshList]);
+  useUserEvents(true, {
+    onCommunityActivity: (event) => {
+      // A comunidade aberta conta pelo `channel:message` (evita contar duas vezes).
+      if (event.authorId === meId || event.communityId === currentId.current) return;
+      setCommunities((previous) =>
+        previous.map((community) =>
+          community.id === event.communityId
+            ? { ...community, unread: (community.unread ?? 0) + 1 }
+            : community,
+        ),
+      );
+    },
+  });
   useEffect(() => {
     setDetail(null);
     setVoice([]);
@@ -182,7 +261,12 @@ export function CommunityView({
     onNavigate();
   };
   useCommunityEvents(communityId ?? null, {
-    onMessage: (message) => dispatch({ type: 'message', message }),
+    onMessage: (message) => {
+      dispatch({ type: 'message', message });
+      if (message.author.id === meId) return;
+      if (message.channelId === selectedRef.current && visible()) markChannelRead(message.channelId);
+      else setChannelUnread(message.channelId, (count) => Math.min(count + 1, 100));
+    },
     onMessageEdit: (event) => dispatch({ type: 'edit', event }),
     onMessageDelete: (event) => dispatch({ type: 'delete', event }),
     onChanged: () => {
@@ -235,12 +319,30 @@ export function CommunityView({
       onSettings={() => setDialog('settings')}
       canManage={!!canManage}
       onLeave={detail.myRole !== 'OWNER' ? () => setDialog('leave') : undefined}
+      onMarkRead={() => {
+        setDetail((previous) =>
+          previous && { ...previous, channels: previous.channels.map((c) => ({ ...c, unread: 0 })) },
+        );
+        void api.markCommunityRead(detail.community.id).catch(() =>
+          setError('Não foi possível marcar a comunidade como lida.'),
+        );
+      }}
     />
   );
   return (
     <div className="flex h-full min-h-0 min-w-0">
       <CommunityRail
-        communities={sortByOrder(communities, order)}
+        communities={sortByOrder(
+          // Comunidade aberta: o total vem dos canais (ja atualizados em tempo real).
+          detail
+            ? communities.map((community) =>
+                community.id === detail.community.id
+                  ? { ...community, unread: detail.channels.reduce((sum, c) => sum + (c.unread ?? 0), 0) }
+                  : community,
+              )
+            : communities,
+          order,
+        )}
         selected={communityId}
         onReorder={reorder}
         onSelect={(id) => onNavigate(id)}

@@ -36,14 +36,14 @@ import { communityCreateSchema, channelCreateSchema, channelUpdateSchema, commun
 
 const okSchema = z.object({ ok: z.literal(true) });
 const communitySchema = z.object({ id: z.string(), name: z.string(), ownerId: z.string() });
-const channelSchema = z.object({ id: z.string(), name: z.string(), kind: channelKindSchema, position: z.number() });
+const channelSchema = z.object({ id: z.string(), name: z.string(), kind: channelKindSchema, position: z.number(), unread: z.number().int().min(0).optional() });
 const memberSchema = z.object({ userId: z.string(), name: z.string(), username: z.string().nullable(), role: communityRoleSchema, customRoleId: z.string().nullable().default(null) });
 const customRoleSchema = z.object({ id: z.string(), name: z.string(), color: z.string(), permissions: communityPermissionsSchema });
 const noPermissions = { manageChannels: false, manageInvites: false, manageMessages: false, kickMembers: false };
 export const channelMessageSchema = z.object({ id: z.string(), channelId: z.string(), author: z.object({ id: z.string().nullable(), name: z.string(), username: z.string().nullable() }), content: z.string(), createdAt: z.string(), editedAt: z.string().nullable(), deletedAt: z.string().nullable(), files: z.array(z.object({ id: z.string(), filename: z.string(), mime: z.string(), size: z.number() })).default([]) });
 const communityDetailSchema = z.object({ community: communitySchema, myRole: communityRoleSchema, myPermissions: communityPermissionsSchema.default(noPermissions), roles: z.array(customRoleSchema).default([]), channels: z.array(channelSchema), members: z.array(memberSchema) });
 export type CommunityCustomRole = z.infer<typeof customRoleSchema>;
-const communityListSchema = z.object({ communities: z.array(z.object({ id: z.string(), name: z.string(), role: communityRoleSchema })) });
+const communityListSchema = z.object({ communities: z.array(z.object({ id: z.string(), name: z.string(), role: communityRoleSchema, unread: z.number().int().min(0).optional() })) });
 const inviteSchema = z.object({ id: z.string(), createdById: z.string(), expiresAt: z.string(), maxUses: z.number().nullable(), uses: z.number(), revokedAt: z.string().nullable(), createdAt: z.string() });
 export type ChannelMessage = z.infer<typeof channelMessageSchema>;
 export type CommunityDetail = z.infer<typeof communityDetailSchema>;
@@ -539,6 +539,9 @@ class ApiClient {
   }
   async updateCommunity(id: string, name: string): Promise<void> { okSchema.parse(await this.request(`/api/communities/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(communityCreateSchema.parse({ name })) })); }
   async deleteCommunity(id: string): Promise<void> { okSchema.parse(await this.request(`/api/communities/${encodeURIComponent(id)}`, { method: 'DELETE', body: '{}' })); }
+  /** Nao lidas: marca um canal de texto (ou todos os da comunidade) como lido agora. */
+  async markChannelRead(id: string): Promise<void> { okSchema.parse(await this.request(`/api/channels/${encodeURIComponent(id)}/read`, { method: 'POST', body: '{}' })); }
+  async markCommunityRead(id: string): Promise<void> { okSchema.parse(await this.request(`/api/communities/${encodeURIComponent(id)}/read`, { method: 'POST', body: '{}' })); }
   async leaveCommunity(id: string): Promise<void> { okSchema.parse(await this.request(`/api/communities/${encodeURIComponent(id)}/leave`, { method: 'POST', body: '{}' })); }
   async removeCommunityMember(id: string, userId: string): Promise<void> { okSchema.parse(await this.request(`/api/communities/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`, { method: 'DELETE', body: '{}' })); }
   async updateCommunityMemberRole(id: string, userId: string, role: 'ADMIN' | 'MEMBER'): Promise<void> { okSchema.parse(await this.request(`/api/communities/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`, { method: 'PATCH', body: JSON.stringify(communityMemberRoleSchema.parse({ role })) })); }

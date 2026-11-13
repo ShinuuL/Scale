@@ -374,6 +374,7 @@ docker compose up --build -d
     `friends:changed` e `dm:message`. DTO público sem e-mail.
   - Foto de amigo: `GET /api/users/:userId/avatar` (amigo ou si mesmo; sem
     amizade = 404 igual a "sem foto")
+- Não lidas em comunidades: tabela `ChannelReadState`, contagem por canal (teto 100, "99+") em `GET /api/communities[/:id]`, `POST /api/channels/:id/read` e `/api/communities/:id/read`; outras comunidades via evento leve `community:activity` em `user:<id>` + recarga ao focar
 - Foto na chamada (cartões do canal de voz): a própria via `/api/me/avatar`; a
   dos outros via `GET /api/rooms/:roomId/peers/:peerId/avatar` — exige room
   ticket (ou dono) e só serve peer logado que está NA sala agora. O `userId`
