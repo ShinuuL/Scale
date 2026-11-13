@@ -11,6 +11,8 @@ import { api, type CommunityCustomRole, type CommunityDetail, type CommunityInvi
 import type { CommunityPermissions } from '@scale/shared';
 import { ConfirmDialog } from './ConfirmDialog';
 import type { Channel, Member } from './CommunityParts';
+import { CategoriesSection, CommunityImagesSection } from './CommunityAppearance';
+import { buildSections, setChannelCategory } from './channelLayout';
 
 const selectClass =
   'w-full rounded-lg border border-line bg-surface-secondary p-2 text-sm text-ink-primary';
@@ -207,10 +209,14 @@ function ChannelSettingsRow({
   channel,
   onRename,
   onDelete,
+  categories = [],
+  onCategory,
 }: {
   channel: Channel;
   onRename: (name: string) => Promise<boolean>;
   onDelete: () => void;
+  categories?: Array<{ id: string; name: string }>;
+  onCategory?: (categoryId: string | null) => void;
 }) {
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(channel.name);
@@ -218,6 +224,23 @@ function ChannelSettingsRow({
     <div className="space-y-2">
       <div className="flex items-center gap-2">
         <span className="min-w-0 flex-1 truncate text-sm text-ink-primary">{channel.name}</span>
+        {onCategory && categories.length > 0 && (
+          <label className="text-sm text-ink-primary">
+            <span className="sr-only">Categoria do canal {channel.name}</span>
+            <select
+              className={selectClass}
+              value={channel.categoryId ?? ''}
+              onChange={(event) => onCategory(event.target.value || null)}
+            >
+              <option value="">Sem categoria</option>
+              {categories.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <Button
           variant="ghost"
           size="sm"
@@ -391,6 +414,7 @@ export function CommunitySettingsDialog({
   onGone: () => void;
 }) {
   const { community, channels, members, myRole, myPermissions, roles } = detail;
+  const categories = detail.categories ?? [];
   const owner = myRole === 'OWNER';
   const [name, setName] = useState(community.name);
   const [newChannelName, setNewChannelName] = useState('');
@@ -466,12 +490,20 @@ export function CommunitySettingsDialog({
           </Button>
         </form>
       )}
+      {(myRole === 'OWNER' || myRole === 'ADMIN') && (
+        <CommunityImagesSection community={community} onChanged={onChanged} />
+      )}
       {myPermissions.manageChannels && <section className="space-y-2">
         <h3 className="font-semibold text-ink-primary">Canais</h3>
         {channels.map((channel) => (
           <ChannelSettingsRow
             key={channel.id}
             channel={channel}
+            categories={categories}
+            onCategory={(categoryId) => {
+              const layout = setChannelCategory(buildSections(channels, categories), channel.id, categoryId);
+              if (layout) void run(() => api.saveCommunityLayout(community.id, layout));
+            }}
             onRename={(value) => run(() => api.updateChannel(channel.id, value))}
             onDelete={() =>
               setConfirm({
@@ -518,6 +550,24 @@ export function CommunitySettingsDialog({
           </Button>
         </form>
       </section>}
+      {myPermissions.manageChannels && (
+        <CategoriesSection
+          communityId={community.id}
+          categories={categories}
+          run={run}
+          onDelete={(category) =>
+            setConfirm({
+              title: `Apagar categoria ${category.name}?`,
+              description: 'Os canais desta categoria continuam, sem categoria.',
+              label: 'Apagar categoria',
+              action: async () => {
+                await api.deleteCategory(category.id);
+                onChanged();
+              },
+            })
+          }
+        />
+      )}
       {owner && (
         <section className="space-y-2">
           <h3 className="font-semibold text-ink-primary">Cargos</h3>

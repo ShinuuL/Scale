@@ -5,18 +5,24 @@ import { Button as AriaButton, Menu, MenuItem, MenuTrigger, Popover } from 'reac
 import { AppModal } from '@/components/ui/AppModal';
 import { Icon } from '@/components/ui/Icon';
 import { Tooltip } from '@/components/ui/Tooltip';
-import type { ChannelKind, CommunityRole, CommunityVoiceState } from '@scale/shared';
+import { communityImageUrl } from '@/lib/api';
+import type { ChannelKind, CommunityLayout, CommunityRole, CommunityVoiceState } from '@scale/shared';
+import { ChannelSections } from './ChannelSections';
+import type { LayoutCategory } from './channelLayout';
 
 export interface CommunitySummary {
   id: string;
   name: string;
   role: CommunityRole;
+  /** Versao do icone (null = sem icone: mostra as iniciais). */
+  iconUpdatedAt?: string | null;
 }
 export interface Channel {
   id: string;
   name: string;
   kind: ChannelKind;
   position: number;
+  categoryId?: string | null;
 }
 export interface Member {
   userId: string;
@@ -114,7 +120,17 @@ export function CommunityRail({
               }}
               className={`${railButton} ${community.id === selected ? 'btn-primary' : 'bg-surface-hover text-ink-muted hover:text-ink-primary'}`}
             >
-              {community.name.slice(0, 2).toLocaleUpperCase('pt-BR')}
+              {community.iconUpdatedAt ? (
+                // eslint-disable-next-line @next/next/no-img-element -- export estatico, sem otimizador de imagem
+                <img
+                  src={communityImageUrl(community.id, 'icon', community.iconUpdatedAt) ?? undefined}
+                  alt=""
+                  className="h-full w-full rounded-xl object-cover"
+                  draggable={false}
+                />
+              ) : (
+                community.name.slice(0, 2).toLocaleUpperCase('pt-BR')
+              )}
             </button>
           </Tooltip>
         </div>
@@ -156,9 +172,18 @@ export function ChannelList({
   activeVoiceId,
   activeVoiceJoined = false,
   onOpenCall,
+  categories = [],
+  bannerUrl,
+  onLayout,
 }: {
   name: string;
   channels: Channel[];
+  /** Categorias da comunidade (canal sem categoria fica no grupo do tipo). */
+  categories?: LayoutCategory[];
+  /** Banner da comunidade (topo da lista), se houver. */
+  bannerUrl?: string | null;
+  /** Nova ordem/categorias (so com manageChannels): arrastar ou Alt+Seta. */
+  onLayout?: (layout: CommunityLayout) => void;
   selected?: string;
   voiceStates: CommunityVoiceState[];
   onSelect: (channel: Channel) => void;
@@ -173,6 +198,15 @@ export function ChannelList({
 }) {
   return (
     <section className="flex h-full w-full flex-col bg-surface-secondary p-3">
+      {bannerUrl && (
+        // eslint-disable-next-line @next/next/no-img-element -- export estatico, sem otimizador de imagem
+        <img
+          src={bannerUrl}
+          alt=""
+          data-testid="community-banner"
+          className="-mx-3 -mt-3 mb-2 h-24 w-[calc(100%+1.5rem)] max-w-none object-cover"
+        />
+      )}
       <div className="flex items-center gap-1">
         <h2 className="min-w-0 flex-1 truncate px-3 py-2 font-semibold text-ink-primary">{name}</h2>
         <MenuTrigger>
@@ -219,17 +253,12 @@ export function ChannelList({
         </MenuTrigger>
       </div>
       <nav aria-label={`Canais de ${name}`} className="mt-4 min-h-0 flex-1 overflow-y-auto">
-        {(['TEXT', 'VOICE'] as const).map((kind) => (
-          <div key={kind} className="mb-5">
-            <h3 className="px-3 pb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">
-              {kind === 'TEXT' ? 'Canais de texto' : 'Canais de voz'}
-            </h3>
-            <ul>
-              {channels
-                .filter((channel) => channel.kind === kind)
-                .map((channel) => (
-                  <li key={channel.id}>
-                    {kind === 'VOICE' ? (
+        <ChannelSections
+          channels={channels}
+          categories={categories}
+          onLayout={onLayout}
+          renderChannel={(channel) =>
+                    channel.kind === 'VOICE' ? (
                       <VoiceChannelItem
                         channel={channel}
                         members={
@@ -251,12 +280,9 @@ export function ChannelList({
                         <Icon name="hash" />
                         <span className="truncate">{channel.name}</span>
                       </button>
-                    )}
-                  </li>
-                ))}
-            </ul>
-          </div>
-        ))}
+                    )
+          }
+        />
       </nav>
     </section>
   );
