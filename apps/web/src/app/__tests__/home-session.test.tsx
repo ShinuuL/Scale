@@ -53,7 +53,7 @@ describe('home session states', () => {
   it('receives a visitor without session on the landing page', async () => {
     vi.mocked(api.getMe).mockRejectedValueOnce({ status: 401 });
     render(<HomePage />);
-    expect(await screen.findByRole('heading', { level: 1, name: 'Sua sala de voz, sem complicação.' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Chama a turma. Abre a sala.' })).toBeInTheDocument();
     expect(screen.getAllByRole('link', { name: 'Criar conta' })[0]).toHaveAttribute('href', '/register');
     expect(screen.getByRole('button', { name: 'Entrar na sala' })).toBeDisabled();
     expect(screen.queryByRole('button', { name: 'Perfil de Convidado' })).not.toBeInTheDocument();
