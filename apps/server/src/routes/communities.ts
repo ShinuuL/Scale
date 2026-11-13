@@ -12,6 +12,7 @@ import { isChatRateLimited, isCommunityInviteRateLimited } from '../lib/rateLimi
 import { evictCommunityUser, evictCommunity } from '../socket/handler.js';
 import { purgeRoom } from '../lib/roomDeletion.js';
 import { getClientIp } from '../lib/clientIp.js';
+import { removeCommunityIcon } from './communityIcon.js';
 
 const idSchema = z.string().uuid();
 const params = z.object({ id: idSchema });
@@ -46,14 +47,14 @@ export async function communityRoutes(app: FastifyInstance): Promise<void> {
   });
   app.get('/api/communities', auth, async (request, reply) => {
     const rows = await prisma.communityMember.findMany({ where: { userId: meOf(request) }, include: { community: true }, orderBy: { joinedAt: 'asc' } });
-    return reply.send({ communities: rows.map(row => ({ id: row.community.id, name: row.community.name, role: row.role })) });
+    return reply.send({ communities: rows.map(row => ({ id: row.community.id, name: row.community.name, role: row.role, iconVersion: row.community.iconUpdatedAt?.toISOString() ?? null })) });
   });
   app.get('/api/communities/:id', auth, async (request, reply) => {
     const p = params.safeParse(request.params); if (!p.success) return invalid(reply);
     const membership = await findMembership(p.data.id, meOf(request)); if (!membership) return missing(reply);
     const community = await prisma.community.findUnique({ where: { id: p.data.id }, include: { rooms: { orderBy: { position: 'asc' } }, customRoles: { orderBy: { createdAt: 'asc' } }, members: { include: { user: { include: { username: true } } }, orderBy: { joinedAt: 'asc' } } } });
     if (!community) return missing(reply);
-    return reply.send({ community: { id: community.id, name: community.name, ownerId: community.ownerId }, myRole: membership.role, myPermissions: permissionsOf(membership), roles: community.customRoles.map(r => ({ id: r.id, name: r.name, color: r.color, permissions: { manageChannels: r.manageChannels, manageInvites: r.manageInvites, manageMessages: r.manageMessages, kickMembers: r.kickMembers } })), channels: community.rooms.map(r => ({ id: r.id, name: r.name, kind: r.channelKind, position: r.position })), members: community.members.map(m => ({ userId: m.userId, name: m.user.name, username: m.user.username?.name ?? null, role: m.role, customRoleId: m.customRoleId })) });
+    return reply.send({ community: { id: community.id, name: community.name, ownerId: community.ownerId, iconVersion: community.iconUpdatedAt?.toISOString() ?? null }, myRole: membership.role, myPermissions: permissionsOf(membership), roles: community.customRoles.map(r => ({ id: r.id, name: r.name, color: r.color, permissions: { manageChannels: r.manageChannels, manageInvites: r.manageInvites, manageMessages: r.manageMessages, kickMembers: r.kickMembers } })), channels: community.rooms.map(r => ({ id: r.id, name: r.name, kind: r.channelKind, position: r.position })), members: community.members.map(m => ({ userId: m.userId, name: m.user.name, username: m.user.username?.name ?? null, role: m.role, customRoleId: m.customRoleId })) });
   });
   app.patch('/api/communities/:id', auth, async (request, reply) => {
     const p = params.safeParse(request.params); const body = communityCreateSchema.safeParse(request.body); if (!p.success || !body.success) return invalid(reply);
@@ -67,7 +68,7 @@ export async function communityRoutes(app: FastifyInstance): Promise<void> {
     await evictCommunity(ioOf(app), p.data.id);
     const rooms = await prisma.room.findMany({ where: { communityId: p.data.id }, select: { id: true } });
     for (const room of rooms) await purgeRoom(ioOf(app), room.id, app.log);
-    await prisma.community.delete({ where: { id: p.data.id } }); return reply.send({ ok: true });
+    const deleted = await prisma.community.delete({ where: { id: p.data.id } }); await removeCommunityIcon(deleted.iconPath); return reply.send({ ok: true });
   });
   app.post('/api/communities/:id/leave', auth, async (request, reply) => {
     const p = params.safeParse(request.params); if (!p.success) return invalid(reply);

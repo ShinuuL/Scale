@@ -348,6 +348,13 @@ docker compose up --build -d
   (até 5 por mensagem, quota da sala). No canal de texto ser **membro** é a prova
   de participação (não há `join-room`); só `image/*` é aceito. A mensagem sai
   como `channel:message` para a comunidade, com `files` no DTO.
+- Ícone de comunidade: `PUT|DELETE /api/communities/:id/icon` (só OWNER;
+  PNG/JPEG/WebP por magic bytes, até 8 MB, em `uploads/community-icons`) e
+  `GET` (só membro; fora = 404). DTOs levam `iconVersion` (usado como `?v=`).
+- Aviso de atualização: o build grava `out/version.json` e embute o mesmo id em
+  `NEXT_PUBLIC_BUILD_ID` (`next.config.js`). `UpdatePrompt` confere a cada 5 min
+  e ao voltar para a aba; versão diferente = aviso "Recarregar" (nunca recarrega
+  sozinho; em chamada avisa que ela cai).
 - Cargos personalizados de comunidade (tabela `CommunityCustomRole`, até 20):
   nome, cor e permissões (`manageChannels`, `manageInvites`, `manageMessages`,
   `kickMembers`). Um por membro (`CommunityMember.customRoleId`, anulável).

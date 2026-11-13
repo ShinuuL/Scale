@@ -1,14 +1,14 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Dialog, Heading, Modal, ModalOverlay } from 'react-aria-components';
 import { Banner } from '@/components/ui/Banner';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { api, type CommunityCustomRole, type CommunityDetail, type CommunityInvite } from '@/lib/api';
-import type { CommunityPermissions } from '@scale/shared';
+import { MAX_COMMUNITY_ICON_BYTES, type CommunityPermissions } from '@scale/shared';
 import { ConfirmDialog } from './ConfirmDialog';
 import type { Channel, Member } from './CommunityParts';
 
@@ -327,6 +327,49 @@ function RoleRow({ role, onSave, onDelete }: { role: CommunityCustomRole; onSave
   );
 }
 
+/** Icone da comunidade: so o dono troca (PNG, JPEG ou WebP, ate 8 MB). */
+function CommunityIconField({ community, run }: { community: CommunityDetail['community']; run: (action: () => Promise<unknown>) => Promise<boolean> }) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [hint, setHint] = useState('');
+  const pick = async (file: File | undefined) => {
+    if (!file) return;
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > MAX_COMMUNITY_ICON_BYTES) {
+      setHint('Use PNG, JPEG ou WebP de até 8 MB.');
+      return;
+    }
+    setHint('');
+    setBusy(true);
+    await run(() => api.uploadCommunityIcon(community.id, file));
+    setBusy(false);
+  };
+  return (
+    <section className="space-y-2">
+      <h3 className="font-semibold text-ink-primary">Ícone</h3>
+      <div className="flex items-center gap-3">
+        <span className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-surface-hover text-sm font-bold text-ink-muted">
+          {community.iconVersion ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={api.communityIconUrl(community.id, community.iconVersion)} alt={`Ícone de ${community.name}`} className="h-full w-full object-cover" />
+          ) : (
+            community.name.slice(0, 2).toLocaleUpperCase('pt-BR')
+          )}
+        </span>
+        <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(event) => { void pick(event.target.files?.[0]); event.target.value = ''; }} />
+        <Button size="sm" variant="secondary" disabled={busy} onClick={() => fileRef.current?.click()}>
+          {community.iconVersion ? 'Trocar ícone' : 'Enviar ícone'}
+        </Button>
+        {community.iconVersion && (
+          <Button size="sm" variant="ghost" disabled={busy} onClick={() => void run(() => api.deleteCommunityIcon(community.id))}>
+            Remover
+          </Button>
+        )}
+      </div>
+      <p className={`text-xs ${hint ? 'text-red-300' : 'text-ink-muted'}`}>{hint || 'PNG, JPEG ou WebP, até 8 MB. Aparece na lista de comunidades.'}</p>
+    </section>
+  );
+}
+
 function MemberRow({
   member,
   owner,
@@ -466,6 +509,7 @@ export function CommunitySettingsDialog({
           </Button>
         </form>
       )}
+      {owner && <CommunityIconField community={community} run={run} />}
       {myPermissions.manageChannels && <section className="space-y-2">
         <h3 className="font-semibold text-ink-primary">Canais</h3>
         {channels.map((channel) => (
