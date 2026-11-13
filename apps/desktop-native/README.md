@@ -47,19 +47,27 @@ cargo packager --release --formats deb,appimage    # Linux
 
 Saída em `target/dist/`.
 
-## Publicar uma versão (GitHub Releases)
+## Versão e publicação (regra)
 
-1. Suba `version` no `Cargo.toml` (ex.: `0.2.0`) e faça merge na `main`.
-2. `git tag desktop-v0.2.0 && git push origin desktop-v0.2.0`
+**Toda mudança em `apps/desktop-native` sobe `version` no `Cargo.toml`**
+(semver: correção = patch, recurso = minor). O workflow
+[`desktop-release.yml`](../../.github/workflows/desktop-release.yml) faz valer:
 
-O workflow [`desktop-release.yml`](../../.github/workflows/desktop-release.yml)
-confere tag = `Cargo.toml`, roda testes e clippy, gera os instaladores em
-runners Windows e Linux e publica a release com `SHA256SUMS`.
+- PR: falha se a `version` não for maior que a última release `desktop-v*`.
+- Merge na `main`: testes + clippy, instaladores em runners Windows e Linux,
+  `SHA256SUMS` e release `desktop-v<version>` (tag criada pelo workflow).
 
-## Aviso de atualização
+## Atualização automática
 
-Ao abrir, o app consulta `api.github.com/repos/ShinuuL/Scale/releases` e, se
-houver release `desktop-v*` (sem rascunho/pré-release) mais nova que a versão
-compilada, mostra uma faixa no topo com "Baixar atualização" (abre a página da
-release no navegador). Não baixa nem executa nada sozinho. Fork: compile com
+Ao abrir, o app consulta `api.github.com/repos/ShinuuL/Scale/releases`. Havendo
+`desktop-v*` mais nova (sem rascunho/pré-release):
+
+1. baixa o instalador da plataforma e confere o SHA-256 pelo `SHA256SUMS`;
+2. mostra "Versão X pronta" com "Reiniciar agora" / "Adiar" (30 min) e, sem
+   ação, reinicia sozinho em 15 s;
+3. Windows: fecha, roda o setup NSIS em silêncio (`/S`) e reabre o Scale.
+   AppImage: troca o próprio arquivo e reabre. `.deb`: só avisa e abre a
+   página da release (instalar exige root).
+
+Checksum diferente descarta a atualização. Fork: compile com
 `SCALE_UPDATE_REPO=dono/repo`.

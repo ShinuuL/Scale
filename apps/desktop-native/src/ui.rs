@@ -90,44 +90,99 @@ fn day_separator(ui: &mut egui::Ui, day: &str) {
 impl ScaleApp {
     // ---- tela: conectar ao servidor ----
 
-    /// Faixa no topo quando há release nova do desktop. Abre a página da
-    /// release no navegador; o usuário baixa e roda o instalador.
+    /// Faixa fina no topo com o estado da atualização automática.
     pub fn render_update_banner(&mut self, ui: &mut egui::Ui) {
-        let Some(info) = self.update.clone() else { return };
-        let mut dismiss = false;
+        use crate::state::UpdateState;
+        use std::time::Instant;
+
+        // Prazo vencido: instala (o processo encerra se der certo).
+        if let UpdateState::Pronta { update, deadline } = &self.update {
+            if Instant::now() >= *deadline {
+                let update = update.clone();
+                self.install_update(&update);
+            }
+        }
+
+        enum Action {
+            Nada,
+            Agora,
+            Adiar,
+            Fechar,
+            Pagina(String),
+        }
+        let mut action = Action::Nada;
+        let (text, show) = match &self.update {
+            UpdateState::Nenhuma => (String::new(), false),
+            UpdateState::Baixando(v) => (format!("Baixando a versão {v} do Scale..."), true),
+            UpdateState::Pronta { update, deadline } => {
+                let left = deadline.saturating_duration_since(Instant::now()).as_secs();
+                let msg = if left <= crate::app::RESTART_DELAY.as_secs() {
+                    format!("Versão {} pronta. O Scale reinicia em {left} s para atualizar.", update.version)
+                } else {
+                    format!("Versão {} pronta para instalar.", update.version)
+                };
+                (msg, true)
+            }
+            UpdateState::Manual(info) => (
+                format!("Nova versão do Scale disponível: {} (você usa {}).", info.version, crate::updater::CURRENT_VERSION),
+                true,
+            ),
+            UpdateState::Falhou(err) => (format!("Não foi possível atualizar: {err}"), true),
+        };
+        if !show {
+            return;
+        }
+
         egui::Panel::top("atualizacao")
             .resizable(false)
             .frame(
                 egui::Frame::NONE
                     .fill(colors::ACCENT_SUBTLE)
-                    .inner_margin(egui::Margin::symmetric(16, 8)),
+                    .inner_margin(egui::Margin::symmetric(16, 6)),
             )
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "Nova versão do Scale disponível: {} (você usa {}).",
-                            info.version,
-                            crate::updater::CURRENT_VERSION
-                        ))
-                        .color(colors::TEXT_PRIMARY),
-                    );
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("Depois").clicked() {
-                            dismiss = true;
+                    ui.label(egui::RichText::new(&text).color(colors::TEXT_PRIMARY));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| match &self.update {
+                        UpdateState::Pronta { .. } => {
+                            if ui.button("Adiar").clicked() {
+                                action = Action::Adiar;
+                            }
+                            if ui.button(egui::RichText::new("Reiniciar agora").color(colors::ACCENT)).clicked() {
+                                action = Action::Agora;
+                            }
                         }
-                        if ui
-                            .button(egui::RichText::new("Baixar atualização").color(colors::ACCENT))
-                            .on_hover_text("Abre a página da versão no navegador")
-                            .clicked()
-                        {
-                            ui.ctx().open_url(egui::OpenUrl::new_tab(&info.url));
+                        UpdateState::Manual(info) => {
+                            if ui.button("Depois").clicked() {
+                                action = Action::Fechar;
+                            }
+                            if ui.button(egui::RichText::new("Baixar atualização").color(colors::ACCENT)).clicked() {
+                                action = Action::Pagina(info.page_url.clone());
+                            }
                         }
+                        UpdateState::Falhou(_) if ui.button("Fechar").clicked() => {
+                            action = Action::Fechar;
+                        }
+                        _ => {}
                     });
                 });
             });
-        if dismiss {
-            self.update = None;
+
+        match action {
+            Action::Nada => {}
+            Action::Agora => {
+                if let UpdateState::Pronta { update, .. } = &self.update {
+                    let update = update.clone();
+                    self.install_update(&update);
+                }
+            }
+            Action::Adiar => {
+                if let UpdateState::Pronta { deadline, .. } = &mut self.update {
+                    *deadline = Instant::now() + crate::app::POSTPONE;
+                }
+            }
+            Action::Fechar => self.update = UpdateState::Nenhuma,
+            Action::Pagina(url) => ui.ctx().open_url(egui::OpenUrl::new_tab(url)),
         }
     }
 

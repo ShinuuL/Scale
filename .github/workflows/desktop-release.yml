@@ -1,23 +1,29 @@
 # Release do desktop nativo (Rust/egui) nas GitHub Releases.
 #
-# Como publicar:
-#   1. Suba `version` em apps/desktop-native/Cargo.toml (ex.: 0.2.0) e faça merge na main.
-#   2. git tag desktop-v0.2.0 && git push origin desktop-v0.2.0
-# O workflow confere tag = Cargo.toml, roda testes/clippy, gera os instaladores
-# (Windows NSIS, Linux .deb + AppImage) com SHA256SUMS e publica a release.
-# Os apps instalados consultam as releases `desktop-v*` ao abrir e avisam.
-# PRs/pushes que mexem no desktop só rodam a verificação (sem release).
+# Regra de versao (obrigatoria): toda mudanca em apps/desktop-native sobe
+# `version` no Cargo.toml (semver). O PR falha se a versao nao for maior que a
+# ultima release `desktop-v*`.
+#
+# Publicacao automatica: no merge na main, se ainda nao existe a tag
+# `desktop-v<version>`, gera os instaladores (Windows NSIS, Linux .deb +
+# AppImage) com SHA256SUMS e publica a release criando a tag. Os apps
+# instalados detectam, baixam, conferem o SHA-256 e se atualizam sozinhos.
 name: Desktop release
 
 on:
   push:
-    tags: ["desktop-v*"]
-  pull_request:
+    branches: [main]
     paths: ["apps/desktop-native/**", ".github/workflows/desktop-release.yml"]
+  pull_request:
+    paths: ["apps/desktop-native/**"]
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -25,11 +31,45 @@ env:
 defaults:
   run:
     shell: bash
-    working-directory: apps/desktop-native
 
 jobs:
+  version:
+    name: Regra de versao
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      publish: ${{ steps.v.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VERSION=$(grep -m1 '^version' apps/desktop-native/Cargo.toml | sed -E 's/version = "(.*)"/\1/')
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::version invalida: $VERSION"; exit 1; }
+          LAST=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName \
+            -q '[.[] | .tagName | select(startswith("desktop-v")) | ltrimstr("desktop-v")] | .[]' \
+            | sort -V | tail -n1)
+          echo "Cargo.toml: $VERSION | ultima release: ${LAST:-nenhuma}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          newer() { [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -n1)" = "$1" ]; }
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            if [ -n "$LAST" ] && ! newer "$VERSION" "$LAST"; then
+              echo "::error file=apps/desktop-native/Cargo.toml::Suba 'version' (atual $VERSION, ultima release $LAST)."
+              exit 1
+            fi
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          elif [ -z "$LAST" ] || newer "$VERSION" "$LAST"; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::$VERSION ja publicada (ou menor que $LAST): nada a publicar."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
     name: Instalador ${{ matrix.name }}
+    needs: version
     strategy:
       fail-fast: false
       matrix:
@@ -42,24 +82,14 @@ jobs:
             formats: deb,appimage
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: apps/desktop-native
     steps:
       - uses: actions/checkout@v4
-
-      - name: Conferir tag x Cargo.toml
-        if: startsWith(github.ref, 'refs/tags/desktop-v')
-        run: |
-          set -euo pipefail
-          CARGO_VERSION=$(grep -m1 '^version' Cargo.toml | sed -E 's/version = "(.*)"/\1/')
-          TAG_VERSION="${GITHUB_REF_NAME#desktop-v}"
-          if [ "$CARGO_VERSION" != "$TAG_VERSION" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME nao bate com Cargo.toml ($CARGO_VERSION)"
-            exit 1
-          fi
-
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-
       - name: Dependencias de sistema (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -68,24 +98,19 @@ jobs:
             libxcb1-dev libxcb-render0-dev libxcb-shape0-dev \
             libxcb-xfixes0-dev libxkbcommon-dev libfontconfig1-dev \
             libfreetype6-dev pkg-config libfuse2
-
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/desktop-native
-
       - run: cargo test --locked
       - run: cargo clippy --locked --all-targets -- -D warnings
-
-      - name: Instalar cargo-packager
-        run: cargo install cargo-packager --locked
-
-      - name: Gerar instaladores
-        run: cargo packager --release --formats ${{ matrix.formats }}
-
-      - name: Listar saida
-        run: ls -la target/dist
-
+      - name: Instaladores
+        if: needs.version.outputs.publish == 'true'
+        run: |
+          cargo install cargo-packager --locked
+          cargo packager --release --formats ${{ matrix.formats }}
+          ls -la target/dist
       - uses: actions/upload-artifact@v4
+        if: needs.version.outputs.publish == 'true'
         with:
           name: scale-desktop-${{ matrix.name }}
           if-no-files-found: error
@@ -96,36 +121,31 @@ jobs:
 
   release:
     name: Publicar release
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/desktop-v')
+    needs: [version, build]
+    if: needs.version.outputs.publish == 'true' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    defaults:
-      run:
-        working-directory: .
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
-
       - name: Checksums
         run: |
           set -euo pipefail
           cd dist
           sha256sum * > SHA256SUMS
           cat SHA256SUMS
-
-      - name: Criar release
+      - name: Criar release e tag
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
-          VERSION="${GITHUB_REF_NAME#desktop-v}"
-          # Notas a partir da ultima release do desktop (ignora releases de outras partes).
+          TAG="desktop-v$VERSION"
           PREV=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName \
             -q '[.[] | select(.tagName | startswith("desktop-v"))][0].tagName // ""')
-          ARGS=(--repo "$GITHUB_REPOSITORY" --title "Scale Desktop $VERSION" --generate-notes)
+          ARGS=(--repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Scale Desktop $VERSION" --generate-notes)
           [ -n "$PREV" ] && ARGS+=(--notes-start-tag "$PREV")
-          gh release create "$GITHUB_REF_NAME" dist/* "${ARGS[@]}"
+          gh release create "$TAG" dist/* "${ARGS[@]}"

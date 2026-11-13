@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
-import { Icon } from '@/components/ui/Icon';
 
 const versionSchema = z.object({ version: z.string().min(1).max(64) });
 const callSchema = z.object({ active: z.boolean() });
@@ -98,47 +97,50 @@ export function UpdatePrompt() {
   }
   if (!available || now < snoozedUntil) return null;
 
+  const link = 'rounded text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent';
   return (
     <div
       role="alertdialog"
       aria-labelledby="scale-update-title"
       aria-describedby="scale-update-desc"
-      className="fixed bottom-4 left-1/2 z-50 flex w-[min(480px,calc(100vw-32px))] -translate-x-1/2 items-start gap-3 rounded-xl border border-line bg-surface-secondary px-4 py-3 text-sm text-ink-primary shadow-lg"
+      className={`fixed right-4 z-50 w-[min(300px,calc(100vw-32px))] rounded-xl border border-line bg-surface-secondary/95 p-3 text-ink-primary shadow-xl backdrop-blur animate-slide-up motion-reduce:animate-none ${
+        callActive ? 'bottom-20 max-lg:bottom-[calc(140px+env(safe-area-inset-bottom))]' : 'bottom-4 max-lg:bottom-[calc(76px+env(safe-area-inset-bottom))]'
+      }`}
     >
-      <Icon name="info" size={20} className="mt-0.5 shrink-0 text-accent" />
-      <div className="min-w-0 flex-1">
-        <p id="scale-update-title" className="font-medium">Nova versão do Scale disponível.</p>
-        <p id="scale-update-desc" className="mt-0.5 text-xs text-ink-muted">
-          {callActive
-            ? 'Recarregar agora encerra a chamada atual. Você pode recarregar automaticamente ao sair dela.'
-            : 'Recarregue a página para usar a versão mais recente.'}
-        </p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {callActive ? (
-            <>
-              <button type="button" className="btn-primary min-h-10 px-4 py-2 text-sm" onClick={() => setReloadAfterCall(true)}>
-                Recarregar ao sair da chamada
+      <div className="flex items-start gap-2.5">
+        <span className="mt-1 size-2 shrink-0 rounded-full bg-accent" />
+        <div className="min-w-0 flex-1">
+          <p id="scale-update-title" className="text-sm font-medium">Nova versão disponível</p>
+          <p id="scale-update-desc" className="mt-0.5 text-xs leading-snug text-ink-muted">
+            {callActive ? 'Recarregar agora encerra a chamada.' : 'Recarregue a página para atualizar.'}
+          </p>
+          <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1">
+            {callActive ? (
+              <>
+                <button type="button" className={`${link} text-accent hover:text-ink-primary`} onClick={() => setReloadAfterCall(true)}>
+                  Recarregar ao sair da chamada
+                </button>
+                <button type="button" className={`${link} text-ink-muted hover:text-ink-primary`} onClick={reload}>
+                  Recarregar agora
+                </button>
+              </>
+            ) : (
+              <button type="button" className={`${link} text-accent hover:text-ink-primary`} onClick={reload}>
+                Recarregar
               </button>
-              <button type="button" className="btn-ghost min-h-10 px-3 py-2 text-sm" onClick={reload}>
-                Recarregar agora
-              </button>
-            </>
-          ) : (
-            <button type="button" className="btn-primary min-h-10 px-4 py-2 text-sm" onClick={reload}>
-              Recarregar
+            )}
+            <button
+              type="button"
+              className={`${link} text-ink-muted hover:text-ink-primary`}
+              onClick={() => {
+                const at = Date.now();
+                setNow(at);
+                setSnoozedUntil(at + SNOOZE_MS);
+              }}
+            >
+              Depois
             </button>
-          )}
-          <button
-            type="button"
-            className="btn-ghost min-h-10 px-3 py-2 text-sm"
-            onClick={() => {
-              const at = Date.now();
-              setNow(at);
-              setSnoozedUntil(at + SNOOZE_MS);
-            }}
-          >
-            Depois
-          </button>
+          </div>
         </div>
       </div>
     </div>

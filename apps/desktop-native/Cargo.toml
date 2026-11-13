@@ -1,6 +1,6 @@
 [package]
 name = "scale-desktop"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Cliente desktop nativo do Scale: comunidades, canais de texto e mensagens diretas"
 publish = false
@@ -18,6 +18,7 @@ keyring = "4"
 directories = "6"
 url = "2"
 thiserror = "2"
+sha2 = "0.10"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 
 [package.metadata.packager]

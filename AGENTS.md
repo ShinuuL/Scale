@@ -68,6 +68,14 @@ Sistema de videochamadas P2P (mesh) com escamas de dragão — sala de voz e tel
 - Chamada persistente: a sessão da sala vive no `RoomHost` do layout raiz;
   fora de `/room` a tela fica oculta e a `MiniCallBar` mostra a chamada.
 
+## Desktop nativo (Rust, `apps/desktop-native`)
+
+- **Regra de versao:** toda mudanca em `apps/desktop-native` sobe `version` no
+  `Cargo.toml` (semver). O PR falha sem isso; o merge na `main` publica a release
+  `desktop-v<version>` com instaladores e `SHA256SUMS` (`desktop-release.yml`).
+- O app se atualiza sozinho pelas releases, sempre conferindo o SHA-256.
+  Detalhes em `apps/desktop-native/README.md`.
+
 ## Desktop (Electron)
 
 `apps/desktop` (pacote `scale-desktop`) **nao empacota o frontend**: abre a origin

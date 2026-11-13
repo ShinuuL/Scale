@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 
-const TITLE = 'Nova versão do Scale disponível.';
+const TITLE = 'Nova versão disponível';
 
 async function load(version: string) {
   vi.stubEnv('NEXT_PUBLIC_BUILD_ID', 'build-a');
@@ -37,7 +37,7 @@ describe('UpdatePrompt', () => {
   it('versão nova: pede para recarregar a página', async () => {
     const { reload } = await load('build-b');
     expect(await screen.findByText(TITLE)).toBeTruthy();
-    expect(screen.getByText('Recarregue a página para usar a versão mais recente.')).toBeTruthy();
+    expect(screen.getByText('Recarregue a página para atualizar.')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Recarregar' }));
     expect(reload).toHaveBeenCalledOnce();
   });
@@ -46,7 +46,7 @@ describe('UpdatePrompt', () => {
     const { reload } = await load('build-b');
     await screen.findByText(TITLE);
     setCall(true);
-    expect(screen.getByText(/Recarregar agora encerra a chamada atual/)).toBeTruthy();
+    expect(screen.getByText(/Recarregar agora encerra a chamada/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Recarregar ao sair da chamada' }));
     expect(screen.queryByText(TITLE)).toBeNull();
     expect(reload).not.toHaveBeenCalled();
