@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Button as AriaButton, Menu, MenuItem, MenuTrigger, Popover } from 'react-aria-components';
+import { AppModal } from '@/components/ui/AppModal';
 import { Icon } from '@/components/ui/Icon';
 import { Tooltip } from '@/components/ui/Tooltip';
 import type { ChannelKind, CommunityRole, CommunityVoiceState } from '@scale/shared';
@@ -334,18 +335,51 @@ function VoiceChannelItem({
 /** Situacao de amizade de um membro, vista por quem esta logado. */
 export type FriendStatus = 'self' | 'friend' | 'outgoing' | 'incoming' | 'none';
 
+const ROLE_LABEL: Record<CommunityRole, string> = {
+  OWNER: 'Proprietário',
+  ADMIN: 'Administrador',
+  MEMBER: 'Membro',
+};
+
 export function MemberList({
   members,
   friendStatus,
   onAddFriend,
+  onMessage,
+  roleName,
 }: {
   members: Member[];
   friendStatus?: (member: Member) => FriendStatus;
   /** Envia (ou aceita, se ja houver pedido recebido) a amizade pelo @nome. */
   onAddFriend?: (member: Member) => Promise<void>;
+  /** Abre a conversa privada (so entre amigos). */
+  onMessage?: (member: Member) => void;
+  /** Nome do cargo personalizado, se houver. */
+  roleName?: (member: Member) => string | undefined;
 }) {
   const roles: CommunityRole[] = ['OWNER', 'ADMIN', 'MEMBER'];
   const [busy, setBusy] = useState<string | null>(null);
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+  const [profile, setProfile] = useState<Member | null>(null);
+  const [copied, setCopied] = useState(false);
+  const statusOf = (member: Member): FriendStatus => friendStatus?.(member) ?? 'self';
+  const add = (member: Member) => {
+    if (!onAddFriend) return;
+    setBusy(member.userId);
+    void onAddFriend(member).finally(() => setBusy(null));
+  };
+  const runAction = (member: Member, key: string) => {
+    if (key === 'profile') {
+      setCopied(false);
+      setProfile(member);
+    } else if (key === 'message') onMessage?.(member);
+    else if (key === 'friend') add(member);
+    else if (key === 'copy' && member.username)
+      void navigator.clipboard?.writeText(`@${member.username}`).catch(() => {});
+  };
+  const canAdd = (member: Member, status: FriendStatus) =>
+    (status === 'none' || status === 'incoming') && Boolean(onAddFriend && member.username);
+  const profileStatus = profile ? statusOf(profile) : 'self';
   return (
     <aside
       aria-label="Membros"
@@ -360,26 +394,80 @@ export function MemberList({
               {group.length}
             </h3>
             {group.map((member) => {
-              const status = friendStatus?.(member) ?? 'self';
+              const status = statusOf(member);
               const incoming = status === 'incoming';
               return (
-                <div key={member.userId} className="flex items-center gap-2 py-2">
-                  <span
-                    aria-hidden="true"
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-hover text-xs font-semibold text-ink-primary"
+                <div key={member.userId} className="flex items-center gap-1">
+                  <MenuTrigger
+                    isOpen={menuFor === member.userId}
+                    onOpenChange={(open) => setMenuFor(open ? member.userId : null)}
                   >
-                    {member.name.slice(0, 1).toLocaleUpperCase('pt-BR')}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-sm text-ink-primary">
-                    {member.name}
-                  </span>
-                  {status === 'friend' && (
-                    <span className="shrink-0 text-[11px] text-ink-muted">Amigo</span>
-                  )}
-                  {status === 'outgoing' && (
-                    <span className="shrink-0 text-[11px] text-ink-muted">Pedido enviado</span>
-                  )}
-                  {(status === 'none' || incoming) && onAddFriend && member.username && (
+                    <AriaButton
+                      aria-label={`Opções de ${member.name}`}
+                      onContextMenu={(event: React.MouseEvent) => {
+                        event.preventDefault();
+                        setMenuFor(member.userId);
+                      }}
+                      className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-2 text-left outline-none hover:bg-surface-hover data-[focus-visible]:outline data-[focus-visible]:outline-2 data-[focus-visible]:outline-accent"
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-hover text-xs font-semibold text-ink-primary"
+                      >
+                        {member.name.slice(0, 1).toLocaleUpperCase('pt-BR')}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-sm text-ink-primary">
+                        {member.name}
+                        {status === 'self' && friendStatus && (
+                          <span className="ml-1 text-ink-muted">(você)</span>
+                        )}
+                      </span>
+                      {status === 'friend' && (
+                        <span className="shrink-0 text-[11px] text-ink-muted">Amigo</span>
+                      )}
+                      {status === 'outgoing' && (
+                        <span className="shrink-0 text-[11px] text-ink-muted">Pedido enviado</span>
+                      )}
+                    </AriaButton>
+                    <Popover
+                      placement="left top"
+                      className="z-50 min-w-52 rounded-xl border border-line bg-surface-secondary p-1 shadow-xl data-[entering]:animate-menu-in"
+                    >
+                      <Menu
+                        aria-label={`Opções de ${member.name}`}
+                        className="outline-none"
+                        onAction={(key) => runAction(member, String(key))}
+                      >
+                        <MenuItem id="profile" textValue="Ver perfil" className={item}>
+                          <Icon name="info" />
+                          Ver perfil
+                        </MenuItem>
+                        {status === 'friend' && onMessage && (
+                          <MenuItem id="message" textValue="Mensagem privada" className={item}>
+                            <Icon name="chat" />
+                            Mensagem privada
+                          </MenuItem>
+                        )}
+                        {canAdd(member, status) && (
+                          <MenuItem
+                            id="friend"
+                            textValue={incoming ? 'Aceitar amizade' : 'Adicionar amigo'}
+                            className={item}
+                          >
+                            <Icon name={incoming ? 'check' : 'userPlus'} />
+                            {incoming ? 'Aceitar amizade' : 'Adicionar amigo'}
+                          </MenuItem>
+                        )}
+                        {member.username && (
+                          <MenuItem id="copy" textValue="Copiar @nome" className={item}>
+                            <Icon name="document" />
+                            Copiar @{member.username}
+                          </MenuItem>
+                        )}
+                      </Menu>
+                    </Popover>
+                  </MenuTrigger>
+                  {canAdd(member, status) && (
                     <Tooltip label={incoming ? 'Aceitar amizade' : 'Adicionar amigo'}>
                       <AriaButton
                         aria-label={
@@ -388,10 +476,7 @@ export function MemberList({
                             : `Adicionar ${member.name} como amigo`
                         }
                         isDisabled={busy === member.userId}
-                        onPress={() => {
-                          setBusy(member.userId);
-                          void onAddFriend(member).finally(() => setBusy(null));
-                        }}
+                        onPress={() => add(member)}
                         className="shrink-0 rounded-lg p-1.5 text-ink-muted hover:bg-surface-hover hover:text-ink-primary data-[disabled]:opacity-50"
                       >
                         <Icon name={incoming ? 'check' : 'userPlus'} />
@@ -404,6 +489,65 @@ export function MemberList({
           </div>
         ) : null;
       })}
+      {profile && (
+        <AppModal title="Perfil" onClose={() => setProfile(null)} closeLabel="Fechar perfil" size="sm">
+          <div className="flex flex-col items-center gap-3 text-center">
+            <span
+              aria-hidden="true"
+              className="flex h-20 w-20 items-center justify-center rounded-full bg-surface-hover text-3xl font-semibold text-ink-primary"
+            >
+              {profile.name.slice(0, 1).toLocaleUpperCase('pt-BR')}
+            </span>
+            <div>
+              <p className="text-lg font-semibold text-ink-primary">{profile.name}</p>
+              <p className="text-sm text-ink-muted">
+                {profile.username ? `@${profile.username}` : 'Sem @nome definido'}
+              </p>
+            </div>
+            <p className="text-sm text-ink-secondary">
+              {roleName?.(profile) ?? ROLE_LABEL[profile.role]}
+              {profileStatus === 'friend' && ' · Amigo'}
+              {profileStatus === 'outgoing' && ' · Pedido enviado'}
+              {profileStatus === 'incoming' && ' · Quer ser seu amigo'}
+            </p>
+            <div className="mt-2 flex flex-wrap justify-center gap-2">
+              {profileStatus === 'friend' && onMessage && (
+                <AriaButton
+                  onPress={() => {
+                    setProfile(null);
+                    onMessage(profile);
+                  }}
+                  className="btn-primary rounded-lg px-4 py-2 text-sm font-medium"
+                >
+                  Mensagem privada
+                </AriaButton>
+              )}
+              {canAdd(profile, profileStatus) && (
+                <AriaButton
+                  isDisabled={busy === profile.userId}
+                  onPress={() => add(profile)}
+                  className="btn-primary rounded-lg px-4 py-2 text-sm font-medium data-[disabled]:opacity-50"
+                >
+                  {profileStatus === 'incoming' ? 'Aceitar amizade' : 'Adicionar amigo'}
+                </AriaButton>
+              )}
+              {profile.username && (
+                <AriaButton
+                  onPress={() => {
+                    void navigator.clipboard
+                      ?.writeText(`@${profile.username}`)
+                      .then(() => setCopied(true))
+                      .catch(() => {});
+                  }}
+                  className="btn-secondary rounded-lg px-4 py-2 text-sm font-medium"
+                >
+                  {copied ? 'Copiado' : 'Copiar @nome'}
+                </AriaButton>
+              )}
+            </div>
+          </div>
+        </AppModal>
+      )}
     </aside>
   );
 }

@@ -126,6 +126,21 @@ export default function FriendsPage() {
       .catch(() => setListState('error'));
   }, []);
 
+  // Deep link vindo de outra tela (ex.: menu de membro da comunidade): /friends?dm=<userId>.
+  useEffect(() => {
+    if (listState !== 'ready') return;
+    const url = new URL(window.location.href);
+    const dm = url.searchParams.get('dm');
+    if (!dm) return;
+    url.searchParams.delete('dm');
+    window.history.replaceState(null, '', `${url.pathname}${url.search}`);
+    if (list.friends.some((friend) => friend.id === dm)) {
+      setView('conversations');
+      setSelectedId(dm);
+      setUnread((prev) => ({ ...prev, [dm]: 0 }));
+    }
+  }, [listState, list]);
+
   const hasUsername = !!me?.username;
   useEffect(() => {
     if (authState === 'ready' && hasUsername) refresh();

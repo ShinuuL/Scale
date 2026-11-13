@@ -111,7 +111,13 @@ export function CommunityView({
     await loadFriends();
   };
   const memberList = detail && (
-    <MemberList members={detail.members} friendStatus={friendStatus} onAddFriend={addFriend} />
+    <MemberList
+      members={detail.members}
+      friendStatus={friendStatus}
+      onAddFriend={addFriend}
+      onMessage={(member) => router.push(`/friends?dm=${encodeURIComponent(member.userId)}`)}
+      roleName={(member) => detail.roles.find((role) => role.id === member.customRoleId)?.name}
+    />
   );
   const activeCall = useActiveCall();
   const currentId = useRef(communityId);
