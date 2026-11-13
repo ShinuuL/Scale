@@ -36,6 +36,7 @@ model User {
   ownedRooms  Room[]
   moderationEvents ModerationEvent[]
   roomMembers RoomMember[]
+  channelReadStates ChannelReadState[]
 
   username               Username?
   githubAccount          GithubAccount?
@@ -213,6 +214,7 @@ model Room {
   community     Community?    @relation(fields: [communityId], references: [id], onDelete: Cascade)
   owner         User?         @relation(fields: [ownerId], references: [id], onDelete: SetNull)
   roomMembers   RoomMember[]
+  readStates    ChannelReadState[]
   chatMessages  ChatMessage[]
   chatFiles     ChatFile[]
 
@@ -350,4 +352,19 @@ model AdminRoleAudit {
   createdAt  DateTime @default(now())
 
   @@index([createdAt])
+}
+
+/// Ultima leitura de um canal de texto de comunidade por usuario (mensagens nao lidas).
+/// Tabela nova: o @@unique composto entra sem perda no `prisma db push`.
+model ChannelReadState {
+  id         String   @id @default(uuid())
+  userId     String
+  channelId  String
+  lastReadAt DateTime
+
+  user    User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel Room @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, channelId])
+  @@index([channelId])
 }

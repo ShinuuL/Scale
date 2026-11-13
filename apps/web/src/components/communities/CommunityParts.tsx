@@ -5,18 +5,21 @@ import { Button as AriaButton, Menu, MenuItem, MenuTrigger, Popover } from 'reac
 import { AppModal } from '@/components/ui/AppModal';
 import { Icon } from '@/components/ui/Icon';
 import { Tooltip } from '@/components/ui/Tooltip';
-import type { ChannelKind, CommunityRole, CommunityVoiceState } from '@scale/shared';
+import { formatUnreadCount, type ChannelKind, type CommunityRole, type CommunityVoiceState } from '@scale/shared';
 
 export interface CommunitySummary {
   id: string;
   name: string;
   role: CommunityRole;
+  /** Mensagens nao lidas (soma dos canais, cada um limitado a 100). */
+  unread?: number;
 }
 export interface Channel {
   id: string;
   name: string;
   kind: ChannelKind;
   position: number;
+  unread?: number;
 }
 export interface Member {
   userId: string;
@@ -24,6 +27,12 @@ export interface Member {
   username: string | null;
   role: CommunityRole;
   customRoleId?: string | null;
+}
+
+/** Nome acessivel da contagem: "1 mensagem não lida", "3 mensagens não lidas", "mais de 99 ...". */
+export function unreadLabel(count: number): string {
+  if (count > 99) return 'mais de 99 mensagens não lidas';
+  return count === 1 ? '1 mensagem não lida' : `${count} mensagens não lidas`;
 }
 
 const item =
@@ -100,7 +109,9 @@ export function CommunityRail({
           <Tooltip label={community.name} placement="right">
             <button
               type="button"
-              aria-label={community.name}
+              aria-label={
+                community.unread ? `${community.name}, ${unreadLabel(community.unread)}` : community.name
+              }
               aria-keyshortcuts={onReorder ? 'Alt+ArrowUp Alt+ArrowDown' : undefined}
               aria-current={community.id === selected ? 'true' : undefined}
               onClick={() => onSelect(community.id)}
@@ -115,6 +126,15 @@ export function CommunityRail({
               className={`${railButton} ${community.id === selected ? 'btn-primary' : 'bg-surface-hover text-ink-muted hover:text-ink-primary'}`}
             >
               {community.name.slice(0, 2).toLocaleUpperCase('pt-BR')}
+              {Boolean(community.unread) && (
+                <span
+                  aria-hidden="true"
+                  data-testid="community-unread-badge"
+                  className="absolute -bottom-1 -right-1 min-w-5 rounded-full border-2 border-surface-secondary bg-red-600 px-1 text-center text-[10px] font-bold leading-4 text-white"
+                >
+                  {formatUnreadCount(community.unread ?? 0)}
+                </span>
+              )}
             </button>
           </Tooltip>
         </div>
@@ -154,6 +174,7 @@ export function ChannelList({
   onSettings,
   canManage,
   onLeave,
+  onMarkRead,
   activeVoiceId,
   activeVoiceJoined = false,
   onOpenCall,
@@ -169,6 +190,8 @@ export function ChannelList({
   onSettings: () => void;
   canManage: boolean;
   onLeave?: () => void;
+  /** "Marcar como lido": zera as nao lidas de todos os canais de texto. */
+  onMarkRead?: () => void;
   /** Canal de voz em que esta aba está (ou entrando). */
   activeVoiceId?: string;
   activeVoiceJoined?: boolean;
@@ -198,11 +221,17 @@ export function ChannelList({
                 if (key === 'invite') onInvite();
                 else if (key === 'settings') onSettings();
                 else if (key === 'leave') onLeave?.();
+                else if (key === 'read') onMarkRead?.();
               }}
             >
               <MenuItem id="invite" textValue="Convidar" className={item}>
                 Convidar
               </MenuItem>
+              {onMarkRead && (
+                <MenuItem id="read" textValue="Marcar como lido" className={item}>
+                  Marcar como lido
+                </MenuItem>
+              )}
               {canManage && (
                 <MenuItem id="settings" textValue="Configurações da comunidade" className={item}>
                   Configurações da comunidade
@@ -250,10 +279,16 @@ export function ChannelList({
                         type="button"
                         onClick={() => onSelect(channel)}
                         aria-current={channel.id === selected ? 'true' : undefined}
-                        className={`${item} ${channel.id === selected ? 'bg-surface-hover text-ink-primary' : ''}`}
+                        className={`${item} ${channel.id === selected ? 'bg-surface-hover text-ink-primary' : ''} ${channel.unread ? 'font-semibold text-ink-primary' : ''}`}
                       >
                         <Icon name="hash" />
                         <span className="truncate">{channel.name}</span>
+                        {Boolean(channel.unread) && (
+                          <span className="ml-auto shrink-0 rounded-full bg-red-600 px-1.5 text-[11px] font-bold leading-5 text-white">
+                            <span aria-hidden="true">{formatUnreadCount(channel.unread ?? 0)}</span>
+                            <span className="sr-only">{unreadLabel(channel.unread ?? 0)}</span>
+                          </span>
+                        )}
                       </button>
                     )}
                   </li>

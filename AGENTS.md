@@ -379,6 +379,7 @@ docker compose up --build -d
   `community:subscribe`), lista "Online — N"/"Offline — N"; membros da voz com
   `muted`/`deafened`/`screenSharing` e `community:voice-speaking` (cliente manda
   `peer:voice-flags`, "falando" só em transições, no máximo 1 a cada 400 ms)
+- Não lidas em comunidades: tabela `ChannelReadState`, contagem por canal (teto 100, "99+") em `GET /api/communities[/:id]`, `POST /api/channels/:id/read` e `/api/communities/:id/read`; outras comunidades via evento leve `community:activity` em `user:<id>` + recarga ao focar
 - Foto na chamada (cartões do canal de voz): a própria via `/api/me/avatar`; a
   dos outros via `GET /api/rooms/:roomId/peers/:peerId/avatar` — exige room
   ticket (ou dono) e só serve peer logado que está NA sala agora. O `userId`
