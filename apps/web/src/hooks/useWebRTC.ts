@@ -1,5 +1,6 @@
 'use client';
 
+import { playUiSound } from '@/lib/uiSounds';
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { ScreenShareNotAllowedError, type UseSocketReturn, type PeerInfo } from './useSocket';
 import { getSavedDeviceId } from '@/lib/audioDevices';
@@ -1019,6 +1020,7 @@ export function useWebRTC(
     setIsMuted(nowMuted);
     setAudioMuted(nowMuted);
     announceMutedRef.current(nowMuted);
+    playUiSound(nowMuted ? 'mute' : 'unmute');
 
     // Retorna o NOVO estado para a UI dar feedback sem ler estado stale.
     return nowMuted;
@@ -1056,6 +1058,7 @@ export function useWebRTC(
     setLocalScreenStream(null);
     setIsScreenSharing(false);
     setScreenAudioAvailable(false);
+    playUiSound('screen-off');
     for (const [peerId, peer] of peersRef.current) {
       syncScreenTracks(peerId, peer.connection);
       socketHook.emitScreenShareState(roomId, peerId, false);
@@ -1130,6 +1133,7 @@ export function useWebRTC(
       setLocalScreenStream(stream);
       setIsScreenSharing(true);
       setScreenAudioAvailable(stream.getAudioTracks().length > 0);
+      playUiSound('screen-on');
       video.onended = () => { if (localScreenStreamRef.current === stream) void stopScreenShare(); };
       stream.getAudioTracks().forEach((track) => {
         track.onended = () => {

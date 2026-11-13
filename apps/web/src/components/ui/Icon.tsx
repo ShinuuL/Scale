@@ -63,6 +63,8 @@ export type IconName =
   | 'speakerOff'
   | 'trash'
   | 'users'
+  | 'userPlus'
+  | 'sidebar'
   | 'warning';
 
 export interface IconProps {
@@ -160,6 +162,15 @@ export const ICONS: Record<IconName, IconShape[]> = {
     { d: 'M3.6 20.5v-1.3a4.2 4.2 0 0 1 4.2-4.2h4.4a4.2 4.2 0 0 1 4.2 4.2v1.3' },
     { d: 'M20.4 20.5v-1.3a4.2 4.2 0 0 0-3.15-4.06' },
     { d: 'M15 4.62a3.6 3.6 0 0 1 0 6.36' },
+  ],
+  userPlus: [
+    { d: 'M10 4.2a3.6 3.6 0 1 0 0 7.2 3.6 3.6 0 0 0 0-7.2Z' },
+    { d: 'M3.6 20.5v-1.3a4.2 4.2 0 0 1 4.2-4.2h4.4a4.2 4.2 0 0 1 4.2 4.2v1.3' },
+    { d: 'M19 8v6M16 11h6' },
+  ],
+  sidebar: [
+    { d: 'M5.5 4h13A2.5 2.5 0 0 1 21 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5v-11A2.5 2.5 0 0 1 5.5 4Z' },
+    { d: 'M9 4v16' },
   ],
   book: [
     {
