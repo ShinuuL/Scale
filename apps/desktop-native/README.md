@@ -21,8 +21,11 @@ sudo apt install libxcb1-dev libxcb-render0-dev libxcb-shape0-dev \
 cargo run
 ```
 
-Primeira tela: informe a origin do servidor (https; http só para
-localhost/127.0.0.1). Depois, e-mail/senha. O JWT vai para o keyring do SO
+O servidor é fixo: `https://scale.nexushosts.tech` (produção). No build
+release não há como trocar; para outro servidor, compile com
+`SCALE_SERVER_ORIGIN=https://outro.servidor`. Em debug (`cargo run`) a tela
+"Trocar de servidor" continua disponível para testar contra `http://localhost`.
+A primeira tela é o login por e-mail/senha. O JWT vai para o keyring do SO
 (fallback: arquivo com permissão 0600 na pasta de configuração).
 
 ## Verificação
@@ -32,6 +35,12 @@ cargo build
 cargo test
 cargo clippy -- -D warnings
 ```
+
+## Ícone
+
+`assets/icon.ico` (16 a 256 px, gerado do `icon-512.png`) é embutido no `.exe`
+pelo `build.rs` (`embed-resource` + `assets/scale.rc`) e usado pelo instalador;
+o `icon-512.png` também vira o ícone da janela.
 
 ## Instaladores
 

@@ -301,7 +301,9 @@ impl ScaleApp {
                                 self.do_login();
                             }
                             ui.add_space(12.0);
-                            if ui
+                            // Release usa só o servidor de produção.
+                            if cfg!(debug_assertions)
+                                && ui
                                 .add(Button::new(
                                     RichText::new("Trocar de servidor").color(colors::TEXT_SECONDARY),
                                 ))

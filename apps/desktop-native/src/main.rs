@@ -35,7 +35,11 @@ fn main() -> eframe::Result<()> {
             .with_title("Scale")
             .with_app_id("br.com.codecoffee.scale")
             .with_inner_size([1120.0, 720.0])
-            .with_min_inner_size([900.0, 540.0]),
+            .with_min_inner_size([900.0, 540.0])
+            .with_icon(
+                eframe::icon_data::from_png_bytes(include_bytes!("../assets/icon-512.png"))
+                    .expect("icone embutido invalido"),
+            ),
         ..Default::default()
     };
 
