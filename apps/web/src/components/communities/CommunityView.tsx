@@ -19,6 +19,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { ChannelList, CommunityRail, MemberList, type FriendStatus, type Member } from './CommunityParts';
 import { ChannelChat } from './ChannelChat';
+import { MessageSearchDialog } from './MessageSearchDialog';
 import { ConfirmDialog } from './ConfirmDialog';
 import {
   CommunitySettingsDialog,
@@ -66,6 +67,10 @@ export function CommunityView({
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [dialog, setDialog] = useState<DialogName>(null);
+  // Busca de mensagens (Fase 2): dialogo proprio + mensagem a destacar no canal aberto.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [focusMessageId, setFocusMessageId] = useState<string | null>(null);
+  const clearFocus = useCallback(() => setFocusMessageId(null), []);
   const [voice, setVoice] = useState<CommunityVoiceState[]>([]);
   // Presenca e "falando" (Fase 1): sets imutaveis, trocados a cada evento.
   const [onlineIds, setOnlineIds] = useState<ReadonlySet<string>>(() => new Set());
@@ -423,6 +428,19 @@ export function CommunityView({
             {notice}
           </Banner>
         )}
+        {searchOpen && detail && (
+          <MessageSearchDialog
+            communityId={detail.community.id}
+            channels={detail.channels.filter((c) => c.kind === 'TEXT')}
+            members={detail.members}
+            onClose={() => setSearchOpen(false)}
+            onOpen={(hit) => {
+              setSearchOpen(false);
+              setFocusMessageId(hit.id);
+              onNavigate(detail.community.id, hit.channelId);
+            }}
+          />
+        )}
         {selected && detail ? (
           <ChannelChat
             key={selected.id}
@@ -433,6 +451,9 @@ export function CommunityView({
             authorColors={authorColors}
             state={messages}
             dispatch={dispatch}
+            onSearch={() => setSearchOpen(true)}
+            focusMessageId={focusMessageId}
+            onFocused={clearFocus}
           />
         ) : (
           <div className="m-auto p-6 text-center text-sm text-ink-muted">
