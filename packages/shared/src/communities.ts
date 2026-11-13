@@ -55,3 +55,23 @@ export type CommunityVoiceState = z.infer<typeof communityVoiceStateSchema>;
 export type CommunitySubscriptionAck = z.infer<typeof communitySubscriptionAckSchema>;
 export type ChannelMessageEditEvent = z.infer<typeof channelMessageEditEventSchema>;
 export type ChannelMessageDeleteEvent = z.infer<typeof channelMessageDeleteEventSchema>;
+
+/** Categorias de canais (Fase 1): nome e posicao; canal sem categoria fica nos grupos de texto/voz. */
+export const MAX_CHANNEL_CATEGORIES = 20;
+export const CATEGORY_NAME_MAX = 40;
+export const categoryNameSchema = z.string().trim().min(1).max(CATEGORY_NAME_MAX);
+export const categoryInputSchema = z.object({ name: categoryNameSchema });
+/**
+ * Ordem completa da comunidade: categorias na ordem nova e TODOS os canais na
+ * ordem nova, cada um com a categoria (ou null). Lista incompleta = 400.
+ */
+export const communityLayoutSchema = z.object({
+  categories: z.array(z.string().uuid()).max(MAX_CHANNEL_CATEGORIES),
+  channels: z.array(z.object({ id: z.string().uuid(), categoryId: z.string().uuid().nullable() })).max(200),
+});
+/** Imagens da comunidade: icone (bloco do rail) e banner (topo da lista de canais). */
+export const communityImageKindSchema = z.enum(['icon', 'banner']);
+
+export type CategoryInput = z.infer<typeof categoryInputSchema>;
+export type CommunityLayout = z.infer<typeof communityLayoutSchema>;
+export type CommunityImageKind = z.infer<typeof communityImageKindSchema>;
