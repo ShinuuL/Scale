@@ -27,6 +27,11 @@ export interface Channel {
   unread?: number;
   categoryId?: string | null;
   topic?: string | null;
+  /** Fase 3: canal de avisos, modo lento, envio permitido e sobrescritas (so para quem gerencia). */
+  announcement?: boolean;
+  slowModeSeconds?: number;
+  canSend?: boolean;
+  overrides?: Array<{ target: string; viewChannel: boolean | null; sendMessages: boolean | null }>;
 }
 export interface Member {
   userId: string;

@@ -9,7 +9,8 @@ import { Input } from '@/components/ui/Input';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { api, type CommunityCustomRole, type CommunityDetail, type CommunityInvite } from '@/lib/api';
 import type { CommunityPermissions } from '@scale/shared';
-import { CHANNEL_TOPIC_MAX } from '@scale/shared';
+import { CHANNEL_TOPIC_MAX, type ChannelSettings } from '@scale/shared';
+import { ChannelPermissionsForm } from './ChannelPermissionsForm';
 import { ConfirmDialog } from './ConfirmDialog';
 import type { Channel, Member } from './CommunityParts';
 import { CategoriesSection, CommunityImagesSection } from './CommunityAppearance';
@@ -213,8 +214,13 @@ function ChannelSettingsRow({
   categories = [],
   onCategory,
   onTopic,
+  roles = [],
+  onSettings,
 }: {
   channel: Channel;
+  roles?: CommunityCustomRole[];
+  /** Fase 3: permissoes, aviso e modo lento do canal. */
+  onSettings?: (settings: ChannelSettings) => Promise<boolean>;
   onRename: (name: string) => Promise<boolean>;
   /** So canal de texto: grava o topico (vazio limpa). */
   onTopic?: (topic: string) => Promise<boolean>;
@@ -226,6 +232,7 @@ function ChannelSettingsRow({
   const [name, setName] = useState(channel.name);
   const [editingTopic, setEditingTopic] = useState(false);
   const [topic, setTopic] = useState(channel.topic ?? '');
+  const [editingPerms, setEditingPerms] = useState(false);
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
@@ -271,6 +278,11 @@ function ChannelSettingsRow({
             Tópico
           </Button>
         )}
+        {onSettings && (
+          <Button variant="ghost" size="sm" aria-label={`Permissões do canal ${channel.name}`} onClick={() => setEditingPerms(true)}>
+            Permissões
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="sm"
@@ -304,6 +316,9 @@ function ChannelSettingsRow({
             Cancelar
           </Button>
         </form>
+      )}
+      {editingPerms && onSettings && (
+        <ChannelPermissionsForm channel={channel} roles={roles} onSave={onSettings} onCancel={() => setEditingPerms(false)} />
       )}
       {editingTopic && onTopic && (
         <form
@@ -549,6 +564,8 @@ export function CommunitySettingsDialog({
             }}
             onRename={(value) => run(() => api.updateChannel(channel.id, value))}
             onTopic={channel.kind === 'TEXT' ? (value) => run(() => api.updateChannelTopic(channel.id, value)) : undefined}
+            roles={roles}
+            onSettings={(settings) => run(() => api.saveChannelSettings(channel.id, settings))}
             onDelete={() =>
               setConfirm({
                 title: `Apagar canal ${channel.name}?`,

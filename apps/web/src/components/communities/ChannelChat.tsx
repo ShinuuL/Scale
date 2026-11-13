@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type FormEvent } from 'react';
-import { CHAT_EDIT_WINDOW_MS, CHAT_MESSAGE_MAX } from '@scale/shared';
+import { CHAT_EDIT_WINDOW_MS, CHAT_MESSAGE_MAX, formatCountdown } from '@scale/shared';
 import { api, type ChannelMessage } from '@/lib/api';
 import type { ChannelMessagesAction, ChannelMessagesState } from '@/hooks/useChannelMessages';
 import { Banner } from '@/components/ui/Banner';
@@ -12,6 +12,7 @@ import { ConfirmDialog } from './ConfirmDialog';
 import { ChannelTopic } from './ChannelTopic';
 import { createTypingSender } from '@/hooks/useChannelTyping';
 import { PinnedPanel, ReactionBar, ReplyQuote, jumpToMessage, messageAnchorId } from './MessageExtras';
+import { useCooldown } from './slowMode';
 import type { ChannelReaction } from '@scale/shared';
 
 const MAX_IMAGES = 5;
@@ -215,6 +216,7 @@ function Composer({
   inputRef,
   images,
   onImages,
+  cooldown = 0,
   replyingTo,
   onCancelReply,
 }: {
@@ -228,6 +230,8 @@ function Composer({
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
   images: File[];
   onImages: (files: File[]) => void;
+  /** Modo lento: segundos ate poder enviar (0 = liberado). */
+  cooldown?: number;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   return (
@@ -293,8 +297,14 @@ function Composer({
           <span className="text-xs text-ink-muted">
             {draft.length}/{CHAT_MESSAGE_MAX}
           </span>
+          {cooldown > 0 && (
+            <span className="flex items-center gap-1 text-xs text-ink-secondary" role="status">
+              <Icon name="clock" size={14} />
+              Modo lento: aguarde {formatCountdown(cooldown)}
+            </span>
+          )}
         </div>
-        <Button type="submit" size="sm" disabled={busy || (!draft.trim() && images.length === 0)}>
+        <Button type="submit" size="sm" disabled={busy || cooldown > 0 || (!draft.trim() && images.length === 0)}>
           Enviar
         </Button>
       </div>
@@ -317,6 +327,10 @@ export function ChannelChat({
   onSaveTopic,
   typingText = null,
   onTyping,
+  canSend = true,
+  announcement = false,
+  slowModeSeconds = 0,
+  slowModeExempt = false,
 }: {
   channelId: string;
   name: string;
@@ -336,8 +350,15 @@ export function ChannelChat({
   /** Texto pronto do indicador ("X esta digitando") ou null. */
   typingText?: string | null;
   onTyping?: (typing: boolean) => void;
+  /** Fase 3: sem permissao de envio (ou canal de avisos) o compositor vira aviso. */
+  canSend?: boolean;
+  announcement?: boolean;
+  /** Modo lento do canal; quem gerencia fica isento. */
+  slowModeSeconds?: number;
+  slowModeExempt?: boolean;
 }) {
   const [draft, setDraft] = useState('');
+  const cooldown = useCooldown();
   const onTypingRef = useRef(onTyping);
   onTypingRef.current = onTyping;
   const typingSender = useMemo(() => createTypingSender((typing) => onTypingRef.current?.(typing)), []);
@@ -393,7 +414,7 @@ export function ChannelChat({
   };
   async function send(event: FormEvent) {
     event.preventDefault();
-    if ((!draft.trim() && images.length === 0) || busy) return;
+    if ((!draft.trim() && images.length === 0) || busy || cooldown.remaining > 0) return;
     setBusy(true);
     setError('');
     try {
@@ -408,9 +429,14 @@ export function ChannelChat({
       setDraft('');
       setImages([]);
       setReplyingTo(null);
+      if (!slowModeExempt) cooldown.start(slowModeSeconds);
     } catch (err) {
-      const status = (err as { status?: number }).status;
-      setError(status === 413 ? 'Imagem grande demais ou cota do canal cheia.' : status === 400 ? 'Formato de imagem não aceito.' : status === 429 ? 'Muitos envios. Aguarde um pouco.' : 'Não foi possível enviar a mensagem.');
+      const { status, retryAfterSeconds } = err as { status?: number; retryAfterSeconds?: number };
+      if (status === 429 && retryAfterSeconds) {
+        cooldown.start(retryAfterSeconds);
+        return;
+      }
+      setError(status === 403 ? 'Você não pode enviar mensagens neste canal.' : status === 413 ? 'Imagem grande demais ou cota do canal cheia.' : status === 400 ? 'Formato de imagem não aceito.' : status === 429 ? 'Muitos envios. Aguarde um pouco.' : 'Não foi possível enviar a mensagem.');
     } finally {
       setBusy(false);
       inputRef.current?.focus();
@@ -561,7 +587,14 @@ export function ChannelChat({
       <p aria-live="polite" className="min-h-5 px-5 text-xs text-ink-muted">
         {typingText ?? ''}
       </p>
+      {!canSend ? (
+        <p className="flex items-center gap-2 border-t border-line p-4 text-sm text-ink-muted" role="note">
+          <Icon name="lock" size={16} />
+          {announcement ? 'Canal de avisos: só quem gerencia a comunidade publica aqui. Você pode ler e reagir.' : 'Você não tem permissão para enviar mensagens neste canal.'}
+        </p>
+      ) : (
       <Composer
+        cooldown={cooldown.remaining}
         name={name}
         draft={draft}
         onChange={changeDraft}
@@ -576,6 +609,7 @@ export function ChannelChat({
           inputRef.current?.focus();
         }}
       />
+      )}
       {pinsOpen && (
         <PinnedPanel channelId={channelId} version={pinVersion} onClose={() => setPinsOpen(false)} onJump={jump} />
       )}
