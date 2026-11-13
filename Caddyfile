@@ -62,6 +62,24 @@
 		redir * /room?id={re.oldroom.1} 302
 	}
 
+	# Deploy com aba aberta: o build antigo busca o payload RSC (/x.txt?_rsc=...)
+	# do build novo, o buildId nao bate e o Next navega o NAVEGADOR para o .txt.
+	# Navegacao de documento para um .txt com _rsc volta para a pagina (com a query,
+	# ex.: /room.txt?id=..&_rsc=.. -> /room?id=..). O fetch do Next (mode cors) e
+	# arquivos .txt comuns (robots.txt, sem _rsc) nao casam.
+	@rscIndex {
+		path_regexp rscindex ^(.*/)index\.txt$
+		header Sec-Fetch-Mode navigate
+		query _rsc=*
+	}
+	redir @rscIndex {re.rscindex.1}?{query} 302
+	@rscPage {
+		path_regexp rscpage ^(/.+)\.txt$
+		header Sec-Fetch-Mode navigate
+		query _rsc=*
+	}
+	redir @rscPage {re.rscpage.1}?{query} 302
+
 	# Todo o resto -> frontend estatico.
 	handle {
 		root * /srv
