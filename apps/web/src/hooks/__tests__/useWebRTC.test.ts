@@ -302,6 +302,24 @@ describe('dispositivos e ciclo de vida da captura', () => {
     expect(second.stop).not.toHaveBeenCalled();
   });
 
+  it('aparelho escolhido sumiu (OverconstrainedError): esquece a escolha e usa o padrão', async () => {
+    const { hook } = createHookMock('me-100');
+    const first = createMockTrack('audio');
+    const fallback = createMockTrack('audio');
+    window.localStorage.setItem('scale.audio.input', 'sumiu');
+    getUserMediaMock.mockResolvedValueOnce(new MockMediaStream([first]))
+      .mockRejectedValueOnce(new DOMException('Sem aparelho', 'OverconstrainedError'))
+      .mockResolvedValueOnce(new MockMediaStream([fallback]));
+    const { result } = renderHook(() => useWebRTC(hook, ROOM_ID));
+    await act(async () => { await result.current.initMedia(); });
+    let ok = false;
+    await act(async () => { ok = await result.current.switchMicrophone('sumiu'); });
+    expect(ok).toBe(true);
+    expect(getUserMediaMock.mock.calls[2][0].audio).not.toHaveProperty('deviceId');
+    expect(result.current.localStream?.getAudioTracks()).toEqual([fallback]);
+    expect(window.localStorage.getItem('scale.audio.input')).toBeNull();
+  });
+
   it('microfone removido tenta padrão sem desmutar; captura pendente é parada após cleanup', async () => {
     const { hook } = createHookMock('me-100');
     const first = createMockTrack('audio');

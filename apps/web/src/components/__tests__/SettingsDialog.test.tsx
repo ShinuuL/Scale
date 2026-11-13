@@ -63,8 +63,46 @@ describe('SettingsDialog: seção Áudio', () => {
   it('sem setSinkId esconde a saída e explica', async () => {
     render(<SettingsDialog user={null} onClose={() => {}} />);
     await screen.findByRole('button', { name: /Permitir acesso ao microfone/ });
-    expect(screen.queryByLabelText('Saída de áudio')).toBeNull();
-    expect(screen.getByText(/Seu navegador não permite escolher a saída de áudio/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Saída de áudio/ })).toBeNull();
+    expect(screen.getByRole('textbox', { name: 'Saída de áudio' })).toHaveTextContent('Padrão do sistema');
+    expect(screen.getByText(/o sistema alterna entre alto-falante e fone/)).toBeInTheDocument();
+  });
+
+  it('Android (só a saída padrão, com permissão) mostra a saída só leitura', async () => {
+    Object.defineProperty(HTMLMediaElement.prototype, 'setSinkId', { value: vi.fn(), configurable: true });
+    (navigator.mediaDevices.enumerateDevices as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { kind: 'audioinput', deviceId: 'mic-1', label: 'Microfone', groupId: '' },
+      { kind: 'audiooutput', deviceId: 'default', label: 'Padrão', groupId: '' },
+    ]);
+    render(<SettingsDialog user={null} onClose={() => {}} />);
+    expect(await screen.findByRole('textbox', { name: 'Saída de áudio' })).toHaveTextContent('Padrão do sistema');
+  });
+
+  it('padrão aparece como "Padrão do sistema", nunca "Nenhum aparelho"', async () => {
+    render(<SettingsDialog user={null} onClose={() => {}} />);
+    const mic = await screen.findByRole('button', { name: /Microfone/ });
+    await waitFor(() => expect(mic).toHaveTextContent('Padrão do sistema'));
+    expect(screen.queryByText('Nenhum aparelho')).toBeNull();
+  });
+
+  it('sem nomes (antes da permissão) mantém a escolha salva', async () => {
+    window.localStorage.setItem('scale.audio.input', 'mic-salvo');
+    render(<SettingsDialog user={null} onClose={() => {}} />);
+    await screen.findByRole('button', { name: /Permitir acesso ao microfone/ });
+    expect(getSavedDeviceId('input')).toBe('mic-salvo');
+  });
+
+  it('escolher "Padrão do sistema" salva string vazia', async () => {
+    (navigator.mediaDevices.enumerateDevices as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { kind: 'audioinput', deviceId: 'mic-1', label: 'Headset', groupId: '' },
+    ]);
+    window.localStorage.setItem('scale.audio.input', 'mic-1');
+    render(<SettingsDialog user={null} onClose={() => {}} />);
+    const mic = await screen.findByRole('button', { name: /Microfone/ });
+    await waitFor(() => expect(mic).toHaveTextContent('Headset'));
+    fireEvent.click(mic);
+    fireEvent.click(await screen.findByRole('option', { name: 'Padrão do sistema' }));
+    expect(getSavedDeviceId('input')).toBe('');
   });
 
   it('escolher o microfone na lista salva o aparelho', async () => {

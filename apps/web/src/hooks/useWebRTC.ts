@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import type { UseSocketReturn, PeerInfo } from './useSocket';
-import { getSavedDeviceId } from '@/lib/audioDevices';
+import { getSavedDeviceId, saveDeviceId } from '@/lib/audioDevices';
 import { roomTicketHeaders } from '@/lib/roomAccess';
 
 export interface PeerConnection {
@@ -839,6 +839,7 @@ export function useWebRTC(
     const generation = ++mediaGenerationRef.current;
     setIsChangingMicrophone(true);
     let candidate: MediaStream | null = null;
+    let fellBack = false;
     try {
       // deviceId explícito (escolha ao vivo nas Configurações) usa `exact`: se
       // falhar, a voz anterior é mantida. '' = o microfone salvo nas
@@ -848,10 +849,23 @@ export function useWebRTC(
       const constraint = deviceId
         ? { deviceId: { exact: deviceId } }
         : savedMic ? { deviceId: { ideal: savedMic } } : {};
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { ...AUDIO_CONSTRAINTS, ...constraint },
-        video: false,
-      });
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: { ...AUDIO_CONSTRAINTS, ...constraint },
+          video: false,
+        });
+      } catch (err) {
+        // Aparelho escolhido sumiu (comum no celular: ids mudam): esquece a
+        // escolha e tenta o padrão do sistema.
+        const name = err instanceof DOMException || err instanceof Error ? err.name : '';
+        if (!deviceId || (name !== 'OverconstrainedError' && name !== 'NotFoundError')) throw err;
+        fellBack = true;
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: { ...AUDIO_CONSTRAINTS },
+          video: false,
+        });
+      }
       candidate = stream;
       if (generation !== mediaGenerationRef.current) {
         stream.getTracks().forEach((track) => track.stop());
@@ -893,6 +907,8 @@ export function useWebRTC(
       track.onended = () => {
         if (localStreamRef.current === stream) void captureMicrophone('');
       };
+      // Só depois de assumir a faixa: o evento pode disparar outra captura.
+      if (fellBack) saveDeviceId('input', '');
       return true;
     } catch (error) {
       candidate?.getTracks().forEach((track) => track.stop());
