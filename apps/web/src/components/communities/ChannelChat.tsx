@@ -70,6 +70,36 @@ function MessageEditForm({
   );
 }
 
+/**
+ * Mensagem de sistema (boas-vindas): estilo proprio, sem autor editavel e sem
+ * editar/apagar do autor. Quem modera ainda pode apagar.
+ */
+function SystemMessageItem({ message, canManage, onDelete }: { message: ChannelMessage; canManage: boolean; onDelete: () => void }) {
+  return (
+    <article
+      id={messageAnchorId(message.id)}
+      data-testid="system-message"
+      aria-label="Mensagem do sistema"
+      className="my-2 flex items-start gap-2 rounded-md border border-line bg-surface-secondary px-3 py-2"
+    >
+      <Icon name="userPlus" size={16} className="mt-0.5 shrink-0 text-brand-300" />
+      <div className="min-w-0 flex-1">
+        <p className={`whitespace-pre-wrap break-words text-sm text-ink-secondary ${message.deletedAt ? 'italic' : ''}`}>
+          {message.deletedAt ? '[mensagem apagada]' : message.content}
+        </p>
+        <time className="text-xs text-ink-muted" dateTime={message.createdAt}>
+          {timeFormatter.format(new Date(message.createdAt))}
+        </time>
+      </div>
+      {canManage && !message.deletedAt && (
+        <Button variant="ghost" size="sm" className="min-h-8" aria-label="Apagar mensagem do sistema" onClick={onDelete}>
+          Apagar
+        </Button>
+      )}
+    </article>
+  );
+}
+
 function MessageItem({
   message,
   meId,
@@ -107,6 +137,7 @@ function MessageItem({
   onCancel: () => void;
   onDelete: () => void;
 }) {
+  if (message.system) return <SystemMessageItem message={message} canManage={canManage} onDelete={onDelete} />;
   return (
     <article id={messageAnchorId(message.id)} className="group rounded-md py-3 transition-colors">
       {message.replyTo && <ReplyQuote replyTo={message.replyTo} onJump={onJump} />}

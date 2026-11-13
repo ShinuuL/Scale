@@ -97,7 +97,9 @@ export default function InvitePage() {
     try {
       const result = await api.acceptCommunityInvite(code);
       sessionStorage.removeItem(STORAGE_KEY);
-      router.push(`/communities?c=${encodeURIComponent(result.communityId)}`);
+      // Boas-vindas: novo membro abre direto no canal escolhido pela comunidade.
+      const channel = result.welcomeChannelId ? `&ch=${encodeURIComponent(result.welcomeChannelId)}` : '';
+      router.push(`/communities?c=${encodeURIComponent(result.communityId)}${channel}`);
     } catch (err: unknown) {
       const status = (err as { status?: number })?.status;
       if (status === 401) window.location.href = '/login?next=%2Finvite';

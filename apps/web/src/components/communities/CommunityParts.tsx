@@ -5,7 +5,7 @@ import { Button as AriaButton, Menu, MenuItem, MenuTrigger, Popover } from 'reac
 import { AppModal } from '@/components/ui/AppModal';
 import { Icon } from '@/components/ui/Icon';
 import { Tooltip } from '@/components/ui/Tooltip';
-import { formatUnreadCount, type ChannelKind, type CommunityLayout, type CommunityRole, type CommunityVoiceState } from '@scale/shared';
+import { formatUnreadCount, formatVoiceCount, isVoiceChannelFull, type ChannelKind, type CommunityLayout, type CommunityRole, type CommunityVoiceState } from '@scale/shared';
 import { communityImageUrl } from '@/lib/api';
 import { ChannelSections } from './ChannelSections';
 import type { LayoutCategory } from './channelLayout';
@@ -27,6 +27,8 @@ export interface Channel {
   unread?: number;
   categoryId?: string | null;
   topic?: string | null;
+  /** Limite de pessoas do canal de voz (null = teto do mesh). */
+  userLimit?: number | null;
 }
 export interface Member {
   userId: string;
@@ -345,27 +347,43 @@ function VoiceChannelItem({
   onSelect: () => void;
   onOpenCall?: () => void;
 }) {
+  // Limite (Fase 3): "3/4" ao lado do nome; cheio bloqueia a entrada (o
+  // servidor tambem recusa no join-room). Quem ja esta no canal nao e barrado.
+  const count = formatVoiceCount(members.length, channel.userLimit);
+  const full = !active && isVoiceChannelFull(members.length, channel.userLimit);
+  const capacity = channel.userLimit ? `, ${members.length} de ${channel.userLimit} pessoas` : '';
   return (
     <>
       <div className="flex items-center gap-1">
         <button
           type="button"
-          onClick={onSelect}
+          onClick={full ? undefined : onSelect}
+          aria-disabled={full ? 'true' : undefined}
           aria-current={active ? 'true' : undefined}
           aria-label={
             active
-              ? `${channel.name}, ${joined ? 'conectado' : 'conectando'}`
-              : `Entrar no canal de voz ${channel.name}`
+              ? `${channel.name}, ${joined ? 'conectado' : 'conectando'}${capacity}`
+              : full
+                ? `Canal de voz ${channel.name} cheio${capacity}`
+                : `Entrar no canal de voz ${channel.name}${capacity}`
           }
-          className={`${item} min-w-0 flex-1 ${active ? 'bg-surface-hover text-ink-primary' : ''}`}
+          className={`${item} min-w-0 flex-1 ${active ? 'bg-surface-hover text-ink-primary' : ''} ${full ? 'cursor-not-allowed opacity-60' : ''}`}
         >
           <Icon name="speaker" />
           <span className="truncate">{channel.name}</span>
+          {count && !active && (
+            <span
+              data-testid="voice-count"
+              className={`ml-auto shrink-0 rounded px-1 text-[11px] font-medium tabular-nums ${full ? 'bg-red-600/20 text-red-300' : 'text-ink-muted'}`}
+            >
+              {full ? `Cheio ${count}` : count}
+            </span>
+          )}
           {active && (
             <span
               className={`ml-auto shrink-0 text-[11px] font-medium ${joined ? 'text-emerald-400' : 'text-amber-300'}`}
             >
-              {joined ? 'Conectado' : 'Conectando'}
+              {joined ? 'Conectado' : 'Conectando'}{count ? ` ${count}` : ''}
             </span>
           )}
         </button>
