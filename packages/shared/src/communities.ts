@@ -55,3 +55,11 @@ export type CommunityVoiceState = z.infer<typeof communityVoiceStateSchema>;
 export type CommunitySubscriptionAck = z.infer<typeof communitySubscriptionAckSchema>;
 export type ChannelMessageEditEvent = z.infer<typeof channelMessageEditEventSchema>;
 export type ChannelMessageDeleteEvent = z.infer<typeof channelMessageDeleteEventSchema>;
+
+/** Aviso leve em `user:<id>`: houve mensagem nova num canal (sem conteudo). */
+export const communityActivityEventSchema = z.object({
+  communityId: z.string().uuid(), channelId: z.string().uuid(), authorId: z.string().nullable(),
+});
+export type CommunityActivityEvent = z.infer<typeof communityActivityEventSchema>;
+/** Texto curto da contagem de nao lidas: ate 99, depois "99+". */
+export const formatUnreadCount = (count: number): string => (count > 99 ? '99+' : String(count));

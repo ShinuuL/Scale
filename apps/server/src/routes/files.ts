@@ -12,6 +12,7 @@ import { communityRoom, toChannelMessage } from '../lib/communityAccess.js';
 import { addChatFilesBytes, incQuotaExceeded } from '../lib/metrics.js';
 import { toPublicFile } from '../lib/publicDto.js';
 import { emitChatMessage } from '../socket/handler.js';
+import { emitCommunityActivity } from '../lib/unread.js';
 import { isFileUploadRateLimited } from '../lib/rateLimit.js';
 import { getClientIp } from '../lib/clientIp.js';
 
@@ -169,6 +170,7 @@ export async function filesRoutes(fastify: FastifyInstance): Promise<void> {
         const author = userId ? await prisma.user.findUnique({ where: { id: userId }, include: { username: true } }) : null;
         const channelMessage = toChannelMessage({ ...message, files: createdFiles }, { id: userId, name: author?.name ?? guestName, username: author?.username?.name ?? null });
         io?.to(communityRoom(room.communityId)).emit('channel:message', channelMessage);
+        await emitCommunityActivity(io, room.communityId, room.id, userId ?? null);
         return reply.code(201).send({ files: createdFiles.map(toPublicFile), messageId: message.id, message: channelMessage });
       }
       if (io) emitChatMessage(io, roomId, { ...message, files: createdFiles });

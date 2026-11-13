@@ -61,3 +61,6 @@ export const MAX_COMMUNITIES_OWNED = 10;
 export const MAX_CHANNELS_PER_COMMUNITY = 50;
 export const MAX_COMMUNITY_MEMBERS = 500;
 export const MAX_COMMUNITIES_JOINED = 100;
+
+/** Teto das contagens de nao lidas por canal (a UI mostra "99+" acima de 99). */
+export const UNREAD_COUNT_CAP = 100;
