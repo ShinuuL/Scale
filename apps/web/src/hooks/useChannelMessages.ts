@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useReducer } from 'react';
-import type { ChannelMessageDeleteEvent, ChannelMessageEditEvent } from '@scale/shared';
+import type { ChannelMessageDeleteEvent, ChannelMessageEditEvent, ChannelPinEvent, ChannelReactionEvent } from '@scale/shared';
+import { CHANNEL_REACTIONS } from '@scale/shared';
 import { api, type ChannelMessage } from '@/lib/api';
 
 export type ChannelMessagesState = {
@@ -24,7 +25,9 @@ export type ChannelMessagesAction =
   | { type: 'error'; channelId: string; error: string }
   | { type: 'message'; message: ChannelMessage }
   | { type: 'edit'; event: ChannelMessageEditEvent }
-  | { type: 'delete'; event: ChannelMessageDeleteEvent };
+  | { type: 'delete'; event: ChannelMessageDeleteEvent }
+  | { type: 'reaction'; event: ChannelReactionEvent }
+  | { type: 'pin'; event: ChannelPinEvent };
 
 export function channelMessagesReducer(
   state: ChannelMessagesState,
@@ -41,7 +44,7 @@ export function channelMessagesReducer(
   const channelId =
     action.type === 'message'
       ? action.message.channelId
-      : action.type === 'edit' || action.type === 'delete'
+      : action.type === 'edit' || action.type === 'delete' || action.type === 'reaction' || action.type === 'pin'
         ? action.event.channelId
         : action.channelId;
   if (channelId !== state.channelId) return state;
@@ -79,11 +82,39 @@ export function channelMessagesReducer(
         ...state,
         messages: state.messages.map((message) =>
           message.id === action.event.messageId
-            ? { ...message, deletedAt: action.event.deletedAt }
+            ? { ...message, deletedAt: action.event.deletedAt, reactions: [], pinnedAt: null, pinnedById: null }
+            : message,
+        ),
+      };
+    case 'reaction':
+      return {
+        ...state,
+        messages: state.messages.map((message) =>
+          message.id === action.event.messageId
+            ? { ...message, reactions: applyReaction(message.reactions, action.event) }
+            : message,
+        ),
+      };
+    case 'pin':
+      return {
+        ...state,
+        messages: state.messages.map((message) =>
+          message.id === action.event.messageId
+            ? { ...message, pinnedAt: action.event.pinnedAt, pinnedById: action.event.pinnedById }
             : message,
         ),
       };
   }
+}
+
+/** Troca a lista de quem reagiu com UM icone, mantendo a ordem fixa do conjunto. */
+export function applyReaction(
+  reactions: ChannelMessage['reactions'],
+  event: ChannelReactionEvent,
+): ChannelMessage['reactions'] {
+  const others = reactions.filter((item) => item.reaction !== event.reaction);
+  const next = event.userIds.length ? [...others, { reaction: event.reaction, userIds: event.userIds }] : others;
+  return CHANNEL_REACTIONS.flatMap((reaction) => next.filter((item) => item.reaction === reaction));
 }
 
 export function useChannelMessages(channelId: string | null, refreshVersion = 0) {

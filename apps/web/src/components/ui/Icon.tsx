@@ -33,6 +33,8 @@ export type IconName =
   | 'clock'
   | 'close'
   | 'document'
+  | 'exclamation'
+  | 'heart'
   | 'eye'
   | 'flag'
   | 'hash'
@@ -55,10 +57,15 @@ export type IconName =
   | 'more'
   | 'music'
   | 'paperclip'
+  | 'pin'
+  | 'reply'
   | 'phone'
   | 'search'
   | 'settings'
   | 'shield'
+  | 'smile'
+  | 'star'
+  | 'thumbsUp'
   | 'speaker'
   | 'speakerOff'
   | 'trash'
@@ -303,6 +310,32 @@ export const ICONS: Record<IconName, IconShape[]> = {
     { d: 'M6.3 6.5l.9 12.1a2 2 0 0 0 2 1.9h5.6a2 2 0 0 0 2-1.9l.9-12.1' },
     { d: 'M10.2 10.5v6' },
     { d: 'M13.8 10.5v6' },
+  ],
+  // Reacoes de mensagem (Fase 2 das comunidades): contorno, sem preenchimento.
+  thumbsUp: [
+    { d: 'M7.5 10.5v9.5H4.6a1.1 1.1 0 0 1-1.1-1.1v-7.3a1.1 1.1 0 0 1 1.1-1.1h2.9Z' },
+    { d: 'M7.5 10.5 11 3.8a2 2 0 0 1 2.9 1.9l-.5 3.6h5.2a2 2 0 0 1 2 2.4l-1.3 6.2a2.6 2.6 0 0 1-2.6 2.1H7.5' },
+  ],
+  heart: [
+    { d: 'M12 20s-7.8-4.6-8.9-9.8A4.6 4.6 0 0 1 12 7a4.6 4.6 0 0 1 8.9 3.2C19.8 15.4 12 20 12 20Z' },
+  ],
+  star: [
+    { d: 'M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.8L12 16.8l-5.2 2.8 1-5.8-4.3-4.1 5.9-.8L12 3.5Z' },
+  ],
+  exclamation: [{ d: CIRCLE_R9 }, { d: 'M12 7.5v5.6' }, { d: 'M12 16.4h.01' }],
+  smile: [
+    { d: CIRCLE_R9 },
+    { d: 'M8.4 14.2a4.4 4.4 0 0 0 7.2 0' },
+    { d: 'M9.2 9.6h.01' },
+    { d: 'M14.8 9.6h.01' },
+  ],
+  // Responder: seta curva para a esquerda.
+  reply: [{ d: 'M9.5 7 4.5 12l5 5' }, { d: 'M4.8 12h9.2a5.5 5.5 0 0 1 5.5 5.5V19' }],
+  // Fixar: alfinete inclinado.
+  pin: [
+    { d: 'M14.6 3.6 20.4 9.4' },
+    { d: 'M16.2 5.2 12.4 9 8.3 8.4l-2 2 7.3 7.3 2-2-.6-4.1 3.8-3.8' },
+    { d: 'M9.9 14.1 4 20' },
   ],
 };
 

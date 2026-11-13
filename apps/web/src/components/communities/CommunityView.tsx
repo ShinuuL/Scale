@@ -286,6 +286,8 @@ export function CommunityView({
     },
     onMessageEdit: (event) => dispatch({ type: 'edit', event }),
     onMessageDelete: (event) => dispatch({ type: 'delete', event }),
+    onReaction: (event) => dispatch({ type: 'reaction', event }),
+    onPin: (event) => dispatch({ type: 'pin', event }),
     onChanged: () => {
       refresh();
       void refreshList();

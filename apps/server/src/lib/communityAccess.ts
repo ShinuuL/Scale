@@ -1,18 +1,27 @@
-import type { CommunityPermissions, CommunityRole } from '@scale/shared';
+import type { ChannelReactionSummary, ChannelReply, CommunityPermissions, CommunityRole } from '@scale/shared';
 import { prisma } from './prisma.js';
 import { toPublicFile } from './publicDto.js';
 
 interface ChannelMessageRow {
   id: string; roomId: string; content: string; createdAt: Date; editedAt: Date | null; deletedAt: Date | null;
+  pinnedAt?: Date | null; pinnedById?: string | null;
   files?: Array<{ id: string; filename: string; mime: string; size: number; deletedAt: Date | null }>;
 }
 
 /** DTO unico de mensagem de canal (rota de texto, upload e socket). Apagada = sem arquivos. */
-export function toChannelMessage(row: ChannelMessageRow, author: { id: string | null; name: string; username: string | null }) {
+export function toChannelMessage(
+  row: ChannelMessageRow,
+  author: { id: string | null; name: string; username: string | null },
+  extras: { replyTo?: ChannelReply | null; reactions?: ChannelReactionSummary[] } = {},
+) {
   return {
     id: row.id, channelId: row.roomId, author, content: row.content,
     createdAt: row.createdAt.toISOString(), editedAt: row.editedAt?.toISOString() ?? null, deletedAt: row.deletedAt?.toISOString() ?? null,
     files: row.deletedAt ? [] : (row.files ?? []).filter((f) => f.deletedAt == null).map(toPublicFile),
+    replyTo: extras.replyTo ?? null,
+    reactions: row.deletedAt ? [] : extras.reactions ?? [],
+    pinnedAt: row.pinnedAt?.toISOString() ?? null,
+    pinnedById: row.pinnedById ?? null,
   };
 }
 

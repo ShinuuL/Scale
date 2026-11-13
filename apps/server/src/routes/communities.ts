@@ -14,6 +14,7 @@ import { purgeRoom } from '../lib/roomDeletion.js';
 import { getClientIp } from '../lib/clientIp.js';
 import { channelUnreads, emitCommunityActivity, markChannelsRead, totalsByCommunity } from '../lib/unread.js';
 import { removeCommunityMedia } from './communityExtras.js';
+import { buildChannelMessages, loadReplies } from '../lib/channelMessageMeta.js';
 
 const idSchema = z.string().uuid();
 const params = z.object({ id: idSchema });
@@ -207,9 +208,7 @@ export async function communityRoutes(app: FastifyInstance): Promise<void> {
     let cursorDate: Date | undefined;
     if (query.data.cursor) { const cursor = await prisma.chatMessage.findUnique({ where: { id: query.data.cursor } }); if (!cursor || cursor.roomId !== room.id) return missing(reply); cursorDate = cursor.createdAt; }
     const rows = await prisma.chatMessage.findMany({ where: { roomId: room.id, ...(cursorDate && query.data.cursor ? { OR: [{ createdAt: { lt: cursorDate } }, { createdAt: cursorDate, id: { lt: query.data.cursor } }] } : {}) }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: query.data.limit, include: { files: true } });
-    const authors = await prisma.user.findMany({ where: { id: { in: rows.flatMap(row => row.authorId ? [row.authorId] : []) } }, include: { username: true } });
-    const users = new Map(authors.map(user => [user.id, user]));
-    const messages = rows.reverse().map(row => { const user = row.authorId ? users.get(row.authorId) : undefined; return toChannelMessage(row, { id: row.authorId, name: user?.name ?? row.guestName ?? 'Usuário', username: user?.username?.name ?? null }); });
+    const messages = await buildChannelMessages(room.id, rows.reverse());
     return reply.send({ messages, nextCursor: rows.length === query.data.limit ? rows[0]?.id ?? null : null });
   });
   app.post('/api/channels/:id/messages', auth, async (request, reply) => {
@@ -218,8 +217,12 @@ export async function communityRoutes(app: FastifyInstance): Promise<void> {
     const me = meOf(request); if (!await findMembership(room.communityId, me)) return missing(reply);
     if (isChatRateLimited(`user:${me}`)) return reply.code(429).header('Retry-After', '5').send({ error: 'Too many messages' });
     const user = await prisma.user.findUnique({ where: { id: me }, include: { username: true } }); if (!user) return missing(reply);
-    const row = await prisma.chatMessage.create({ data: { roomId: room.id, authorId: me, content: body.data.content } });
-    const message = toChannelMessage(row, { id: user.id, name: user.name, username: user.username?.name ?? null });
+    const replyToId = body.data.replyToId;
+    const replies = replyToId ? await loadReplies(room.id, [replyToId]) : null;
+    const replyTo = replyToId ? replies?.get(replyToId) : undefined;
+    if (replyToId && (!replyTo || !replyTo.authorName)) return invalid(reply);
+    const row = await prisma.chatMessage.create({ data: { roomId: room.id, authorId: me, content: body.data.content, replyToId: replyToId ?? null } });
+    const message = toChannelMessage(row, { id: user.id, name: user.name, username: user.username?.name ?? null }, { replyTo: replyTo ?? null });
     ioOf(app)?.to(communityRoom(room.communityId)).emit('channel:message', message);
     await emitCommunityActivity(ioOf(app), room.communityId, room.id, me);
     return reply.code(201).send({ message });
@@ -261,7 +264,8 @@ export async function communityRoutes(app: FastifyInstance): Promise<void> {
     if (isChatRateLimited(`user:${me}`)) return reply.code(429).header('Retry-After', '5').send({ error: 'Too many messages' });
     const deletedAt = new Date();
     const updated = await prisma.$transaction(async tx => {
-      const result = await tx.chatMessage.updateMany({ where: { id: message.id, deletedAt: null }, data: { content: DELETED_MESSAGE_CONTENT, prevContent: null, deletedAt } });
+      const result = await tx.chatMessage.updateMany({ where: { id: message.id, deletedAt: null }, data: { content: DELETED_MESSAGE_CONTENT, prevContent: null, deletedAt, pinnedAt: null, pinnedById: null } });
+      if (result.count) await tx.chatMessageReaction.deleteMany({ where: { messageId: message.id } });
       if (result.count) await tx.chatFile.updateMany({ where: { messageId: message.id }, data: { deletedAt } });
       return result;
     });

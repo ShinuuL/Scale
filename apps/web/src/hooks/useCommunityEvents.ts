@@ -12,6 +12,10 @@ import {
   type CommunityVoiceSpeaking,
   channelMessageEditEventSchema,
   channelMessageDeleteEventSchema,
+  channelReactionEventSchema,
+  channelPinEventSchema,
+  type ChannelReactionEvent,
+  type ChannelPinEvent,
   type CommunityVoiceState,
   type ChannelMessageEditEvent,
   type ChannelMessageDeleteEvent,
@@ -23,6 +27,8 @@ export interface CommunityEventHandlers {
   onMessage?: (message: ChannelMessage) => void;
   onMessageEdit?: (event: ChannelMessageEditEvent) => void;
   onMessageDelete?: (event: ChannelMessageDeleteEvent) => void;
+  onReaction?: (event: ChannelReactionEvent) => void;
+  onPin?: (event: ChannelPinEvent) => void;
   onChanged?: () => void;
   onDeleted?: () => void;
   onRemoved?: () => void;
@@ -105,6 +111,14 @@ export function useCommunityEvents(
     socket.on('channel:message-delete', (raw: unknown) => {
       const parsed = channelMessageDeleteEventSchema.safeParse(raw);
       if (parsed.success) handlersRef.current.onMessageDelete?.(parsed.data);
+    });
+    socket.on('channel:reaction', (raw: unknown) => {
+      const parsed = channelReactionEventSchema.safeParse(raw);
+      if (parsed.success) handlersRef.current.onReaction?.(parsed.data);
+    });
+    socket.on('channel:message-pin', (raw: unknown) => {
+      const parsed = channelPinEventSchema.safeParse(raw);
+      if (parsed.success) handlersRef.current.onPin?.(parsed.data);
     });
     return () => {
       active = false;

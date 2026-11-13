@@ -400,6 +400,7 @@ docker compose up --build -d
 - LGPD: página `/privacy` (encarregado via `PRIVACY_CONTACT_EMAIL`),
   `GET /api/me/privacy/export`, `docs/lgpd-moderacao.md` (inventário, LIA,
   ROPA, checklist) e `docs/moderacao.md` (operação e custos).
+- Canais de texto (Fase 2): responder com citação (`replyToId`), reações de conjunto fixo (tabela `ChatMessageReaction`, ícones SVG, balde `channelReaction` 20/10 s) e fixar mensagem (`manageMessages`, máx. 50/canal); rotas em `routes/channelMessageExtras.ts`, eventos `channel:reaction` e `channel:message-pin`.
 
 ## Requisitos de Infra
 

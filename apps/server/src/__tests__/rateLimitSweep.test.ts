@@ -32,6 +32,7 @@ describe('expurgo dos baldes de rate limit', () => {
     expect(Object.keys(rateLimitStoreSizes()).sort()).toEqual([
       'adminSettings',
       'call',
+      'channelReaction',
       'chat',
       'communityInvite',
       'dm',
