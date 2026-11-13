@@ -106,3 +106,65 @@ test('comunidade: reordenar blocos com Alt+seta persiste', async ({ browser }) =
   await expect.poll(async () => (await names()).filter((n) => n.includes(suffix))).toEqual([before[1], before[0]]);
   await page.context().close();
 });
+
+test('comunidade fase 2: responder, reagir, fixar, digitando, topico e busca', async ({ browser }) => {
+  const suffix = Math.random().toString(36).slice(2, 7);
+  const owner = await newUser(browser, `f2dono_${suffix}`);
+  const member = await newUser(browser, `f2membro_${suffix}`);
+  const created = await owner.request.post('/api/communities', { data: { name: `Fase2 ${suffix}` } });
+  const { community } = (await created.json()) as { community: { id: string } };
+  const invite = await owner.request.post(`/api/communities/${community.id}/invites`, { data: {} });
+  const { invite: inv } = (await invite.json()) as { invite: { code: string } };
+  expect((await member.request.post('/api/invites/accept', { data: { code: inv.code } })).ok()).toBeTruthy();
+  for (const page of [owner, member]) {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`/communities?c=${community.id}`);
+  }
+  const ownerBox = owner.getByPlaceholder('Mensagem em geral');
+  const memberBox = member.getByPlaceholder('Mensagem em geral');
+
+  // Digitando: membro digita, dono ve o indicador.
+  await memberBox.click();
+  await memberBox.pressSequentially('ola');
+  await expect(owner.getByText(/está digitando/)).toBeVisible();
+  await memberBox.press('Enter');
+  await expect(owner.getByText('ola', { exact: true })).toBeVisible();
+
+  // Responder.
+  await owner.getByRole('button', { name: /Responder a / }).first().click();
+  await expect(owner.getByRole('button', { name: 'Cancelar resposta' })).toBeVisible();
+  await ownerBox.fill('resposta do dono');
+  await ownerBox.press('Enter');
+  await expect(member.getByRole('button', { name: /Resposta a .*ola. Ir para a mensagem original/ })).toBeVisible();
+
+  // Reagir (membro) e ver em tempo real (dono).
+  const original = member.locator('article', { hasText: 'resposta do dono' });
+  await original.hover();
+  await original.getByRole('button', { name: 'Adicionar reação' }).click();
+  await member.getByRole('button', { name: 'Curtir', exact: true }).click();
+  await expect(member.getByRole('button', { name: 'Curtir, 1 reação, você reagiu' })).toBeVisible();
+  await expect(owner.getByRole('button', { name: 'Curtir, 1 reação' })).toBeVisible();
+
+  // Fixar (dono) e painel de fixadas.
+  const ownerMsg = owner.locator('article', { hasText: 'resposta do dono' });
+  await ownerMsg.hover();
+  await ownerMsg.getByRole('button', { name: /^Fixar mensagem/ }).click();
+  await owner.getByRole('button', { name: 'Mensagens fixadas' }).click();
+  await expect(owner.getByRole('dialog').getByText('resposta do dono')).toBeVisible();
+  await owner.keyboard.press('Escape');
+
+  // Topico pelo cabecalho.
+  await owner.getByRole('button', { name: 'Definir tópico' }).click();
+  await owner.getByPlaceholder('Sobre o que é este canal').fill('Canal principal do time');
+  await owner.getByRole('button', { name: 'Salvar' }).click();
+  await expect(member.getByText('Canal principal do time')).toBeVisible();
+
+  // Busca sem acento/caixa.
+  await member.getByRole('button', { name: 'Buscar mensagens' }).click();
+  await member.locator('#message-search-q').fill('RESPOSTA');
+  await member.locator('#message-search-q').press('Enter');
+  await expect(member.getByRole('list', { name: 'Resultados da busca' }).getByText(/do dono/)).toBeVisible();
+
+  await owner.context().close();
+  await member.context().close();
+});
