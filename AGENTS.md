@@ -252,7 +252,7 @@ docker compose up --build -d
     direto ao proxy (localhost/LAN)
 - Upload bloqueado em sala temporária (apenas persistente aceita arquivos)
 - Sistema de ícones internos: UI sem emojis, `apps/web/src/components/ui/Icon.tsx`
-  com 38 ícones (SVG vetorial, `stroke="currentColor"`), sem dependência externa
+  com 39 ícones (SVG vetorial, `stroke="currentColor"`), sem dependência externa
 - Configurações (menu de perfil, ícone `settings`): nome de usuário
   (`PATCH /api/me`, reemite o JWT), foto de perfil (`PUT|GET|DELETE
   /api/me/avatar`, até 32 MB, PNG/JPEG/WebP por magic bytes, em
