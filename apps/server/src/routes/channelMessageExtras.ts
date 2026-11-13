@@ -4,7 +4,8 @@ import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { MAX_PINNED_PER_CHANNEL, channelReactionToggleSchema, type ChannelPinEvent, type ChannelReactionEvent } from '@scale/shared';
 import { prisma } from '../lib/prisma.js';
-import { communityRoom, findMembership, permissionsOf, type Membership } from '../lib/communityAccess.js';
+import { permissionsOf, type Membership } from '../lib/communityAccess.js';
+import { emitToChannel, viewableChannel } from '../lib/channelPermissions.js';
 import { buildChannelMessages } from '../lib/channelMessageMeta.js';
 import { isChannelReactionRateLimited } from '../lib/rateLimit.js';
 
@@ -32,11 +33,11 @@ interface ChannelAccess { communityId: string; roomId: string; me: string; membe
 
 /** Canal de texto de comunidade + membership; null = 404. */
 async function channelAccess(request: FastifyRequest, channelId: string): Promise<ChannelAccess | null> {
-  const room = await prisma.room.findUnique({ where: { id: channelId }, select: { id: true, communityId: true, channelKind: true } });
-  if (!room?.communityId || room.channelKind !== 'TEXT') return null;
   const me = request.userId!;
-  const member = await findMembership(room.communityId, me);
-  return member ? { communityId: room.communityId, roomId: room.id, me, member } : null;
+  // Fase 3: canal que o membro nao ve = 404 (reagir vale ate em canal de avisos).
+  const found = await viewableChannel(channelId, me);
+  if (!found || found.room.channelKind !== 'TEXT') return null;
+  return { communityId: found.room.communityId, roomId: found.room.id, me, member: found.member };
 }
 
 export async function channelMessageExtrasRoutes(app: FastifyInstance): Promise<void> {
@@ -61,7 +62,7 @@ export async function channelMessageExtrasRoutes(app: FastifyInstance): Promise<
     }
     const rows = await prisma.chatMessageReaction.findMany({ where: { messageId: p.data.messageId, reaction: body.data.reaction }, orderBy: { createdAt: 'asc' }, select: { userId: true } });
     const event: ChannelReactionEvent = { channelId: access.roomId, messageId: p.data.messageId, reaction: body.data.reaction, userIds: rows.map(r => r.userId) };
-    ioOf(app)?.to(communityRoom(access.communityId)).emit('channel:reaction', event);
+    await emitToChannel(ioOf(app), access.communityId, access.roomId, 'channel:reaction', event);
     return reply.send(event);
   });
 
@@ -85,7 +86,7 @@ export async function channelMessageExtrasRoutes(app: FastifyInstance): Promise<
     const pinnedAt = pin ? new Date() : null;
     await prisma.chatMessage.update({ where: { id: p.data.messageId }, data: { pinnedAt, pinnedById: pin ? access.me : null } });
     const event: ChannelPinEvent = { channelId: access.roomId, messageId: p.data.messageId, pinnedAt: pinnedAt?.toISOString() ?? null, pinnedById: pin ? access.me : null };
-    ioOf(app)?.to(communityRoom(access.communityId)).emit('channel:message-pin', event);
+    await emitToChannel(ioOf(app), access.communityId, access.roomId, 'channel:message-pin', event);
     return reply.send(event);
   };
   app.put('/api/channels/:id/messages/:messageId/pin', auth, (request, reply) => setPin(request, reply, true));

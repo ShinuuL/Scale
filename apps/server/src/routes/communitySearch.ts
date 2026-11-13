@@ -4,6 +4,7 @@ import type { Prisma } from '@prisma/client';
 import { MESSAGE_SEARCH_PAGE, matchesSearch, messageSearchQuerySchema, type MessageSearchHit } from '@scale/shared';
 import { prisma } from '../lib/prisma.js';
 import { findMembership } from '../lib/communityAccess.js';
+import { hiddenChannelIds } from '../lib/channelPermissions.js';
 import { isMessageSearchRateLimited } from '../lib/rateLimit.js';
 
 /**
@@ -33,7 +34,8 @@ export async function communitySearchRoutes(app: FastifyInstance): Promise<void>
     const { q, channelId, authorId, from, to, cursor } = query.data;
 
     const channels = await prisma.room.findMany({ where: { communityId: p.data.id, channelKind: 'TEXT' }, select: { id: true, name: true } });
-    const names = new Map(channels.map((c) => [c.id, c.name]));
+    const hidden = await hiddenChannelIds(me, p.data.id);
+    const names = new Map(channels.filter((c) => !hidden.has(c.id)).map((c) => [c.id, c.name]));
     if (channelId && !names.has(channelId)) return reply.code(404).send({ error: 'Not found' });
 
     const base: Prisma.ChatMessageWhereInput = {

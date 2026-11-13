@@ -3,6 +3,7 @@ import { UNREAD_COUNT_CAP } from '@scale/shared';
 import type { Server } from 'socket.io';
 import { prisma } from './prisma.js';
 import { userRoom } from '../socket/handler.js';
+import { channelViewers } from './channelPermissions.js';
 
 export interface ChannelUnread { communityId: string; channelId: string; unread: number }
 
@@ -57,6 +58,8 @@ export async function markChannelsRead(userId: string, channelIds: string[]): Pr
  */
 export async function emitCommunityActivity(io: Server | undefined, communityId: string, channelId: string, authorId: string | null): Promise<void> {
   if (!io) return;
-  const members = await prisma.communityMember.findMany({ where: { communityId }, select: { userId: true } });
-  if (members.length) io.to(members.map(m => userRoom(m.userId))).emit('community:activity', { communityId, channelId, authorId });
+  // Fase 3: so quem ve o canal recebe o aviso.
+  const viewers = await channelViewers(communityId, channelId)
+    ?? (await prisma.communityMember.findMany({ where: { communityId }, select: { userId: true } })).map(m => m.userId);
+  if (viewers.length) io.to(viewers.map(userRoom)).emit('community:activity', { communityId, channelId, authorId });
 }

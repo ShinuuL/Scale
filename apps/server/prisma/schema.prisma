@@ -237,6 +237,10 @@ model Room {
   categoryId       String?
   /// Topico do canal de texto (ate 200; anulavel).
   topic            String?
+  /// Fase 3: canal de avisos (so quem gerencia posta; os demais leem e reagem).
+  announcement     Boolean   @default(false)
+  /// Fase 3: modo lento em segundos (0 = desligado; ate 6 h).
+  slowModeSeconds  Int       @default(0)
 
   community     Community?    @relation(fields: [communityId], references: [id], onDelete: Cascade)
   category      CommunityCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
@@ -245,6 +249,7 @@ model Room {
   readStates    ChannelReadState[]
   chatMessages  ChatMessage[]
   chatFiles     ChatFile[]
+  permissionOverrides ChannelPermissionOverride[]
 
   @@index([communityId])
   @@index([isPersistent, status])
@@ -416,4 +421,19 @@ model ChannelReadState {
 
   @@unique([userId, channelId])
   @@index([channelId])
+}
+
+/// Fase 3: sobrescrita de permissao por canal. target = 'everyone' (todos os
+/// membros) ou o id de um cargo personalizado. null = herda.
+model ChannelPermissionOverride {
+  id           String   @id @default(uuid())
+  roomId       String
+  target       String
+  viewChannel  Boolean?
+  sendMessages Boolean?
+  updatedAt    DateTime @updatedAt
+
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, target])
 }

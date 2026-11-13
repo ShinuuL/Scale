@@ -1,3 +1,4 @@
+import { viewableChannel } from './channelPermissions.js';
 import { z } from 'zod';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { ROOM_TICKET_HEADER, verifyRoomTicket } from './roomTicket.js';
@@ -49,7 +50,7 @@ export async function roomParticipant(request: FastifyRequest, room: RoomAccessT
     where: { communityId_userId: { communityId: room.communityId, userId } },
   })))) return null;
   // Canal de texto da comunidade nao tem join-room: ser membro e a prova.
-  if (room.communityId && room.channelKind === 'TEXT' && userId) return { userId, guestId: null };
+  if (room.communityId && room.channelKind === 'TEXT' && userId) return (await viewableChannel(room.id, userId)) ? { userId, guestId: null } : null;
   const fromTicket = verifyRoomTicket(extractRoomTicket(request), room.id, userId);
   if (fromTicket) return { userId, guestId: userId ? null : fromTicket.guestId };
   if (userId && room.ownerId && userId === room.ownerId) return { userId, guestId: null };

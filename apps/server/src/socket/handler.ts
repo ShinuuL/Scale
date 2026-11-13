@@ -19,6 +19,7 @@ import { GUEST_COOKIE_NAME, newGuestId, serializeGuestCookie, verifyGuestCookie 
 import { signRoomTicket, ticketSubject } from '../lib/roomTicket.js';
 import { buildIceServers } from '../lib/turnCredentials.js';
 import { incChatMessages, incChatEdits, incChatDeletes } from '../lib/metrics.js';
+import { emitToChannel, viewableChannel } from '../lib/channelPermissions.js';
 import {
   toPublicMessage,
   isMessageAuthor,
@@ -323,11 +324,12 @@ export function createSocketServer(httpServer: HttpServer): Server {
         if (!room?.communityId || room.channelKind !== 'TEXT') return;
         const communityRoom = `community:${room.communityId}`;
         if (!socket.rooms.has(communityRoom)) return;
-        const member = await prisma.communityMember.findUnique({ where: { communityId_userId: { communityId: room.communityId, userId: user.userId } }, select: { id: true } });
-        if (!member) return;
-        socket.to(communityRoom).emit('channel:typing', {
+        // Fase 3: so quem pode enviar no canal digita; so quem ve recebe.
+        const found = await viewableChannel(parsed.data.channelId, user.userId);
+        if (!found || (parsed.data.typing && !found.access.send)) return;
+        await emitToChannel(io, room.communityId, parsed.data.channelId, 'channel:typing', {
           communityId: room.communityId, channelId: parsed.data.channelId, userId: user.userId, name: user.name, typing: parsed.data.typing,
-        });
+        }, socket.id);
       } catch {
         // Sinal efemero: falha de banco so descarta o aviso.
       }
@@ -376,6 +378,8 @@ export function createSocketServer(httpServer: HttpServer): Server {
             callback?.({ error: 'Room not found' }); return;
           }
           if (room.channelKind !== 'VOICE') { callback?.({ error: 'Not a voice channel' }); return; }
+          // Fase 3: canal de voz invisivel para o membro = inexistente.
+          if (!(await viewableChannel(room.id, user.userId))) { callback?.({ error: 'Room not found' }); return; }
         }
         const isProtected = !room.communityId && (room.passwordHash !== null || room.isPrivate);
         if (isProtected) {
