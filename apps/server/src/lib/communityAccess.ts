@@ -48,7 +48,7 @@ export function canModerate(role: CommunityRole): boolean {
   return roleAtLeast(role, 'ADMIN');
 }
 
-export interface Membership { id: string; role: CommunityRole; customRoleId: string | null; customRole: CommunityPermissions | null }
+export interface Membership { id: string; role: CommunityRole; customRoleId: string | null; customRole: CommunityPermissions | null; timeoutUntil?: Date | null }
 
 /**
  * Permissoes efetivas: OWNER/ADMIN tem todas; o cargo personalizado so SOMA.
@@ -69,7 +69,7 @@ export function permissionsOf(member: Pick<Membership, 'role' | 'customRole'>): 
 export async function findMembership(communityId: string, userId: string): Promise<Membership | null> {
   return prisma.communityMember.findUnique({
     where: { communityId_userId: { communityId, userId } },
-    select: { id: true, role: true, customRoleId: true, customRole: { select: { manageChannels: true, manageInvites: true, manageMessages: true, kickMembers: true } } },
+    select: { id: true, role: true, customRoleId: true, timeoutUntil: true, customRole: { select: { manageChannels: true, manageInvites: true, manageMessages: true, kickMembers: true } } },
   });
 }
 

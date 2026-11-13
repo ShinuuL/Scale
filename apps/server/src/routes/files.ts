@@ -9,6 +9,7 @@ import { sanitizeFilename, detectMagicBytes, prepareFilePath, readFileHead, getQ
 import { ALLOWED_MIME_RE, CHAT_MESSAGE_MAX, MAX_FILES_PER_MESSAGE, ROOM_FILE_QUOTA_BYTES, parseGuestName } from '@scale/shared';
 import { guardRoomParticipation } from '../lib/roomAccess.js';
 import { communityRoom, toChannelMessage } from '../lib/communityAccess.js';
+import { timedOutBody, timeoutOf } from '../lib/communityModeration.js';
 import { addChatFilesBytes, incQuotaExceeded } from '../lib/metrics.js';
 import { toPublicFile } from '../lib/publicDto.js';
 import { emitChatMessage } from '../socket/handler.js';
@@ -53,6 +54,12 @@ export async function filesRoutes(fastify: FastifyInstance): Promise<void> {
     // 403 sem consumir o stream.
     const participant = await guardRoomParticipation(request, reply, room);
     if (!participant) return reply;
+    // Castigo (Fase 3): canal de comunidade recusa upload de quem esta castigado.
+    const uploaderId = (request as unknown as { userId?: string }).userId;
+    if (room.communityId && uploaderId) {
+      const timedOut = await timeoutOf(room.communityId, uploaderId);
+      if (timedOut) return reply.code(403).send(timedOutBody(timedOut));
+    }
     const release = tryResourceLock(`room:${roomId}`);
     if (!release) return reply.header('Retry-After', '1').code(429).send({ error: 'Upload or deletion in progress. Try again.' });
     try {

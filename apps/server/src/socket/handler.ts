@@ -1,3 +1,4 @@
+import { timeoutOf } from '../lib/communityModeration.js';
 import type { Server as HttpServer, IncomingMessage } from 'http';
 import { Server, Socket } from 'socket.io';
 import bcrypt from 'bcryptjs';
@@ -376,6 +377,8 @@ export function createSocketServer(httpServer: HttpServer): Server {
             callback?.({ error: 'Room not found' }); return;
           }
           if (room.channelKind !== 'VOICE') { callback?.({ error: 'Not a voice channel' }); return; }
+          // Castigo (Fase 3): nao entra na voz enquanto durar.
+          if (await timeoutOf(room.communityId, user.userId)) { callback?.({ error: 'Timed out' }); return; }
         }
         const isProtected = !room.communityId && (room.passwordHash !== null || room.isPrivate);
         if (isProtected) {
@@ -791,6 +794,11 @@ export function createSocketServer(httpServer: HttpServer): Server {
       }
       if (room.expiresAt && new Date(room.expiresAt) < new Date()) {
         callback?.({ error: 'Room has expired' });
+        return;
+      }
+      const sender = socket.data.user as SocketUser | undefined;
+      if (room.communityId && sender?.userId && (await timeoutOf(room.communityId, sender.userId))) {
+        callback?.({ error: 'Timed out' });
         return;
       }
 
@@ -1261,5 +1269,17 @@ export function emitChatMessage(io: Server, roomId: string, msg: ChatMessageSour
       'chat:message',
       toPublicMessage(msg, viewerOf(peer)),
     );
+  }
+}
+
+/** Tira o usuario do canal de voz da comunidade (castigo), sem tira-lo da comunidade. */
+export async function evictCommunityVoice(io: Server | undefined, communityId: string, userId: string): Promise<void> {
+  if (!io) return;
+  const sockets = await io.in(userRoom(userId)).fetchSockets();
+  for (const remote of sockets) {
+    const socket = io.sockets.sockets.get(remote.id);
+    const roomId = socket?.data.roomId as string | undefined;
+    if (!socket || !roomId || roomCommunities.get(roomId) !== communityId) continue;
+    handleLeaveRoom(io, socket, roomId); socket.data.roomId = undefined;
   }
 }

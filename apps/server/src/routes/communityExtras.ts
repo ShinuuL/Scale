@@ -10,6 +10,7 @@ import {
   AVATAR_MIMES, MAX_AVATAR_SIZE_BYTES, MAX_CHANNEL_CATEGORIES,
   categoryInputSchema, communityImageKindSchema, communityLayoutSchema, type CommunityImageKind,
 } from '@scale/shared';
+import { audit } from '../lib/communityModeration.js';
 import { prisma } from '../lib/prisma.js';
 import { readFileHead, UPLOADS_ROOT } from '../lib/uploads.js';
 import { byteLimit, StreamLimitError, tryAvatarSlot, tryResourceLock } from '../lib/resourceLimits.js';
@@ -167,6 +168,7 @@ export async function communityExtrasRoutes(app: FastifyInstance): Promise<void>
       return tx.communityCategory.create({ data: { communityId: p.data.id, name: body.data.name, position: count } });
     });
     if (!category) return reply.code(409).send({ error: 'Category limit reached' });
+    await audit(p.data.id, { action: 'category.create', actorId: meOf(request), targetId: category.id, targetName: category.name });
     changed(app, p.data.id);
     return reply.code(201).send({ category: { id: category.id, name: category.name, position: category.position } });
   });
@@ -176,6 +178,7 @@ export async function communityExtrasRoutes(app: FastifyInstance): Promise<void>
     const category = await prisma.communityCategory.findUnique({ where: { id: p.data.id } }); if (!category) return missing(reply);
     const member = await findMembership(category.communityId, meOf(request)); if (!member) return missing(reply); if (!permissionsOf(member).manageChannels) return forbidden(reply);
     await prisma.communityCategory.update({ where: { id: category.id }, data: { name: body.data.name } });
+    await audit(category.communityId, { action: 'category.update', actorId: meOf(request), targetId: category.id, targetName: body.data.name, detail: category.name });
     changed(app, category.communityId);
     return reply.send({ ok: true });
   });
@@ -189,6 +192,7 @@ export async function communityExtrasRoutes(app: FastifyInstance): Promise<void>
       prisma.room.updateMany({ where: { categoryId: category.id }, data: { categoryId: null } }),
       prisma.communityCategory.delete({ where: { id: category.id } }),
     ]);
+    await audit(category.communityId, { action: 'category.delete', actorId: meOf(request), targetId: category.id, targetName: category.name });
     changed(app, category.communityId);
     return reply.send({ ok: true });
   });
@@ -214,6 +218,7 @@ export async function communityExtrasRoutes(app: FastifyInstance): Promise<void>
     });
     // Lista desatualizada (canal criado/apagado no meio) ou id alheio: o cliente recarrega.
     if (!ok) return reply.code(409).send({ error: 'Layout out of date' });
+    await audit(communityId, { action: 'layout.update', actorId: meOf(request) });
     changed(app, communityId);
     return reply.send({ ok: true });
   });

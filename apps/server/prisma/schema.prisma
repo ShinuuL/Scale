@@ -149,6 +149,8 @@ model Community {
   invites     CommunityInvite[]
   rooms       Room[]
   customRoles CommunityCustomRole[]
+  bans        CommunityBan[]
+  auditLogs   CommunityAuditLog[]
 }
 
 /// Categoria de canais (opcional por canal). Tabela nova: db push cria sem perda.
@@ -191,6 +193,9 @@ model CommunityMember {
   joinedAt    DateTime      @default(now())
   /// Cargo personalizado (opcional). Coluna nova anulavel: db push aplica sem perda.
   customRoleId String?
+  /// Castigo (Fase 3): ate quando nao envia, nao reage e nao entra na voz. Colunas anulaveis.
+  timeoutUntil  DateTime?
+  timeoutReason String?
 
   customRole CommunityCustomRole? @relation(fields: [customRoleId], references: [id], onDelete: SetNull)
 
@@ -416,4 +421,37 @@ model ChannelReadState {
 
   @@unique([userId, channelId])
   @@index([channelId])
+}
+
+/// Banimento (Fase 3): impede reentrar por convite. Tabela nova: db push cria sem perda.
+model CommunityBan {
+  id          String   @id @default(uuid())
+  communityId String
+  userId      String
+  userName    String
+  bannedById  String
+  reason      String?
+  createdAt   DateTime @default(now())
+
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+
+  @@unique([communityId, userId])
+}
+
+/// Registro de auditoria (Fase 3): acoes administrativas. Nomes sao copia do momento.
+model CommunityAuditLog {
+  id          String   @id @default(uuid())
+  communityId String
+  actorId     String
+  actorName   String
+  action      String
+  targetId    String?
+  targetName  String?
+  reason      String?
+  detail      String?
+  createdAt   DateTime @default(now())
+
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+
+  @@index([communityId, createdAt])
 }

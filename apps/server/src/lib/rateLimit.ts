@@ -552,3 +552,16 @@ export function isChannelReactionRateLimited(key: string): boolean {
 export function resetChannelReactionRateLimit(key: string): void {
   channelReactionStore.delete(key);
 }
+
+// Moderacao de comunidade (castigo, ban, expulsao, desbanir): 30 / 10 min por usuario.
+const COMMUNITY_MODERATION_WINDOW_MS = 10 * 60_000;
+const COMMUNITY_MODERATION_MAX = 30;
+const communityModerationStore = createBucket('communityModeration');
+
+export function isCommunityModerationRateLimited(userId: string): RateLimitResult {
+  return take(communityModerationStore, userId, COMMUNITY_MODERATION_WINDOW_MS, COMMUNITY_MODERATION_MAX);
+}
+
+export function resetCommunityModerationRateLimit(userId: string): void {
+  reset(communityModerationStore, userId);
+}
