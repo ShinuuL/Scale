@@ -85,6 +85,7 @@ jobs:
     timeout-minutes: 60
     defaults:
       run:
+        shell: bash
         working-directory: apps/desktop-native
     steps:
       - uses: actions/checkout@v4
