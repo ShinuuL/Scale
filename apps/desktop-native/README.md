@@ -49,8 +49,9 @@ Saída em `target/dist/`.
 
 ## Versão e publicação (regra)
 
-**Toda mudança em `apps/desktop-native` sobe `version` no `Cargo.toml`**
-(semver: correção = patch, recurso = minor). O workflow
+**Toda mudança em `apps/desktop-native` sobe `version` no `Cargo.toml`.**
+Padrão: sobe o patch (`0.1.1` → `0.1.2` → `0.1.3`...). Minor/major (`0.2.0`,
+`1.0.0`) só quando alguém decidir explicitamente. O workflow
 [`desktop-release.yml`](../../.github/workflows/desktop-release.yml) faz valer:
 
 - PR: falha se a `version` não for maior que a última release `desktop-v*`.

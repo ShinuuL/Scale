@@ -1,7 +1,8 @@
 # Release do desktop nativo (Rust/egui) nas GitHub Releases.
 #
 # Regra de versao (obrigatoria): toda mudanca em apps/desktop-native sobe
-# `version` no Cargo.toml (semver). O PR falha se a versao nao for maior que a
+# `version` no Cargo.toml. Padrao: patch (0.1.1 -> 0.1.2); minor/major so por
+# decisao explicita. O PR falha se a versao nao for maior que a
 # ultima release `desktop-v*`.
 #
 # Publicacao automatica: no merge na main, se ainda nao existe a tag

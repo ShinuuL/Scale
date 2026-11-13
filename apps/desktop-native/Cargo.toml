@@ -1,6 +1,6 @@
 [package]
 name = "scale-desktop"
-version = "0.2.0"
+version = "0.1.1"
 edition = "2021"
 description = "Cliente desktop nativo do Scale: comunidades, canais de texto e mensagens diretas"
 publish = false

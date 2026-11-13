@@ -71,7 +71,8 @@ Sistema de videochamadas P2P (mesh) com escamas de dragão — sala de voz e tel
 ## Desktop nativo (Rust, `apps/desktop-native`)
 
 - **Regra de versao:** toda mudanca em `apps/desktop-native` sobe `version` no
-  `Cargo.toml` (semver). O PR falha sem isso; o merge na `main` publica a release
+  `Cargo.toml`. Padrao: sobe o patch (`0.1.1` -> `0.1.2`...); minor/major
+  (`0.2.0`) so por decisao explicita. O PR falha sem isso; o merge na `main` publica a release
   `desktop-v<version>` com instaladores e `SHA256SUMS` (`desktop-release.yml`).
 - O app se atualiza sozinho pelas releases, sempre conferindo o SHA-256.
   Detalhes em `apps/desktop-native/README.md`.
