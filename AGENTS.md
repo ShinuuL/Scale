@@ -371,7 +371,7 @@ docker compose up --build -d
   exclusivo do OWNER. Só o OWNER cria, edita, apaga e atribui. Rotas checam
   `permissionsOf()` (`lib/communityAccess.ts`). A cor pinta o nome no chat.
 - Sistema de ícones internos: UI sem emojis, `apps/web/src/components/ui/Icon.tsx`
-  com 38 ícones (SVG vetorial, `stroke="currentColor"`), sem dependência externa
+  com 47 ícones (SVG vetorial, `stroke="currentColor"`), sem dependência externa
 - Configurações (menu de perfil, ícone `settings`): nome de usuário
   (`PATCH /api/me`, reemite o JWT), foto de perfil (`PUT|GET|DELETE
   /api/me/avatar`, até 32 MB, PNG/JPEG/WebP por magic bytes, em

@@ -24,7 +24,7 @@ function MissingRoomId() {
   return (
     <main
       id="main-content"
-      className="flex min-h-screen flex-col items-center justify-center gap-4 p-6 text-center"
+      className="flex min-h-[100dvh] flex-col items-center justify-center gap-4 p-6 text-center"
     >
       <p className="text-ink-secondary">Link de sala incompleto: falta o identificador da sala.</p>
       <Link href="/" className="text-accent underline">

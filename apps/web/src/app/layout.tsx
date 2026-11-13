@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { PALETTE_BOOT_SRC } from '@/lib/theme';
 import { AriaRouter } from '@/components/AriaRouter';
@@ -21,9 +21,20 @@ export const metadata: Metadata = {
     ],
     apple: [{ url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }],
   },
+  appleWebApp: { capable: true, title: 'Scale', statusBarStyle: 'black-translucent' },
   openGraph: {
     images: [{ url: '/og-image.png', width: 1200, height: 630 }],
   },
+};
+
+// Sem maximum-scale: o zoom do usuario continua livre (acessibilidade).
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+  interactiveWidget: 'resizes-content',
+  themeColor: '#1c1d23',
+  colorScheme: 'dark light',
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
@@ -36,7 +47,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         {/* eslint-disable-next-line @next/next/no-sync-scripts */}
         <script src={PALETTE_BOOT_SRC} />
       </head>
-      <body className="min-h-screen bg-forest-950 text-slate-100 antialiased">
+      <body className="min-h-[100dvh] bg-forest-950 text-slate-100 antialiased">
         {/* Pular para o conteúdo link for accessibility */}
         <a href="#main-content" className="skip-link">
           Pular para o conteúdo

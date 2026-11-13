@@ -13,7 +13,7 @@ import { ConfirmDialog } from './ConfirmDialog';
 import type { Channel, Member } from './CommunityParts';
 
 const selectClass =
-  'w-full rounded-lg border border-line bg-surface-secondary p-2 text-sm text-ink-primary';
+  'w-full rounded-lg border border-line bg-surface-secondary p-2 text-base sm:text-sm text-ink-primary';
 function Frame({
   title,
   onClose,
