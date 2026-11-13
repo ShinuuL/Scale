@@ -314,7 +314,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
       return reply.code(404).send({ error: 'User not found' });
     }
 
-    return reply.send({ user: toMe(user) });
+    return reply.send({ user: await toMe(user) });
   });
 
   // POST /api/auth/refresh

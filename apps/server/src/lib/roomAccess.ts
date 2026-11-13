@@ -18,6 +18,7 @@ export interface RoomAccessTarget {
   status: string;
   expiresAt: Date | null;
   communityId?: string | null;
+  channelKind?: string | null;
 }
 
 /** Quem esta acessando: usuario da sessao e/ou convidado do ticket. */
@@ -47,6 +48,8 @@ export async function roomParticipant(request: FastifyRequest, room: RoomAccessT
   if (room.communityId && (!userId || !(await prisma.communityMember.findUnique({
     where: { communityId_userId: { communityId: room.communityId, userId } },
   })))) return null;
+  // Canal de texto da comunidade nao tem join-room: ser membro e a prova.
+  if (room.communityId && room.channelKind === 'TEXT' && userId) return { userId, guestId: null };
   const fromTicket = verifyRoomTicket(extractRoomTicket(request), room.id, userId);
   if (fromTicket) return { userId, guestId: userId ? null : fromTicket.guestId };
   if (userId && room.ownerId && userId === room.ownerId) return { userId, guestId: null };

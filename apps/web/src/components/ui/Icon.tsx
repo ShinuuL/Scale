@@ -25,6 +25,7 @@ export type IconName =
   | 'arrowRight'
   | 'ban'
   | 'book'
+  | 'chart'
   | 'chat'
   | 'check'
   | 'checkCircle'
@@ -33,6 +34,7 @@ export type IconName =
   | 'close'
   | 'document'
   | 'eye'
+  | 'flag'
   | 'hash'
   | 'plus'
   | 'github'
@@ -50,16 +52,20 @@ export type IconName =
   | 'mic'
   | 'micOff'
   | 'monitor'
+  | 'more'
   | 'music'
   | 'paperclip'
   | 'phone'
   | 'search'
   | 'settings'
   | 'share'
+  | 'shield'
   | 'speaker'
   | 'speakerOff'
   | 'trash'
   | 'users'
+  | 'userPlus'
+  | 'sidebar'
   | 'warning';
 
 export interface IconProps {
@@ -143,6 +149,7 @@ export const ICONS: Record<IconName, IconShape[]> = {
     { d: 'M9.9 13.3a4.5 4.5 0 0 0 6.8.5l2.7-2.7a4.5 4.5 0 0 0-6.4-6.4l-1.5 1.5' },
     { d: 'M14.1 10.7a4.5 4.5 0 0 0-6.8-.5l-2.7 2.7a4.5 4.5 0 0 0 6.4 6.4l1.5-1.5' },
   ],
+  chart: [{ d: 'M4 20h16' }, { d: 'M7 16.5v-5' }, { d: 'M12 16.5V7' }, { d: 'M17 16.5v-7.5' }],
   chat: [
     { d: 'M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v10a2.5 2.5 0 0 1-2.5 2.5H9.6L4 21.5V5.5Z' },
   ],
@@ -156,6 +163,15 @@ export const ICONS: Record<IconName, IconShape[]> = {
     { d: 'M3.6 20.5v-1.3a4.2 4.2 0 0 1 4.2-4.2h4.4a4.2 4.2 0 0 1 4.2 4.2v1.3' },
     { d: 'M20.4 20.5v-1.3a4.2 4.2 0 0 0-3.15-4.06' },
     { d: 'M15 4.62a3.6 3.6 0 0 1 0 6.36' },
+  ],
+  userPlus: [
+    { d: 'M10 4.2a3.6 3.6 0 1 0 0 7.2 3.6 3.6 0 0 0 0-7.2Z' },
+    { d: 'M3.6 20.5v-1.3a4.2 4.2 0 0 1 4.2-4.2h4.4a4.2 4.2 0 0 1 4.2 4.2v1.3' },
+    { d: 'M19 8v6M16 11h6' },
+  ],
+  sidebar: [
+    { d: 'M5.5 4h13A2.5 2.5 0 0 1 21 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5v-11A2.5 2.5 0 0 1 5.5 4Z' },
+    { d: 'M9 4v16' },
   ],
   book: [
     {
@@ -277,6 +293,15 @@ export const ICONS: Record<IconName, IconShape[]> = {
     { d: 'M12 3.5v11' },
     { d: 'M8.2 7.2 12 3.5l3.8 3.7' },
     { d: 'M8.5 10.5H6.8a1.3 1.3 0 0 0-1.3 1.3v7.4a1.3 1.3 0 0 0 1.3 1.3h10.4a1.3 1.3 0 0 0 1.3-1.3v-7.4a1.3 1.3 0 0 0-1.3-1.3h-1.7' },
+  ],
+  // Reticências verticais: menu de ações de um item (participante).
+  more: [{ d: 'M12 5.2h.01' }, { d: 'M12 12h.01' }, { d: 'M12 18.8h.01' }],
+  // Bandeira: denunciar.
+  flag: [{ d: 'M5.5 20.5V4' }, { d: 'M5.5 4.6h11.2l-2.3 4 2.3 4H5.5' }],
+  // Escudo: privacidade e dados pessoais.
+  shield: [
+    { d: 'M12 3.2 5 5.8v5.3c0 4.3 2.9 7.6 7 9.1 4.1-1.5 7-4.8 7-9.1V5.8L12 3.2Z' },
+    { d: 'M9.4 12.1l1.8 1.8 3.5-3.6' },
   ],
   // Lixeira: tampa com alça, corpo afunilado e dois frisos.
   trash: [

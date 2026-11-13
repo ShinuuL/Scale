@@ -84,9 +84,10 @@
   .badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 7px; border-radius: 4px; font-size: 11px; line-height: 16px; font-weight: 500; }
   .app-shell { height: 100dvh; min-height: 0; display: grid; grid-template-columns: 72px 232px minmax(0, 1fr); overflow: hidden; }
   .app-shell-no-context { grid-template-columns: 72px minmax(0, 1fr); }
-  .app-rail { background: #111217; border-right: 1px solid var(--border); padding: 18px 10px; display: flex; flex-direction: column; align-items: center; gap: 24px; }
+  .app-rail { background: #111217; border-right: 1px solid var(--border); padding: 18px 6px; display: flex; flex-direction: column; align-items: center; gap: 24px; }
   .app-rail-nav { display: flex; flex-direction: column; gap: 8px; width: 100%; }
   .app-nav-item { display: flex; min-height: 52px; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: var(--text-muted); border-radius: 8px; font-size: 10px; font-weight: 500; }
+  .app-nav-item > span { max-width: 100%; padding: 0 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: -.01em; }
   .app-nav-item[aria-current='page'] { color: var(--accent); background: var(--accent-subtle); }
   .app-context { min-height: 0; overflow-y: auto; background: var(--bg-secondary); border-right: 1px solid var(--border); padding: 24px 16px; }
   .app-workspace { display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; }
@@ -130,6 +131,16 @@
     .app-header { padding: 0 20px; }
     .pwa-features { left: 5px; }
   }
+  /* Barra lateral principal oculta por tela (botao no cabecalho). No celular ela e a barra inferior e nunca some. */
+  @media (min-width: 640px) {
+    .app-shell.app-shell-no-rail { grid-template-columns: 232px minmax(0, 1fr); }
+    .app-shell.app-shell-no-rail.app-shell-no-context { grid-template-columns: minmax(0, 1fr); }
+    .app-shell-no-rail .app-rail { display: none; }
+  }
+  @media (min-width: 640px) and (max-width: 1023px) {
+    .app-shell.app-shell-no-rail { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 639px) { .app-rail-toggle { display: none; } }
   @media (max-width: 639px) {
     .app-shell { display: flex; flex-direction: column; padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
     .app-rail { position: fixed; z-index: 30; bottom: 0; left: 0; right: 0; height: calc(64px + env(safe-area-inset-bottom)); padding: 4px 12px env(safe-area-inset-bottom); border-top: 1px solid var(--border); border-right: 0; }

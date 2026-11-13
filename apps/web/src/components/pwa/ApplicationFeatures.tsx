@@ -27,6 +27,9 @@ export function isIosSafari(nav: Navigator = navigator): boolean {
   const ios = /iPhone|iPad|iPod/.test(ua) || (nav.platform === 'MacIntel' && nav.maxTouchPoints > 1);
   return ios && /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS/.test(ua);
 }
+
+/** Instalador nativo (Rust, apps/desktop-native). Sem URL no build, so resta o PWA. */
+const DESKTOP_DOWNLOAD_URL = z.string().url().startsWith('https://').safeParse(process.env.NEXT_PUBLIC_DESKTOP_DOWNLOAD_URL).data;
 const actionClass = 'btn-secondary min-h-11 px-4 py-2 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-400';
 
 /** Optional conveniences: no permission request or installation prompt on load. */
@@ -126,6 +129,15 @@ export function ApplicationFeatures() {
       details.open = true;
       details.querySelector('summary')?.focus();
     };
+    // Clique fora fecha, como qualquer popover. O gatilho fica de fora: ele ja alterna.
+    const outside = (event: PointerEvent) => {
+      const details = detailsRef.current;
+      const target = event.target;
+      if (!details?.open || !(target instanceof Node) || details.contains(target)) return;
+      if (target instanceof Element && target.closest('[data-app-settings-trigger]')) return;
+      closeSettings();
+    };
+    document.addEventListener('pointerdown', outside);
     window.addEventListener('scale:app-settings', openSettings);
     window.addEventListener('online', syncNetwork);
     window.addEventListener('offline', syncNetwork);
@@ -143,6 +155,7 @@ export function ApplicationFeatures() {
     }
     return () => {
       disposed = true;
+      document.removeEventListener('pointerdown', outside);
       window.removeEventListener('scale:app-settings', openSettings);
       window.removeEventListener('online', syncNetwork);
       window.removeEventListener('offline', syncNetwork);
@@ -192,7 +205,8 @@ export function ApplicationFeatures() {
       <details ref={detailsRef} className="pwa-features" onKeyDown={(event) => { if (event.key === 'Escape' && detailsRef.current?.open) { event.preventDefault(); event.stopPropagation(); closeSettings(); } }}>
         <summary onClick={(event) => { if (detailsRef.current?.open) { event.preventDefault(); closeSettings(); } else triggerRef.current = null; }} className="w-fit cursor-pointer rounded-lg py-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-400"><Icon name="monitor" size={16} /><span>Aplicativo e notificações</span></summary>
         <div className="flex flex-wrap items-center gap-3 py-3">
-          {!standalone && installPrompt && <button type="button" className={actionClass} onClick={() => void install()} disabled={busy}>Instalar Scale</button>}
+          {DESKTOP_DOWNLOAD_URL && <a href={DESKTOP_DOWNLOAD_URL} className={actionClass} rel="noopener noreferrer" download>Baixar para Windows</a>}
+          {!standalone && installPrompt && <button type="button" className={actionClass} onClick={() => void install()} disabled={busy}>{DESKTOP_DOWNLOAD_URL ? 'Instalar no navegador' : 'Instalar Scale'}</button>}
           {notificationSupported && <button type="button" className={actionClass} onClick={() => void toggleNotifications()} disabled={busy} aria-pressed={notifications}>{notifications ? 'Desativar notificações' : 'Ativar notificações'}</button>}
           <p className="max-w-prose text-sm">Notificações opcionais, sem prévia de mensagens, enquanto o aplicativo estiver aberto.{standalone ? '' : ' Para instalar, use também o menu do navegador.'}</p>
         </div>

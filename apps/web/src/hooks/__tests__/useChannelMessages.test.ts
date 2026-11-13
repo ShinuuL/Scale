@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { channelMessagesReducer, type ChannelMessagesState } from '../useChannelMessages';
 
 const initial: ChannelMessagesState = { channelId: 'a', cursor: null, loading: false, error: '', messages: [
-  { id: '1', channelId: 'a', author: { id: 'u', name: 'Ana', username: null }, content: 'um', createdAt: '2026-01-01T00:00:00Z', editedAt: null, deletedAt: null },
-  { id: '2', channelId: 'a', author: { id: 'u', name: 'Ana', username: null }, content: 'dois', createdAt: '2026-01-01T00:00:00Z', editedAt: null, deletedAt: null },
+  { id: '1', channelId: 'a', author: { id: 'u', name: 'Ana', username: null }, content: 'um', createdAt: '2026-01-01T00:00:00Z', editedAt: null, deletedAt: null, files: [] },
+  { id: '2', channelId: 'a', author: { id: 'u', name: 'Ana', username: null }, content: 'dois', createdAt: '2026-01-01T00:00:00Z', editedAt: null, deletedAt: null, files: [] },
 ] };
 
 describe('reducer de mensagens do canal', () => {

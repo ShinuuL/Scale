@@ -68,6 +68,15 @@ Sistema de videochamadas P2P (mesh) com escamas de dragão — sala de voz e tel
 - Chamada persistente: a sessão da sala vive no `RoomHost` do layout raiz;
   fora de `/room` a tela fica oculta e a `MiniCallBar` mostra a chamada.
 
+## Desktop nativo (Rust, `apps/desktop-native`)
+
+- **Regra de versao:** toda mudanca em `apps/desktop-native` sobe `version` no
+  `Cargo.toml`. Padrao: sobe o patch (`0.1.1` -> `0.1.2`...); minor/major
+  (`0.2.0`) so por decisao explicita. O PR falha sem isso; o merge na `main` publica a release
+  `desktop-v<version>` com instaladores e `SHA256SUMS` (`desktop-release.yml`).
+- O app se atualiza sozinho pelas releases, sempre conferindo o SHA-256.
+  Detalhes em `apps/desktop-native/README.md`.
+
 ## Desktop (Electron)
 
 `apps/desktop` (pacote `scale-desktop`) **nao empacota o frontend**: abre a origin
@@ -205,6 +214,99 @@ docker compose up --build -d
   esta regra): nenhum convidado edita/apaga (o dono da sala ainda apaga).
 - O `guestId` nunca sai do servidor nos DTOs públicos.
 
+### Moderação, LGPD e gate de partilha de tela
+- Guia operacional: `docs/moderacao.md`. Base legal, LIA, ROPA e direitos do
+  titular: `docs/lgpd-moderacao.md`. Spec:
+  `docs/superpowers/specs/2026-11-11-moderacao-assistente-design.md`.
+- **Áudio e tela são P2P**: o servidor nunca recebe mídia. Áudio **não é
+  monitorado** (só denúncia e dono da sala); mudar isso exigiria SFU +
+  consentimento específico de todos. Chat de sala, edição e DM passam pelo
+  servidor e são moderados **antes** de persistir/retransmitir.
+- Provedores (`MODERATION_PROVIDER`): `off`, `heuristic` (default, lista PT-BR
+  local, nada sai do servidor) e `claude` (Claude API, `MODERATION_MODEL`
+  default `claude-opus-5-5`, `claude-haiku-5-5` é a opção barata; texto e
+  imagem **saem** do servidor → transferência internacional, art. 33 LGPD:
+  declarar em `/privacy` e formalizar DPA). Só a mensagem (até 2000 chars) ou
+  só o quadro vai ao provedor: sem nome, e-mail, ids, sala ou histórico.
+  Falha/timeout = **fail-open com log** (`reason: 'provider_error'`).
+  `ANTHROPIC_API_KEY` só no `.env` (nunca no compose, nunca em log); em
+  produção com `claude` sem chave o backend recusa subir.
+- Texto: `severity high` bloqueia (ack `{ code: 'MODERATED', category }`) e
+  grava `ModerationEvent`; `medium` entrega, grava e emite
+  `moderation:warning` só ao autor; `low`/`none` nada.
+- Tela: só com `MODERATION_SCREEN=true` + `claude` (o cliente lê
+  `GET /api/moderation/config`). O sharer envia `POST
+  /api/rooms/:roomId/moderation/frame` (multipart JPEG ≤ 200 KB, ≤ 480 px,
+  header `X-Room-Ticket`) a cada `MODERATION_FRAME_INTERVAL_SEC` (default
+  20). Balde `moderationFrame`: 6 / min por sujeito do ticket. A rota responde
+  `204` sempre (sem oráculo); o veredito vai por socket: `high` →
+  `moderation:action { action: 'stop-screen-share', by: 'assistant' }` ao
+  sharer e `moderation:notice { kind: 'frame' }` ao dono; `medium` →
+  `moderation:warning`. O quadro é classificado em memória e **descartado**:
+  nunca persiste, nunca é logado.
+- Denúncia: `moderation:report { roomId, targetPeerId, reason, details? ≤ 300 }`
+  (socket, dentro da sala) grava `ModerationEvent` (kind `report`) e notifica
+  o dono (`moderation:notice`). Balde `moderationReport`: 10 / 10 min por
+  socket. Dono: `moderation:stop-share { roomId, targetPeerId }` →
+  `moderation:action { by: 'owner' }` ao alvo.
+- `GET /api/moderation/config` (público): `{ provider, screen, minAge,
+  consentVersion, frameIntervalSec, privacyContactEmail }`.
+- Gate de partilha de tela (enforcement no servidor): **convidado não
+  compartilha**. Logado precisa de idade ≥ `SCREEN_SHARE_MIN_AGE` (default 18,
+  de `birthDate`) **e** consentimento com `screenShareConsentVersion ===
+  SCREEN_SHARE_CONSENT_VERSION` (`@scale/shared`, hoje `'2026-11'`; mudar o
+  termo = mudar a versão = pedir de novo). `signal:screen-share-state` com
+  `isScreenSharing: true` é recusado com `{ code: 'SCREEN_SHARE_NOT_ALLOWED',
+  reason: 'guest'|'age'|'consent' }`. O estado é lido no `join-room` para
+  `socket.data.screenShare`; após `PUT`/`DELETE` o servidor emite
+  `me:screen-share` aos sockets em `user:<userId>`.
+- REST (logado, balde `profile`): `PUT /api/me/age { birthDate }` (futura,
+  > 120 anos ou formato inválido = 400), `PUT /api/me/screen-share-consent
+  { version }`, `DELETE` em ambos (revogação), `GET /api/me/privacy/export`
+  (perfil, flags e eventos de moderação próprios). `/api/auth/me` e demais
+  `meSelect` devolvem `screenShare: { ageVerified, isAdult, consentVersion,
+  allowed, reason }`.
+- Nunca sai em DTO: `birthDate` (só `isAdult`), `guestId`, `excerpt` de
+  terceiros, quadro de tela, chave de API.
+- Retenção: `ModerationEvent` apagado após `MODERATION_RETENTION_DAYS`
+  (default 90) pelo sweep de salas; `excerpt` ≤ 120 chars (frame: sempre
+  `null`); `birthDate`/consentimento até revogação ou exclusão da conta
+  (cascade).
+- Bases legais: idade = art. 7, II e V; consentimento de partilha = art. 7, I;
+  moderação e denúncia = art. 7, IX (LIA em `docs/lgpd-moderacao.md`);
+  amostragem de tela = IX + I. Verificação de idade é **autodeclarada** (sem
+  documento, limitação explícita). Encarregado: `PRIVACY_CONTACT_EMAIL` (env,
+  exibido em `/privacy`; nunca hardcodar e-mail real).
+- Env (todas repassadas pelo compose com `${VAR:-default}`):
+  `MODERATION_PROVIDER`, `MODERATION_MODEL`, `ANTHROPIC_API_KEY`,
+  `MODERATION_SCREEN`, `MODERATION_FRAME_INTERVAL_SEC` (10..120),
+  `MODERATION_RETENTION_DAYS` (1..365), `SCREEN_SHARE_MIN_AGE` (13..21),
+  `PRIVACY_CONTACT_EMAIL`.
+- Painel de admin (`/admin/moderation`, só `isAdmin` em `/api/auth/me`):
+  `GET|PUT /api/admin/moderation`, `DELETE /api/admin/moderation/api-key`,
+  `POST /api/admin/moderation/test`, `GET /api/admin/moderation/audit`
+  (não-admin = 403; balde `adminSettings` 30 / 10 min por usuário).
+  Override no banco > `.env`, campo a campo; `null` volta ao `.env`. Toda
+  mudança vai para `ModerationAuditLog` e emite `moderation:config`.
+- Administradores (guia `docs/administracao.md`): papel **raiz** (`env`, e-mail
+  em `ADMIN_EMAILS`/`METRICS_ADMIN_EMAILS`, só sai pelo `.env`) ou
+  **concedido** (`db`, tabela `AdminGrant`). `GET /api/auth/me` devolve
+  `isAdmin` e `adminSource: 'env'|'db'|null`. Rotas (só admin, balde
+  `adminSettings`): `GET /api/admin/users?q=&filter=all|admins&cursor=&limit=`
+  (e-mail mascarado), `PUT|DELETE /api/admin/users/:userId/admin` (409
+  `env_admin`, 400 `cannot_revoke_self`), `GET /api/admin/users/audit`
+  (`AdminRoleAudit`). Após grant/revoke o servidor emite `me:admin`
+  `{ isAdmin, adminSource }` em `user:<targetId>`; o front atualiza o usuário
+  em memória (`useSocket`/`useUserEvents`) sem recarregar.
+- Telas: hub `/admin` (Moderação, Métricas, Administradores), menu de perfil
+  "Administração" abre `/admin`; Configurações tem seção "Administração" (só
+  admin). Guarda única: `components/admin/useAdminGuard.ts`.
+- Chave de API do painel: AES-256-GCM com chave derivada do `JWT_SECRET`
+  (HMAC, rótulo `scale:settings-key:v1`); nunca em DTO/log. Trocar o
+  `JWT_SECRET` exige recadastrar a chave.
+- **Não existe modo oculto**: toda configuração efetiva é exibida em
+  `/privacy` e no termo de partilha de tela.
+
 ### Validação
 - **Zod** em todos os inputs do frontend e backend
 - Validação server-side obrigatória
@@ -251,8 +353,25 @@ docker compose up --build -d
     100 MB (limite do plano gratuito): arquivos maiores só sobem pelo acesso
     direto ao proxy (localhost/LAN)
 - Upload bloqueado em sala temporária (apenas persistente aceita arquivos)
+- Imagens nos canais de texto da comunidade: mesma rota `POST /api/rooms/:id/files`
+  (até 5 por mensagem, quota da sala). No canal de texto ser **membro** é a prova
+  de participação (não há `join-room`); só `image/*` é aceito. A mensagem sai
+  como `channel:message` para a comunidade, com `files` no DTO.
+- Ícone de comunidade: `PUT|DELETE /api/communities/:id/icon` (só OWNER;
+  PNG/JPEG/WebP por magic bytes, até 8 MB, em `uploads/community-icons`) e
+  `GET` (só membro; fora = 404). DTOs levam `iconVersion` (usado como `?v=`).
+- Aviso de atualização: o build grava `out/version.json` e embute o mesmo id em
+  `NEXT_PUBLIC_BUILD_ID` (`next.config.js`). `UpdatePrompt` confere a cada 5 min
+  e ao voltar para a aba; versão diferente = aviso "Recarregar" (nunca recarrega
+  sozinho; em chamada avisa que ela cai).
+- Cargos personalizados de comunidade (tabela `CommunityCustomRole`, até 20):
+  nome, cor e permissões (`manageChannels`, `manageInvites`, `manageMessages`,
+  `kickMembers`). Um por membro (`CommunityMember.customRoleId`, anulável).
+  Só **somam** ao cargo base (OWNER/ADMIN já têm tudo); expulsar ADMIN segue
+  exclusivo do OWNER. Só o OWNER cria, edita, apaga e atribui. Rotas checam
+  `permissionsOf()` (`lib/communityAccess.ts`). A cor pinta o nome no chat.
 - Sistema de ícones internos: UI sem emojis, `apps/web/src/components/ui/Icon.tsx`
-  com 39 ícones (SVG vetorial, `stroke="currentColor"`), sem dependência externa
+  com 47 ícones (SVG vetorial, `stroke="currentColor"`), sem dependência externa
 - Configurações (menu de perfil, ícone `settings`): nome de usuário
   (`PATCH /api/me`, reemite o JWT), foto de perfil (`PUT|GET|DELETE
   /api/me/avatar`, até 32 MB, PNG/JPEG/WebP por magic bytes, em
@@ -277,6 +396,17 @@ docker compose up --build -d
   continua sem trafegar (o cliente só conhece o `peerId`). Convidado, peer fora
   da sala ou sem foto = mesmo 404. O cliente busca com o ticket no header e usa
   URL `blob:`; sem foto, a inicial do nome.
+- Assistente de moderação (chat, DM, tela e denúncia) com provedores `off` /
+  `heuristic` / `claude`, eventos `moderation:*`, `ModerationEvent` com
+  retenção configurável e `GET /api/moderation/config`. Regras em "Moderação,
+  LGPD e gate de partilha de tela".
+- Gate de partilha de tela no servidor: convidado não compartilha; logado
+  precisa de idade mínima autodeclarada (`PUT /api/me/age`) e termo versionado
+  (`PUT /api/me/screen-share-consent`), ambos revogáveis por `DELETE`;
+  `ScreenShareGateDialog` no cliente, confirmação curta a cada partilha.
+- LGPD: página `/privacy` (encarregado via `PRIVACY_CONTACT_EMAIL`),
+  `GET /api/me/privacy/export`, `docs/lgpd-moderacao.md` (inventário, LIA,
+  ROPA, checklist) e `docs/moderacao.md` (operação e custos).
 
 ## Requisitos de Infra
 
@@ -366,4 +496,4 @@ docker compose logs -f       # Logs em tempo real
 ---
 
 **Status:** v1.0  
-**Última atualização:** 2026-10-17
+**Última atualização:** 2026-11-11

@@ -7,7 +7,11 @@ import type { ChannelMessagesAction, ChannelMessagesState } from '@/hooks/useCha
 import { Banner } from '@/components/ui/Banner';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { Icon } from '@/components/ui/Icon';
 import { ConfirmDialog } from './ConfirmDialog';
+
+const MAX_IMAGES = 5;
+const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
 
 const EMPTY_MESSAGES: ChannelMessage[] = [];
 const timeFormatter = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
@@ -66,6 +70,7 @@ function MessageItem({
   message,
   meId,
   canManage,
+  color,
   editing,
   editDraft,
   busy,
@@ -78,6 +83,7 @@ function MessageItem({
   message: ChannelMessage;
   meId: string;
   canManage: boolean;
+  color?: string;
   editing: boolean;
   editDraft: string;
   busy: boolean;
@@ -90,7 +96,7 @@ function MessageItem({
   return (
     <article className="group py-3">
       <div className="flex flex-wrap items-baseline gap-2">
-        <strong className="text-sm text-ink-primary">{message.author.name}</strong>
+        <strong className="text-sm text-ink-primary" style={color ? { color } : undefined}>{message.author.name}</strong>
         <time className="text-xs text-ink-muted" dateTime={message.createdAt}>
           {timeFormatter.format(new Date(message.createdAt))}
         </time>
@@ -112,6 +118,19 @@ function MessageItem({
         >
           {message.deletedAt ? '[mensagem apagada]' : message.content}
         </p>
+      )}
+      {!message.deletedAt && message.files.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {message.files.map((file) =>
+            file.mime.startsWith('image/') ? (
+              <a key={file.id} href={api.fileUrl(file.id)} target="_blank" rel="noopener noreferrer" aria-label={`Abrir imagem ${file.filename}`}>
+                <img src={api.fileUrl(file.id)} alt={file.filename} loading="lazy" className="max-h-72 max-w-full rounded-lg border border-line object-contain sm:max-w-sm" />
+              </a>
+            ) : (
+              <a key={file.id} href={api.fileUrl(file.id)} className="text-sm text-brand-300 underline">{file.filename}</a>
+            ),
+          )}
+        </div>
       )}
       {!message.deletedAt && !editing && (
         <div className="flex gap-2">
@@ -152,6 +171,8 @@ function Composer({
   onSubmit,
   busy,
   inputRef,
+  images,
+  onImages,
 }: {
   name: string;
   draft: string;
@@ -159,7 +180,10 @@ function Composer({
   onSubmit: (event: FormEvent) => void;
   busy: boolean;
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
+  images: File[];
+  onImages: (files: File[]) => void;
 }) {
+  const fileRef = useRef<HTMLInputElement>(null);
   return (
     <form onSubmit={onSubmit} className="border-t border-line p-4">
       <label htmlFor="channel-message" className="sr-only">
@@ -181,11 +205,39 @@ function Composer({
         className="w-full resize-y rounded-lg border border-line bg-surface-secondary p-3 text-base sm:text-sm text-ink-primary"
         placeholder={`Mensagem em ${name}`}
       />
+      {images.length > 0 && (
+        <ul className="mt-2 flex flex-wrap gap-2" aria-label="Imagens anexadas">
+          {images.map((file, index) => (
+            <li key={`${file.name}-${index}`} className="flex items-center gap-1 rounded-md bg-surface-secondary px-2 py-1 text-xs text-ink-secondary">
+              <span className="max-w-40 truncate">{file.name}</span>
+              <button type="button" className="room-icon-button !h-6 !w-6" aria-label={`Remover ${file.name}`} onClick={() => onImages(images.filter((_, i) => i !== index))}>
+                <Icon name="close" size={14} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
       <div className="mt-2 flex items-center justify-between">
-        <span className="text-xs text-ink-muted">
-          {draft.length}/{CHAT_MESSAGE_MAX}
-        </span>
-        <Button type="submit" size="sm" disabled={busy || !draft.trim()}>
+        <div className="flex items-center gap-2">
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/png,image/jpeg,image/gif,image/webp"
+            multiple
+            hidden
+            onChange={(event) => {
+              onImages([...images, ...Array.from(event.target.files ?? [])]);
+              event.target.value = '';
+            }}
+          />
+          <button type="button" className="room-icon-button" aria-label="Anexar imagens" title="Anexar imagens" disabled={busy || images.length >= MAX_IMAGES} onClick={() => fileRef.current?.click()}>
+            <Icon name="image" size={18} />
+          </button>
+          <span className="text-xs text-ink-muted">
+            {draft.length}/{CHAT_MESSAGE_MAX}
+          </span>
+        </div>
+        <Button type="submit" size="sm" disabled={busy || (!draft.trim() && images.length === 0)}>
           Enviar
         </Button>
       </div>
@@ -198,6 +250,7 @@ export function ChannelChat({
   name,
   meId,
   canManage,
+  authorColors,
   state,
   dispatch,
 }: {
@@ -205,10 +258,19 @@ export function ChannelChat({
   name: string;
   meId: string;
   canManage: boolean;
+  authorColors?: ReadonlyMap<string, string>;
   state: ChannelMessagesState;
   dispatch: Dispatch<ChannelMessagesAction>;
 }) {
   const [draft, setDraft] = useState('');
+  const [images, setImages] = useState<File[]>([]);
+  const pickImages = (files: File[]) => {
+    const valid = files.filter((file) => file.type.startsWith('image/') && file.size <= MAX_IMAGE_BYTES);
+    if (valid.length < files.length) setError('Só imagens de até 25 MB.');
+    else if (valid.length > MAX_IMAGES) setError(`Máximo de ${MAX_IMAGES} imagens por mensagem.`);
+    else setError('');
+    setImages(valid.slice(0, MAX_IMAGES));
+  };
   const [editing, setEditing] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState('');
   const [error, setError] = useState('');
@@ -234,16 +296,20 @@ export function ChannelChat({
   };
   async function send(event: FormEvent) {
     event.preventDefault();
-    if (!draft.trim() || busy) return;
+    if ((!draft.trim() && images.length === 0) || busy) return;
     setBusy(true);
     setError('');
     try {
-      const { message } = await api.sendChannelMessage(channelId, draft);
+      const { message } = images.length > 0
+        ? await api.uploadChannelImages(channelId, images, draft.trim())
+        : await api.sendChannelMessage(channelId, draft);
       stickToBottom.current = true;
       dispatch({ type: 'message', message });
       setDraft('');
-    } catch {
-      setError('Não foi possível enviar a mensagem.');
+      setImages([]);
+    } catch (err) {
+      const status = (err as { status?: number }).status;
+      setError(status === 413 ? 'Imagem grande demais ou cota do canal cheia.' : status === 400 ? 'Formato de imagem não aceito.' : status === 429 ? 'Muitos envios. Aguarde um pouco.' : 'Não foi possível enviar a mensagem.');
     } finally {
       setBusy(false);
       inputRef.current?.focus();
@@ -331,6 +397,7 @@ export function ChannelChat({
               message={message}
               meId={meId}
               canManage={canManage}
+              color={message.author.id ? authorColors?.get(message.author.id) : undefined}
               editing={editing === message.id}
               editDraft={editDraft}
               busy={busy}
@@ -358,6 +425,8 @@ export function ChannelChat({
         onSubmit={send}
         busy={busy}
         inputRef={inputRef}
+        images={images}
+        onImages={pickImages}
       />
       {deleting && (
         <ConfirmDialog

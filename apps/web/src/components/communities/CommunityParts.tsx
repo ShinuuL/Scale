@@ -1,6 +1,8 @@
 'use client';
 
+import { useState } from 'react';
 import { Button as AriaButton, Menu, MenuItem, MenuTrigger, Popover } from 'react-aria-components';
+import { api } from '@/lib/api';
 import { Icon } from '@/components/ui/Icon';
 import { Tooltip } from '@/components/ui/Tooltip';
 import type { ChannelKind, CommunityRole, CommunityVoiceState } from '@scale/shared';
@@ -9,6 +11,7 @@ export interface CommunitySummary {
   id: string;
   name: string;
   role: CommunityRole;
+  iconVersion?: string | null;
 }
 export interface Channel {
   id: string;
@@ -21,6 +24,7 @@ export interface Member {
   name: string;
   username: string | null;
   role: CommunityRole;
+  customRoleId?: string | null;
 }
 
 const item =
@@ -34,20 +38,60 @@ export function CommunityRail({
   onSelect,
   onCreate,
   onJoin,
+  onReorder,
 }: {
   communities: CommunitySummary[];
   selected?: string;
   onSelect: (id: string) => void;
   onCreate: () => void;
   onJoin: () => void;
+  /** Nova ordem (ids). Arrastar ou Alt+Seta para cima/baixo. */
+  onReorder?: (ids: string[]) => void;
 }) {
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
+  const ids = communities.map((community) => community.id);
+  const move = (id: string, target: number) => {
+    const from = ids.indexOf(id);
+    if (from < 0 || target < 0 || target >= ids.length || target === from) return;
+    const next = [...ids];
+    next.splice(from, 1);
+    next.splice(target, 0, id);
+    onReorder?.(next);
+  };
+  const endDrag = () => {
+    setDragId(null);
+    setOverId(null);
+  };
   return (
     <nav
       aria-label="Comunidades"
       className="flex h-full shrink-0 flex-col items-center gap-2 overflow-y-auto border-r border-line bg-surface-secondary p-2"
     >
-      {communities.map((community) => (
-        <div key={community.id} className="relative">
+      {communities.map((community, index) => (
+        <div
+          key={community.id}
+          data-testid="community-rail-item"
+          className={`relative rounded-xl ${overId === community.id && dragId !== community.id ? 'outline outline-2 outline-accent' : ''} ${dragId === community.id ? 'opacity-50' : ''}`}
+          draggable={Boolean(onReorder)}
+          onDragStart={(event) => {
+            setDragId(community.id);
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('text/plain', community.id);
+          }}
+          onDragOver={(event) => {
+            if (!dragId) return;
+            event.preventDefault();
+            setOverId(community.id);
+          }}
+          onDragLeave={() => setOverId((current) => (current === community.id ? null : current))}
+          onDrop={(event) => {
+            event.preventDefault();
+            if (dragId) move(dragId, index);
+            endDrag();
+          }}
+          onDragEnd={endDrag}
+        >
           {community.id === selected && (
             <span
               aria-hidden="true"
@@ -58,11 +102,26 @@ export function CommunityRail({
             <button
               type="button"
               aria-label={community.name}
+              aria-keyshortcuts={onReorder ? 'Alt+ArrowUp Alt+ArrowDown' : undefined}
               aria-current={community.id === selected ? 'true' : undefined}
               onClick={() => onSelect(community.id)}
+              onKeyDown={(event) => {
+                if (!onReorder || !event.altKey) return;
+                if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+                event.preventDefault();
+                const target = event.currentTarget;
+                move(community.id, index + (event.key === 'ArrowUp' ? -1 : 1));
+                requestAnimationFrame(() => target.focus());
+              }}
               className={`${railButton} ${community.id === selected ? 'btn-primary' : 'bg-surface-hover text-ink-muted hover:text-ink-primary'}`}
             >
-              {community.name.slice(0, 2).toLocaleUpperCase('pt-BR')}
+              {community.iconVersion ? (
+                // Icone privado (exige sessao): <img> simples, sem otimizacao do Next.
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={api.communityIconUrl(community.id, community.iconVersion)} alt="" className="h-full w-full rounded-xl object-cover" />
+              ) : (
+                community.name.slice(0, 2).toLocaleUpperCase('pt-BR')
+              )}
             </button>
           </Tooltip>
         </div>
@@ -280,8 +339,21 @@ function VoiceChannelItem({
   );
 }
 
-export function MemberList({ members }: { members: Member[] }) {
+/** Situacao de amizade de um membro, vista por quem esta logado. */
+export type FriendStatus = 'self' | 'friend' | 'outgoing' | 'incoming' | 'none';
+
+export function MemberList({
+  members,
+  friendStatus,
+  onAddFriend,
+}: {
+  members: Member[];
+  friendStatus?: (member: Member) => FriendStatus;
+  /** Envia (ou aceita, se ja houver pedido recebido) a amizade pelo @nome. */
+  onAddFriend?: (member: Member) => Promise<void>;
+}) {
   const roles: CommunityRole[] = ['OWNER', 'ADMIN', 'MEMBER'];
+  const [busy, setBusy] = useState<string | null>(null);
   return (
     <aside
       aria-label="Membros"
@@ -295,17 +367,48 @@ export function MemberList({ members }: { members: Member[] }) {
               {{ OWNER: 'Proprietário', ADMIN: 'Administradores', MEMBER: 'Membros' }[role]} —{' '}
               {group.length}
             </h3>
-            {group.map((member) => (
-              <div key={member.userId} className="flex items-center gap-2 py-2">
-                <span
-                  aria-hidden="true"
-                  className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-hover text-xs font-semibold text-ink-primary"
-                >
-                  {member.name.slice(0, 1).toLocaleUpperCase('pt-BR')}
-                </span>
-                <span className="min-w-0 truncate text-sm text-ink-primary">{member.name}</span>
-              </div>
-            ))}
+            {group.map((member) => {
+              const status = friendStatus?.(member) ?? 'self';
+              const incoming = status === 'incoming';
+              return (
+                <div key={member.userId} className="flex items-center gap-2 py-2">
+                  <span
+                    aria-hidden="true"
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-hover text-xs font-semibold text-ink-primary"
+                  >
+                    {member.name.slice(0, 1).toLocaleUpperCase('pt-BR')}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-sm text-ink-primary">
+                    {member.name}
+                  </span>
+                  {status === 'friend' && (
+                    <span className="shrink-0 text-[11px] text-ink-muted">Amigo</span>
+                  )}
+                  {status === 'outgoing' && (
+                    <span className="shrink-0 text-[11px] text-ink-muted">Pedido enviado</span>
+                  )}
+                  {(status === 'none' || incoming) && onAddFriend && member.username && (
+                    <Tooltip label={incoming ? 'Aceitar amizade' : 'Adicionar amigo'}>
+                      <AriaButton
+                        aria-label={
+                          incoming
+                            ? `Aceitar amizade de ${member.name}`
+                            : `Adicionar ${member.name} como amigo`
+                        }
+                        isDisabled={busy === member.userId}
+                        onPress={() => {
+                          setBusy(member.userId);
+                          void onAddFriend(member).finally(() => setBusy(null));
+                        }}
+                        className="shrink-0 rounded-lg p-1.5 text-ink-muted hover:bg-surface-hover hover:text-ink-primary data-[disabled]:opacity-50"
+                      >
+                        <Icon name={incoming ? 'check' : 'userPlus'} />
+                      </AriaButton>
+                    </Tooltip>
+                  )}
+                </div>
+              );
+            })}
           </div>
         ) : null;
       })}

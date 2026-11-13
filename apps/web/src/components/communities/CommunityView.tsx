@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Dialog, Heading, Modal, ModalOverlay } from 'react-aria-components';
 import type { CommunityVoiceState } from '@scale/shared';
 import { useRouter } from 'next/navigation';
+import type { FriendsList } from '@scale/shared';
 import { api, type CommunityDetail, type CommunityListItem } from '@/lib/api';
 import { callScreenPath, startBackgroundCall, useActiveCall } from '@/lib/callControl';
 import { useCommunityEvents } from '@/hooks/useCommunityEvents';
@@ -13,7 +14,7 @@ import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Tooltip } from '@/components/ui/Tooltip';
-import { ChannelList, CommunityRail, MemberList } from './CommunityParts';
+import { ChannelList, CommunityRail, MemberList, type FriendStatus, type Member } from './CommunityParts';
 import { ChannelChat } from './ChannelChat';
 import { ConfirmDialog } from './ConfirmDialog';
 import {
@@ -22,6 +23,26 @@ import {
   InviteDialog,
   JoinCommunityDialog,
 } from './CommunityDialogs';
+
+const ORDER_KEY = 'scale:community-order';
+
+/** Ordem escolhida pelo usuario (so neste navegador); novas comunidades vao para o fim. */
+function readOrder(): string[] {
+  try {
+    const raw: unknown = JSON.parse(window.localStorage.getItem(ORDER_KEY) ?? '[]');
+    return Array.isArray(raw) ? raw.filter((id): id is string => typeof id === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function sortByOrder<T extends { id: string }>(items: T[], order: string[]): T[] {
+  const rank = new Map(order.map((id, index) => [id, index]));
+  return items
+    .map((item, index) => ({ item, index }))
+    .sort((a, b) => (rank.get(a.item.id) ?? order.length + a.index) - (rank.get(b.item.id) ?? order.length + b.index))
+    .map(({ item }) => item);
+}
 
 type DialogName =
   'create' | 'join' | 'invite' | 'settings' | 'leave' | 'channels' | 'members' | null;
@@ -44,6 +65,54 @@ export function CommunityView({
   const [dialog, setDialog] = useState<DialogName>(null);
   const [voice, setVoice] = useState<CommunityVoiceState[]>([]);
   const [refreshVersion, setRefreshVersion] = useState(0);
+  const [order, setOrder] = useState<string[]>([]);
+  const [friends, setFriends] = useState<FriendsList | null>(null);
+  const [notice, setNotice] = useState('');
+  useEffect(() => setOrder(readOrder()), []);
+  const loadFriends = useCallback(
+    () =>
+      api
+        .getFriends()
+        .then(setFriends)
+        .catch(() => setFriends(null)),
+    [],
+  );
+  useEffect(() => {
+    void loadFriends();
+  }, [loadFriends]);
+  const reorder = (ids: string[]) => {
+    setOrder(ids);
+    try {
+      window.localStorage.setItem(ORDER_KEY, JSON.stringify(ids));
+    } catch {
+      // Sem storage: a ordem vale ate recarregar.
+    }
+  };
+  const friendStatus = (member: Member): FriendStatus => {
+    if (member.userId === meId) return 'self';
+    if (!friends) return 'self';
+    if (friends.friends.some((user) => user.id === member.userId)) return 'friend';
+    if (friends.outgoing.some((request) => request.user.id === member.userId)) return 'outgoing';
+    if (friends.incoming.some((request) => request.user.id === member.userId)) return 'incoming';
+    return 'none';
+  };
+  const addFriend = async (member: Member) => {
+    if (!member.username) return;
+    try {
+      const result = await api.sendFriendRequest(member.username);
+      setNotice(
+        result.status === 'ACCEPTED'
+          ? `Você e ${member.name} agora são amigos.`
+          : `Pedido de amizade enviado para ${member.name}.`,
+      );
+    } catch {
+      setNotice(`Não foi possível adicionar ${member.name}. Tente novamente.`);
+    }
+    await loadFriends();
+  };
+  const memberList = detail && (
+    <MemberList members={detail.members} friendStatus={friendStatus} onAddFriend={addFriend} />
+  );
   const activeCall = useActiveCall();
   const currentId = useRef(communityId);
   currentId.current = communityId;
@@ -127,7 +196,13 @@ export function CommunityView({
       ]),
     onError: () => setError('Não foi possível acompanhar a comunidade em tempo real.'),
   });
-  const canManage = detail?.myRole === 'OWNER' || detail?.myRole === 'ADMIN';
+  const perms = detail?.myPermissions;
+  // Configuracoes abrem para quem tem QUALQUER poder de gestao (cargo base ou personalizado).
+  const canManage = detail?.myRole === 'OWNER' || Boolean(perms && Object.values(perms).some(Boolean));
+  const authorColors = new Map((detail?.members ?? []).flatMap((member) => {
+    const color = detail?.roles.find((role) => role.id === member.customRoleId)?.color;
+    return color ? [[member.userId, color] as const] : [];
+  }));
   const channels = detail && (
     <ChannelList
       name={detail.community.name}
@@ -159,8 +234,9 @@ export function CommunityView({
   return (
     <div className="flex h-full min-h-0 min-w-0">
       <CommunityRail
-        communities={communities}
+        communities={sortByOrder(communities, order)}
         selected={communityId}
+        onReorder={reorder}
         onSelect={(id) => onNavigate(id)}
         onCreate={() => setDialog('create')}
         onJoin={() => setDialog('join')}
@@ -187,13 +263,27 @@ export function CommunityView({
             {error}
           </Banner>
         )}
+        {notice && (
+          <Banner
+            variant="info"
+            className="m-4"
+            action={
+              <Button variant="ghost" size="sm" onClick={() => setNotice('')}>
+                Fechar
+              </Button>
+            }
+          >
+            {notice}
+          </Banner>
+        )}
         {selected && detail ? (
           <ChannelChat
             key={selected.id}
             channelId={selected.id}
             name={selected.name}
             meId={meId}
-            canManage={!!canManage}
+            canManage={Boolean(perms?.manageMessages)}
+            authorColors={authorColors}
             state={messages}
             dispatch={dispatch}
           />
@@ -228,9 +318,7 @@ export function CommunityView({
         )}
       </div>
       {detail && (
-        <div className="hidden h-full w-60 shrink-0 xl:block">
-          <MemberList members={detail.members} />
-        </div>
+        <div className="hidden h-full w-60 shrink-0 xl:block">{memberList}</div>
       )}
       {dialog === 'create' && (
         <CreateCommunityDialog
@@ -251,7 +339,7 @@ export function CommunityView({
           detail={detail}
           meId={meId}
           onClose={() => setDialog(null)}
-          onChanged={refresh}
+          onChanged={() => { refresh(); void refreshList(); }}
           onGone={gone}
         />
       )}
@@ -294,7 +382,7 @@ export function CommunityView({
                 </Tooltip>
               </div>
               <div className="min-h-0 flex-1">
-                {dialog === 'channels' ? channels : <MemberList members={detail.members} />}
+                {dialog === 'channels' ? channels : memberList}
               </div>
             </Dialog>
           </Modal>

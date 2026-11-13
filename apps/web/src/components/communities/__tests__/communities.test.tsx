@@ -19,6 +19,7 @@ function message(
     content: `Texto ${id}`,
     createdAt: new Date(now - age).toISOString(),
     editedAt: null,
+    files: [],
     deletedAt,
   };
 }
@@ -106,7 +107,8 @@ describe('Comunidades: permissões e chat', () => {
     expect(remove).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Apagar mensagem' }));
     await waitFor(() => expect(remove).toHaveBeenCalledWith('canal', 'propria'));
-    expect(screen.queryByText('Texto propria')).toBeNull();
+    // A previa do dialogo de confirmacao pode seguir no DOM durante a animacao de saida.
+    await waitFor(() => expect(screen.queryAllByText('Texto propria')).toHaveLength(0));
   });
 
   it('envia com Enter e preserva Shift+Enter, com log rotulado', async () => {

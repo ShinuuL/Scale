@@ -3,25 +3,47 @@ import type { CreateRoomInput, RoomResponse, RoomListItem, AuthResponse, LoginIn
 import {
   acceptCallResponseSchema,
   activeCallsSchema,
+  adminModerationStateSchema,
+  adminRoleAuditEntrySchema,
+  adminUserRowSchema,
+  adminUsersPageSchema,
+  type AdminRoleAuditEntry,
+  type AdminSource,
+  type AdminUserRow,
+  type AdminUsersPage,
+  moderationAuditEntrySchema,
+  moderationVerdictSchema,
   directMessageSchema,
   dmSendSchema,
   friendsListSchema,
+  moderationConfigSchema,
+  screenShareGateSchema,
   startCallResponseSchema,
+  SCREEN_SHARE_CONSENT_VERSION,
   type ActiveCalls,
+  type AdminModerationState,
+  type AdminModerationUpdate,
   type DirectMessage,
+  type ModerationAuditEntry,
+  type ModerationVerdict,
   type FriendsList,
+  type ModerationConfig,
+  type ScreenShareGate,
 } from '@scale/shared';
 import { createRoomSchema, authResponseSchema, roomResponseSchema, roomListItemSchema, metricsSchema } from './validation';
 
-import { communityCreateSchema, channelCreateSchema, channelUpdateSchema, communityMemberRoleSchema, communityInviteCreateSchema, communityInviteCodeSchema, channelMessageSendSchema, communityRoleSchema, channelKindSchema } from '@scale/shared';
+import { communityCreateSchema, channelCreateSchema, channelUpdateSchema, communityMemberRoleSchema, communityInviteCreateSchema, communityInviteCodeSchema, channelMessageSendSchema, communityRoleSchema, channelKindSchema, communityPermissionsSchema, customRoleInputSchema, memberCustomRoleSchema, type CustomRoleInput } from '@scale/shared';
 
 const okSchema = z.object({ ok: z.literal(true) });
-const communitySchema = z.object({ id: z.string(), name: z.string(), ownerId: z.string() });
+const communitySchema = z.object({ id: z.string(), name: z.string(), ownerId: z.string(), iconVersion: z.string().nullable().default(null) });
 const channelSchema = z.object({ id: z.string(), name: z.string(), kind: channelKindSchema, position: z.number() });
-const memberSchema = z.object({ userId: z.string(), name: z.string(), username: z.string().nullable(), role: communityRoleSchema });
-export const channelMessageSchema = z.object({ id: z.string(), channelId: z.string(), author: z.object({ id: z.string().nullable(), name: z.string(), username: z.string().nullable() }), content: z.string(), createdAt: z.string(), editedAt: z.string().nullable(), deletedAt: z.string().nullable() });
-const communityDetailSchema = z.object({ community: communitySchema, myRole: communityRoleSchema, channels: z.array(channelSchema), members: z.array(memberSchema) });
-const communityListSchema = z.object({ communities: z.array(z.object({ id: z.string(), name: z.string(), role: communityRoleSchema })) });
+const memberSchema = z.object({ userId: z.string(), name: z.string(), username: z.string().nullable(), role: communityRoleSchema, customRoleId: z.string().nullable().default(null) });
+const customRoleSchema = z.object({ id: z.string(), name: z.string(), color: z.string(), permissions: communityPermissionsSchema });
+const noPermissions = { manageChannels: false, manageInvites: false, manageMessages: false, kickMembers: false };
+export const channelMessageSchema = z.object({ id: z.string(), channelId: z.string(), author: z.object({ id: z.string().nullable(), name: z.string(), username: z.string().nullable() }), content: z.string(), createdAt: z.string(), editedAt: z.string().nullable(), deletedAt: z.string().nullable(), files: z.array(z.object({ id: z.string(), filename: z.string(), mime: z.string(), size: z.number() })).default([]) });
+const communityDetailSchema = z.object({ community: communitySchema, myRole: communityRoleSchema, myPermissions: communityPermissionsSchema.default(noPermissions), roles: z.array(customRoleSchema).default([]), channels: z.array(channelSchema), members: z.array(memberSchema) });
+export type CommunityCustomRole = z.infer<typeof customRoleSchema>;
+const communityListSchema = z.object({ communities: z.array(z.object({ id: z.string(), name: z.string(), role: communityRoleSchema, iconVersion: z.string().nullable().default(null) })) });
 const inviteSchema = z.object({ id: z.string(), createdById: z.string(), expiresAt: z.string(), maxUses: z.number().nullable(), uses: z.number(), revokedAt: z.string().nullable(), createdAt: z.string() });
 export type ChannelMessage = z.infer<typeof channelMessageSchema>;
 export type CommunityDetail = z.infer<typeof communityDetailSchema>;
@@ -33,9 +55,13 @@ export type CommunityInvite = z.infer<typeof inviteSchema>;
 // next.config.js reescreve `/api` para o backend no host. Nao ha SSR.
 const BASE_URL = '';
 
-interface ApiError {
+export interface ApiError {
   error: string;
   details?: Record<string, string[]>;
+  /** Campo invalido (400 do painel de administracao: `{ error, field }`). */
+  field?: string;
+  /** Detalhe legivel (502 `provider_error` do teste de moderacao; nunca traz a chave). */
+  detail?: string;
   status: number;
 }
 
@@ -102,6 +128,61 @@ export interface MeUser {
   avatarUpdatedAt?: string | null;
   /** @nome unico; null = ainda nao escolheu (necessario para amizades). */
   username?: string | null;
+  /**
+   * Gate de partilha de tela (idade verificada + consentimento). Nunca traz a
+   * data de nascimento. Ausente = servidor antigo (trata como nao liberado).
+   */
+  screenShare?: ScreenShareGate;
+  /** Admin do sistema (`ADMIN_EMAILS`): ve o painel /admin/moderation. Ausente = nao. */
+  isAdmin?: boolean;
+  /** Origem do papel: 'env' = raiz (.env), 'db' = concedido, null = usuario comum. */
+  adminSource?: AdminSource | null;
+}
+
+/** Evento `me:admin` (socket `user:<id>`): papel de admin mudou para esta conta. */
+export const meAdminEventSchema = z.object({
+  isAdmin: z.boolean(),
+  adminSource: z.enum(['env', 'db']).nullable(),
+});
+export type MeAdminEvent = z.infer<typeof meAdminEventSchema>;
+
+/** Aplica `me:admin` no usuario em memoria. */
+export function applyMeAdmin(user: MeUser, event: MeAdminEvent): MeUser {
+  return { ...user, isAdmin: event.isAdmin, adminSource: event.adminSource };
+}
+
+export interface AdminUsersParams {
+  q?: string;
+  filter?: 'all' | 'admins';
+  cursor?: string | null;
+  limit?: number;
+}
+
+/** Mensagem PT-BR para erros da gestao de administradores. */
+export function adminRoleErrorMessage(err: unknown, fallback: string): string {
+  const e = (typeof err === 'object' && err !== null ? err : {}) as Partial<ApiError>;
+  if (e.status === 409 && e.error === 'env_admin') return 'Admin raiz: só pode ser removido no .env.';
+  if (e.status === 400 && e.error === 'cannot_revoke_self') return 'Você não pode remover o seu próprio acesso.';
+  if (e.status === 404) return 'Usuário não encontrado.';
+  if (e.status === 403) return 'Somente administradores podem fazer isso.';
+  if (e.status === 429) return 'Muitas alterações seguidas. Tente de novo em alguns minutos.';
+  return fallback;
+}
+
+/** Gate quando o DTO nao trouxe o campo (ou convidado). */
+export const GUEST_SCREEN_SHARE_GATE: ScreenShareGate = {
+  ageVerified: false,
+  isAdult: false,
+  consentVersion: null,
+  allowed: false,
+  reason: 'guest',
+};
+
+/** Gate efetivo do `me`: convidado ou DTO sem o campo = nao liberado. */
+export function screenShareGateOf(user: MeUser | null | undefined): ScreenShareGate {
+  if (!user) return GUEST_SCREEN_SHARE_GATE;
+  const parsed = screenShareGateSchema.safeParse(user.screenShare);
+  return parsed.success ? parsed.data : { ...GUEST_SCREEN_SHARE_GATE, reason: 'age' };
 }
 
 /** URL da propria foto, com versao para furar cache ao trocar. */
@@ -145,12 +226,19 @@ class ApiClient {
       retry.onRetry,
     );
 
-    const body = await response.json();
+    // 204/205 (PUT/DELETE de privacidade) nao tem corpo. Nos demais, corpo
+    // vazio ou invalido vira `{}`: o status decide se e erro.
+    const body: { error?: string; details?: Record<string, string[]> } & Record<string, unknown> =
+      response.status === 204 || response.status === 205
+        ? {}
+        : ((await response.json().catch(() => ({}))) as Record<string, unknown>);
 
     if (!response.ok) {
       const error: ApiError = {
         error: body.error || `HTTP ${response.status}`,
         details: body.details,
+        field: typeof body.field === 'string' ? body.field : undefined,
+        detail: typeof body.detail === 'string' ? body.detail : undefined,
         status: response.status,
       };
       throw error;
@@ -308,6 +396,66 @@ class ApiClient {
     return this.request('/api/me/username', { method: 'PUT', body: JSON.stringify({ username }) });
   }
 
+  // ─── Privacidade e gate de partilha de tela ─────────────────
+  /** Data de nascimento (AAAA-MM-DD). O servidor so guarda e devolve booleanos. */
+  async setBirthDate(birthDate: string): Promise<{ ageVerified: boolean; isAdult: boolean }> {
+    const data = await this.request<unknown>('/api/me/age', {
+      method: 'PUT',
+      body: JSON.stringify({ birthDate }),
+    });
+    return z.object({ ageVerified: z.boolean(), isAdult: z.boolean() }).parse(data);
+  }
+
+  async deleteBirthDate(): Promise<void> {
+    await this.request('/api/me/age', { method: 'DELETE', body: '{}' });
+  }
+
+  /** Aceita o termo de partilha de tela na versao atual do @scale/shared. */
+  async giveScreenShareConsent(): Promise<void> {
+    await this.request('/api/me/screen-share-consent', {
+      method: 'PUT',
+      body: JSON.stringify({ version: SCREEN_SHARE_CONSENT_VERSION }),
+    });
+  }
+
+  async revokeScreenShareConsent(): Promise<void> {
+    await this.request('/api/me/screen-share-consent', { method: 'DELETE', body: '{}' });
+  }
+
+  /** Exportacao LGPD: JSON bruto como Blob para o download "Baixar meus dados". */
+  async exportPrivacyData(): Promise<Blob> {
+    const res = await fetch(`${this.baseUrl}/api/me/privacy/export`, { credentials: 'include' });
+    if (!res.ok) {
+      const error: ApiError = { error: `HTTP ${res.status}`, status: res.status };
+      throw error;
+    }
+    return res.blob();
+  }
+
+  /** Configuracao publica do assistente de moderacao. */
+  async getModerationConfig(): Promise<ModerationConfig> {
+    return moderationConfigSchema.parse(await this.request<unknown>('/api/moderation/config'));
+  }
+
+  /**
+   * Amostra de tela do sharer (JPEG pequeno). Multipart; o veredito chega por
+   * socket, a rota so responde 204. Ticket no header, nunca na URL.
+   */
+  async sendModerationFrame(roomId: string, frame: Blob, roomTicket: string): Promise<void> {
+    const form = new FormData();
+    form.append('frame', frame, 'frame.jpg');
+    const res = await fetch(`${this.baseUrl}/api/rooms/${encodeURIComponent(roomId)}/moderation/frame`, {
+      method: 'POST',
+      body: form,
+      credentials: 'include',
+      headers: { 'X-Room-Ticket': roomTicket },
+    });
+    if (!res.ok) {
+      const error: ApiError = { error: `HTTP ${res.status}`, status: res.status };
+      throw error;
+    }
+  }
+
   // ─── Amizades e mensagens privadas ──────────────────────────
   async getFriends(): Promise<FriendsList> {
     return friendsListSchema.parse(await this.request('/api/friends'));
@@ -346,7 +494,57 @@ class ApiClient {
     return directMessageSchema.parse(data.message);
   }
 
+  // ─── Administracao da moderacao (so admin do sistema; 403 para os demais) ──
+  async getAdminModeration(): Promise<AdminModerationState> {
+    return adminModerationStateSchema.parse(await this.request<unknown>('/api/admin/moderation'));
+  }
+
+  /** Parcial: so os campos alterados; `null` = volta ao valor do .env. */
+  async updateAdminModeration(update: AdminModerationUpdate): Promise<AdminModerationState> {
+    const data = await this.request<unknown>('/api/admin/moderation', {
+      method: 'PUT',
+      body: JSON.stringify(update),
+    });
+    return adminModerationStateSchema.parse(data);
+  }
+
+  async deleteAdminModerationApiKey(): Promise<AdminModerationState> {
+    const data = await this.request<unknown>('/api/admin/moderation/api-key', {
+      method: 'DELETE',
+      body: '{}',
+    });
+    return adminModerationStateSchema.parse(data);
+  }
+
+  /** Classifica um texto com o provedor efetivo sem gravar evento (valida chave/modelo). */
+  async testAdminModeration(text: string): Promise<ModerationVerdict> {
+    const data = await this.request<unknown>('/api/admin/moderation/test', {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    });
+    return moderationVerdictSchema.parse(data);
+  }
+
+  async getAdminModerationAudit(limit = 50): Promise<{ entries: ModerationAuditEntry[] }> {
+    const data = await this.request<{ entries: unknown[] }>(
+      `/api/admin/moderation/audit?limit=${encodeURIComponent(String(limit))}`,
+    );
+    return { entries: z.array(moderationAuditEntrySchema).parse(data.entries) };
+  }
   // ─── Comunidades ─────────────────────────────────────────────
+  /** URL do icone; `v` muda a cada troca (o GET tem cache privado). */
+  communityIconUrl(id: string, version: string) { return `${this.baseUrl}/api/communities/${encodeURIComponent(id)}/icon?v=${encodeURIComponent(version)}`; }
+  async uploadCommunityIcon(id: string, file: File): Promise<void> {
+    const form = new FormData();
+    form.append('icon', file);
+    const response = await fetch(`${this.baseUrl}/api/communities/${encodeURIComponent(id)}/icon`, { method: 'PUT', body: form, credentials: 'include' });
+    if (!response.ok) {
+      const body: unknown = await response.json().catch(() => ({}));
+      const error: ApiError = { error: z.object({ error: z.string() }).safeParse(body).data?.error ?? `HTTP ${response.status}`, status: response.status };
+      throw error;
+    }
+  }
+  async deleteCommunityIcon(id: string): Promise<void> { okSchema.parse(await this.request(`/api/communities/${encodeURIComponent(id)}/icon`, { method: 'DELETE', body: '{}' })); }
   async listCommunities() { return communityListSchema.parse(await this.request('/api/communities')); }
   async getCommunity(id: string) { return communityDetailSchema.parse(await this.request(`/api/communities/${encodeURIComponent(id)}`)); }
   async createCommunity(name: string) {
@@ -367,12 +565,65 @@ class ApiClient {
   }
   async sendChannelMessage(id: string, content: string) { return z.object({ message: channelMessageSchema }).parse(await this.request(`/api/channels/${encodeURIComponent(id)}/messages`, { method: 'POST', body: JSON.stringify(channelMessageSendSchema.parse({ content })) })); }
   async editChannelMessage(id: string, messageId: string, content: string): Promise<void> { okSchema.parse(await this.request(`/api/channels/${encodeURIComponent(id)}/messages/${encodeURIComponent(messageId)}`, { method: 'PATCH', body: JSON.stringify(channelMessageSendSchema.parse({ content })) })); }
+  /** Imagens no canal: mesma rota de arquivos das salas (membro do canal de texto passa). */
+  async uploadChannelImages(id: string, files: File[], content: string) {
+    const form = new FormData();
+    form.append('content', content);
+    for (const file of files) form.append('file', file, file.name);
+    const response = await fetch(`${this.baseUrl}/api/rooms/${encodeURIComponent(id)}/files`, { method: 'POST', body: form, credentials: 'include' });
+    const body: unknown = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error: ApiError = { error: z.object({ error: z.string() }).safeParse(body).data?.error ?? `HTTP ${response.status}`, status: response.status };
+      throw error;
+    }
+    return z.object({ message: channelMessageSchema }).parse(body);
+  }
+  fileUrl(fileId: string) { return `${this.baseUrl}/api/files/${encodeURIComponent(fileId)}`; }
   async deleteChannelMessage(id: string, messageId: string): Promise<void> { okSchema.parse(await this.request(`/api/channels/${encodeURIComponent(id)}/messages/${encodeURIComponent(messageId)}`, { method: 'DELETE', body: '{}' })); }
   async createCommunityInvite(id: string, input: { expiresIn?: '1h' | '24h' | '7d'; maxUses?: number }) { return z.object({ invite: z.object({ id: z.string(), code: z.string(), expiresAt: z.string(), maxUses: z.number().nullable() }) }).parse(await this.request(`/api/communities/${encodeURIComponent(id)}/invites`, { method: 'POST', body: JSON.stringify(communityInviteCreateSchema.parse(input)) })); }
   async listCommunityInvites(id: string) { return z.object({ invites: z.array(inviteSchema) }).parse(await this.request(`/api/communities/${encodeURIComponent(id)}/invites`)); }
+  async createCommunityRole(id: string, input: CustomRoleInput): Promise<void> { await this.request(`/api/communities/${encodeURIComponent(id)}/roles`, { method: 'POST', body: JSON.stringify(customRoleInputSchema.parse(input)) }); }
+  async updateCommunityRole(roleId: string, input: CustomRoleInput): Promise<void> { okSchema.parse(await this.request(`/api/community-roles/${encodeURIComponent(roleId)}`, { method: 'PATCH', body: JSON.stringify(customRoleInputSchema.parse(input)) })); }
+  async deleteCommunityRole(roleId: string): Promise<void> { okSchema.parse(await this.request(`/api/community-roles/${encodeURIComponent(roleId)}`, { method: 'DELETE', body: '{}' })); }
+  async setMemberCustomRole(id: string, userId: string, customRoleId: string | null): Promise<void> { okSchema.parse(await this.request(`/api/communities/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}/custom-role`, { method: 'PUT', body: JSON.stringify(memberCustomRoleSchema.parse({ customRoleId })) })); }
   async revokeCommunityInvite(id: string): Promise<void> { okSchema.parse(await this.request(`/api/invites/${encodeURIComponent(id)}`, { method: 'DELETE', body: '{}' })); }
   async previewCommunityInvite(code: string) { return z.object({ community: z.object({ id: z.string(), name: z.string(), memberCount: z.number() }), alreadyMember: z.boolean() }).parse(await this.request('/api/invites/preview', { method: 'POST', body: JSON.stringify(communityInviteCodeSchema.parse({ code })) })); }
   async acceptCommunityInvite(code: string) { return z.object({ communityId: z.string() }).parse(await this.request('/api/invites/accept', { method: 'POST', body: JSON.stringify(communityInviteCodeSchema.parse({ code })) })); }
+
+  // ─── Gestao de administradores (so admin; 403 para os demais) ──
+  async getAdminUsers(params: AdminUsersParams = {}): Promise<AdminUsersPage> {
+    const qs = new URLSearchParams();
+    const q = params.q?.trim();
+    if (q) qs.set('q', q);
+    qs.set('filter', params.filter ?? 'all');
+    if (params.cursor) qs.set('cursor', params.cursor);
+    qs.set('limit', String(params.limit ?? 25));
+    return adminUsersPageSchema.parse(await this.request<unknown>(`/api/admin/users?${qs.toString()}`));
+  }
+
+  async grantAdmin(userId: string): Promise<AdminUserRow> {
+    const data = await this.request<unknown>(`/api/admin/users/${encodeURIComponent(userId)}/admin`, {
+      method: 'PUT',
+      body: '{}',
+    });
+    return adminUserRowSchema.parse(data);
+  }
+
+  /** 409 `env_admin` (raiz) e 400 `cannot_revoke_self`: ver `adminRoleErrorMessage`. */
+  async revokeAdmin(userId: string): Promise<AdminUserRow> {
+    const data = await this.request<unknown>(`/api/admin/users/${encodeURIComponent(userId)}/admin`, {
+      method: 'DELETE',
+      body: '{}',
+    });
+    return adminUserRowSchema.parse(data);
+  }
+
+  async getAdminRoleAudit(limit = 50): Promise<{ entries: AdminRoleAuditEntry[] }> {
+    const data = await this.request<{ entries: unknown[] }>(
+      `/api/admin/users/audit?limit=${encodeURIComponent(String(limit))}`,
+    );
+    return { entries: z.array(adminRoleAuditEntrySchema).parse(data.entries) };
+  }
 
   // ─── Health ─────────────────────────────────────────────────
   async health(): Promise<{ status: string; timestamp: string }> {

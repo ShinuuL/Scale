@@ -56,6 +56,18 @@ services:
       # O gateway 172.28.0.1 FICA DE FORA de proposito: ele e o peer de quem
       # alcanca uma porta publicada, e confiar nele reintroduz o spoof.
       - TRUST_PROXY=172.28.0.4/32,172.28.0.5/32
+      # Assistente de moderacao e gate de partilha de tela (docs/moderacao.md,
+      # docs/lgpd-moderacao.md). Defaults seguros: heuristica local, sem tela,
+      # nada sai do servidor. A chave da Anthropic vem SO do .env: nunca a
+      # escreva aqui (este arquivo e commitado).
+      - MODERATION_PROVIDER=${MODERATION_PROVIDER:-heuristic}
+      - MODERATION_MODEL=${MODERATION_MODEL:-claude-opus-5-5}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - MODERATION_SCREEN=${MODERATION_SCREEN:-false}
+      - MODERATION_FRAME_INTERVAL_SEC=${MODERATION_FRAME_INTERVAL_SEC:-20}
+      - MODERATION_RETENTION_DAYS=${MODERATION_RETENTION_DAYS:-90}
+      - SCREEN_SHARE_MIN_AGE=${SCREEN_SHARE_MIN_AGE:-18}
+      - PRIVACY_CONTACT_EMAIL=${PRIVACY_CONTACT_EMAIL:-}
     volumes:
       - db_data:/app/data
       # Anexos do chat: volume nomeado herda o dono (appuser) do diretório da
@@ -141,6 +153,8 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_DESKTOP_DOWNLOAD_URL: ${DESKTOP_DOWNLOAD_URL:-}
     ports:
       # Porta do HOST do proxy interno. Em acesso local HTTP, o origin
       # `http://localhost:${PROXY_PORT:-8080}` precisa estar em ALLOWED_ORIGINS.
