@@ -34,13 +34,14 @@ import { messageSearchQuerySchema, type MessageSearchQuery, type MessageSearchRe
 import { createRoomSchema, authResponseSchema, roomResponseSchema, roomListItemSchema, metricsSchema } from './validation';
 
 import { communityCreateSchema, channelCreateSchema, channelUpdateSchema, communityMemberRoleSchema, communityInviteCreateSchema, communityInviteCodeSchema, channelMessageSendSchema, communityRoleSchema, channelKindSchema, communityPermissionsSchema, customRoleInputSchema, memberCustomRoleSchema, categoryInputSchema, communityLayoutSchema, type CustomRoleInput, type CommunityImageKind, type CommunityLayout } from '@scale/shared';
+import { channelOverrideSchema, channelSettingsSchema, type ChannelSettings } from '@scale/shared';
 import { channelReplySchema, channelReactionSummarySchema, channelReactionEventSchema, channelReactionToggleSchema, channelPinEventSchema, type ChannelReaction } from '@scale/shared';
 
 const okSchema = z.object({ ok: z.literal(true) });
 const communitySchema = z.object({ id: z.string(), name: z.string(), ownerId: z.string(), iconUpdatedAt: z.string().nullish(), bannerUpdatedAt: z.string().nullish() });
 const categorySchema = z.object({ id: z.string(), name: z.string(), position: z.number() });
 export type CommunityCategory = z.infer<typeof categorySchema>;
-const channelSchema = z.object({ id: z.string(), name: z.string(), kind: channelKindSchema, position: z.number(), categoryId: z.string().nullish(), topic: z.string().nullish(), unread: z.number().int().min(0).optional() });
+const channelSchema = z.object({ id: z.string(), name: z.string(), kind: channelKindSchema, position: z.number(), categoryId: z.string().nullish(), topic: z.string().nullish(), unread: z.number().int().min(0).optional(), announcement: z.boolean().optional(), slowModeSeconds: z.number().int().min(0).optional(), canSend: z.boolean().optional(), overrides: z.array(channelOverrideSchema).optional() });
 const memberSchema = z.object({ userId: z.string(), name: z.string(), username: z.string().nullable(), role: communityRoleSchema, customRoleId: z.string().nullable().default(null) });
 const customRoleSchema = z.object({ id: z.string(), name: z.string(), color: z.string(), permissions: communityPermissionsSchema });
 const noPermissions = { manageChannels: false, manageInvites: false, manageMessages: false, kickMembers: false };
@@ -67,6 +68,8 @@ export interface ApiError {
   field?: string;
   /** Detalhe legivel (502 `provider_error` do teste de moderacao; nunca traz a chave). */
   detail?: string;
+  /** Modo lento (429 de canal): segundos ate poder enviar de novo. */
+  retryAfterSeconds?: number;
   status: number;
 }
 
@@ -249,6 +252,7 @@ class ApiClient {
         details: body.details,
         field: typeof body.field === 'string' ? body.field : undefined,
         detail: typeof body.detail === 'string' ? body.detail : undefined,
+        retryAfterSeconds: typeof body.retryAfterSeconds === 'number' ? body.retryAfterSeconds : undefined,
         status: response.status,
       };
       throw error;
@@ -558,6 +562,8 @@ class ApiClient {
   async createChannel(id: string, name: string, kind: 'TEXT' | 'VOICE') { return z.object({ channel: channelSchema }).parse(await this.request(`/api/communities/${encodeURIComponent(id)}/channels`, { method: 'POST', body: JSON.stringify(channelCreateSchema.parse({ name, kind })) })); }
   async updateChannel(id: string, name: string): Promise<void> { okSchema.parse(await this.request(`/api/channels/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(channelUpdateSchema.parse({ name })) })); }
   async updateChannelTopic(id: string, topic: string): Promise<void> { okSchema.parse(await this.request(`/api/channels/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(channelUpdateSchema.parse({ topic })) })); }
+  /** Fase 3: aviso, modo lento e sobrescritas por cargo (substitui todas). */
+  async saveChannelSettings(id: string, settings: ChannelSettings): Promise<void> { okSchema.parse(await this.request(`/api/channels/${encodeURIComponent(id)}/settings`, { method: 'PUT', body: JSON.stringify(channelSettingsSchema.parse(settings)) })); }
   async deleteChannel(id: string): Promise<void> { okSchema.parse(await this.request(`/api/channels/${encodeURIComponent(id)}`, { method: 'DELETE', body: '{}' })); }
   async searchCommunityMessages(communityId: string, input: MessageSearchQuery): Promise<MessageSearchResponse> {
     const parsed = messageSearchQuerySchema.parse(input);
@@ -585,7 +591,8 @@ class ApiClient {
     const response = await fetch(`${this.baseUrl}/api/rooms/${encodeURIComponent(id)}/files`, { method: 'POST', body: form, credentials: 'include' });
     const body: unknown = await response.json().catch(() => ({}));
     if (!response.ok) {
-      const error: ApiError = { error: z.object({ error: z.string() }).safeParse(body).data?.error ?? `HTTP ${response.status}`, status: response.status };
+      const parsed = z.object({ error: z.string(), retryAfterSeconds: z.number().optional() }).safeParse(body).data;
+      const error: ApiError = { error: parsed?.error ?? `HTTP ${response.status}`, retryAfterSeconds: parsed?.retryAfterSeconds, status: response.status };
       throw error;
     }
     return z.object({ message: channelMessageSchema }).parse(body);

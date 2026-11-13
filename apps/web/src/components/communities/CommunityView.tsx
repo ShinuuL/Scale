@@ -466,6 +466,10 @@ export function CommunityView({
             onSaveTopic={perms?.manageChannels ? (value) => api.updateChannelTopic(selected.id, value).then(() => refresh()) : undefined}
             typingText={typing.textFor(selected.id)}
             onTyping={(value) => emitTyping(selected.id, value)}
+            canSend={selected.canSend}
+            announcement={selected.announcement}
+            slowModeSeconds={selected.slowModeSeconds}
+            slowModeExempt={Boolean(perms?.manageChannels)}
           />
         ) : (
           <div className="m-auto p-6 text-center text-sm text-ink-muted">

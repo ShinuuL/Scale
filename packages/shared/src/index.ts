@@ -7,3 +7,4 @@ export * from './moderation.js';
 export * from './admin.js';
 export * from './communities.js';
 export * from './messageSearch.js';
+export * from './channelSettings.js';
