@@ -168,3 +168,58 @@ test('comunidade fase 2: responder, reagir, fixar, digitando, topico e busca', a
   await owner.context().close();
   await member.context().close();
 });
+
+test('comunidade fase 3: boas-vindas, avisos, modo lento, castigo, ban e auditoria', async ({ browser }) => {
+  const suffix = Math.random().toString(36).slice(2, 7);
+  const owner = await newUser(browser, `f3dono_${suffix}`);
+  const member = await newUser(browser, `f3membro_${suffix}`);
+  const created = await owner.request.post('/api/communities', { data: { name: `Fase3 ${suffix}` } });
+  const { community } = (await created.json()) as { community: { id: string } };
+  const detail = (await (await owner.request.get(`/api/communities/${community.id}`)).json()) as { channels: { id: string; name: string; kind: string }[] };
+  const geral = detail.channels.find((c) => c.kind === 'TEXT')!;
+
+  // Boas-vindas: canal de avisos separado, mensagem com {nome}.
+  const avisosRes = await owner.request.post(`/api/communities/${community.id}/channels`, { data: { name: 'avisos', kind: 'TEXT' } });
+  const { channel: avisos } = (await avisosRes.json()) as { channel: { id: string } };
+  expect((await owner.request.put(`/api/communities/${community.id}/welcome`, { data: { channelId: geral.id, message: 'Boas-vindas, {nome}!' } })).ok()).toBeTruthy();
+
+  const invite = await owner.request.post(`/api/communities/${community.id}/invites`, { data: {} });
+  const { invite: inv } = (await invite.json()) as { invite: { code: string } };
+  const accepted = await member.request.post('/api/invites/accept', { data: { code: inv.code } });
+  expect(((await accepted.json()) as { welcomeChannelId: string }).welcomeChannelId).toBe(geral.id);
+
+  // Avisos + modo lento em "geral".
+  expect((await owner.request.put(`/api/channels/${avisos.id}/settings`, { data: { announcement: true, slowModeSeconds: 0, overrides: [] } })).ok()).toBeTruthy();
+  expect((await owner.request.put(`/api/channels/${geral.id}/settings`, { data: { announcement: false, slowModeSeconds: 30, overrides: [] } })).ok()).toBeTruthy();
+  expect((await member.request.post(`/api/channels/${avisos.id}/messages`, { data: { content: 'tentativa' } })).status()).toBe(403);
+
+  await member.setViewportSize({ width: 1440, height: 900 });
+  await member.goto(`/communities?c=${community.id}`);
+  await expect(member.getByText(`Boas-vindas, f3membro_${suffix}!`).or(member.getByText(/Boas-vindas, .+!/)).first()).toBeVisible();
+  const box = member.getByPlaceholder('Mensagem em geral');
+  await box.fill('primeira');
+  await box.press('Enter');
+  await expect(member.getByText(/Modo lento: aguarde/)).toBeVisible();
+  const second = await member.request.post(`/api/channels/${geral.id}/messages`, { data: { content: 'segunda' } });
+  expect(second.status()).toBe(429);
+
+  await member.getByRole('button', { name: /avisos/ }).first().click();
+  await expect(member.getByText(/Canal de avisos: só quem gerencia/)).toBeVisible();
+
+  // Castigo, depois ban (convite recusado) e auditoria.
+  const memberId = ((await (await member.request.get('/api/auth/me')).json()) as { user?: { id: string }; id?: string });
+  const targetId = memberId.user?.id ?? memberId.id!;
+  expect((await owner.request.put(`/api/communities/${community.id}/members/${targetId}/timeout`, { data: { duration: '5m', reason: 'teste' } })).ok()).toBeTruthy();
+  const blocked = await member.request.post(`/api/channels/${geral.id}/messages`, { data: { content: 'castigado' } });
+  expect(blocked.status()).toBe(403);
+  expect(((await blocked.json()) as { error: string }).error).toBe('Timed out');
+  expect((await owner.request.put(`/api/communities/${community.id}/bans/${targetId}`, { data: { reason: 'teste' } })).ok()).toBeTruthy();
+  expect((await member.request.post('/api/invites/accept', { data: { code: inv.code } })).status()).toBe(403);
+  const audit = (await (await owner.request.get(`/api/communities/${community.id}/audit`)).json()) as { entries: { action: string }[] };
+  const actions = audit.entries.map((e) => e.action);
+  expect(actions.some((a) => a.includes('timeout'))).toBeTruthy();
+  expect(actions.some((a) => a.includes('ban'))).toBeTruthy();
+
+  await owner.context().close();
+  await member.context().close();
+});
