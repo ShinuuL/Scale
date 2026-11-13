@@ -15,6 +15,7 @@ import { ConfirmDialog } from './ConfirmDialog';
 import type { Channel, Member } from './CommunityParts';
 import { CategoriesSection, CommunityImagesSection } from './CommunityAppearance';
 import { buildSections, setChannelCategory } from './channelLayout';
+import { AuditPanel, BansPanel, SettingsTabs, type SettingsTab } from './ModerationDialogs';
 
 const selectClass =
   'w-full rounded-lg border border-line bg-surface-secondary p-2 text-sm text-ink-primary';
@@ -482,6 +483,7 @@ export function CommunitySettingsDialog({
   const [invitesLoading, setInvitesLoading] = useState(true);
   const [invitesFailed, setInvitesFailed] = useState(false);
   const [confirm, setConfirm] = useState<Confirmation | null>(null);
+  const [tab, setTab] = useState<SettingsTab>('general');
   const run = async (action: () => Promise<unknown>) => {
     setError('');
     try {
@@ -525,8 +527,17 @@ export function CommunitySettingsDialog({
       active = false;
     };
   }, [community.id, myPermissions.manageInvites]);
+  const tabs = <SettingsTabs value={tab} onChange={setTab} showBans={myPermissions.kickMembers} />;
+  if (tab !== 'general')
+    return (
+      <Frame title={`Configurações de ${community.name}`} onClose={onClose}>
+        {tabs}
+        {tab === 'bans' ? <BansPanel communityId={community.id} /> : <AuditPanel communityId={community.id} />}
+      </Frame>
+    );
   return (
     <Frame title={`Configurações de ${community.name}`} onClose={onClose}>
+      {tabs}
       {error && <Banner variant="error">{error}</Banner>}
       {myRole === 'OWNER' && (
         <form

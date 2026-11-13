@@ -9,6 +9,7 @@ import { formatUnreadCount, type ChannelKind, type CommunityLayout, type Communi
 import { communityImageUrl } from '@/lib/api';
 import { ChannelSections } from './ChannelSections';
 import type { LayoutCategory } from './channelLayout';
+import type { ModerationAction } from './ModerationDialogs';
 
 export interface CommunitySummary {
   id: string;
@@ -39,6 +40,8 @@ export interface Member {
   username: string | null;
   role: CommunityRole;
   customRoleId?: string | null;
+  /** Castigo vigente (Fase 3): fim em ISO, ou null. */
+  timeoutUntil?: string | null;
 }
 
 /** Nome acessivel da contagem: "1 mensagem não lida", "3 mensagens não lidas", "mais de 99 ...". */
@@ -470,6 +473,8 @@ export function MemberList({
   onMessage,
   roleName,
   isOnline,
+  canModerate,
+  onModerate,
 }: {
   members: Member[];
   friendStatus?: (member: Member) => FriendStatus;
@@ -481,6 +486,9 @@ export function MemberList({
   roleName?: (member: Member) => string | undefined;
   /** Presenca (`community:presence`); ausente = lista sem grupos Online/Offline. */
   isOnline?: (member: Member) => boolean;
+  /** Moderacao (Fase 3): quem posso castigar/expulsar/banir (hierarquia). */
+  canModerate?: (member: Member) => boolean;
+  onModerate?: (member: Member, action: ModerationAction | 'untimeout') => void;
 }) {
   const roles: CommunityRole[] = ['OWNER', 'ADMIN', 'MEMBER'];
   const [busy, setBusy] = useState<string | null>(null);
@@ -499,6 +507,7 @@ export function MemberList({
       setProfile(member);
     } else if (key === 'message') onMessage?.(member);
     else if (key === 'friend') add(member);
+    else if (key === 'timeout' || key === 'untimeout' || key === 'kick' || key === 'ban') onModerate?.(member, key);
     else if (key === 'copy' && member.username)
       void navigator.clipboard?.writeText(`@${member.username}`).catch(() => {});
   };
@@ -509,6 +518,8 @@ export function MemberList({
     const presence = isOnline ? (isOnline(member) ? 'online' : 'offline') : null;
     const status = statusOf(member);
     const incoming = status === 'incoming';
+    const timedOut = Boolean(member.timeoutUntil && Date.parse(member.timeoutUntil) > Date.now());
+    const moderatable = Boolean(onModerate && canModerate?.(member));
     return (
       <div
         key={member.userId}
@@ -519,7 +530,7 @@ export function MemberList({
           onOpenChange={(open) => setMenuFor(open ? member.userId : null)}
         >
           <AriaButton
-            aria-label={`Opções de ${member.name}${presence ? `, ${presence}` : ''}`}
+            aria-label={`Opções de ${member.name}${presence ? `, ${presence}` : ''}${timedOut ? ', de castigo' : ''}`}
             onContextMenu={(event: React.MouseEvent) => {
               event.preventDefault();
               setMenuFor(member.userId);
@@ -548,6 +559,9 @@ export function MemberList({
                 <span className="ml-1 text-ink-muted">(você)</span>
               )}
             </span>
+            {timedOut && (
+              <Icon name="clock" size={14} className="shrink-0 text-amber-400" title="De castigo" />
+            )}
             {status === 'friend' && (
               <span className="shrink-0 text-[11px] text-ink-muted">Amigo</span>
             )}
@@ -588,6 +602,24 @@ export function MemberList({
                 <MenuItem id="copy" textValue="Copiar @nome" className={item}>
                   <Icon name="document" />
                   Copiar @{member.username}
+                </MenuItem>
+              )}
+              {moderatable && (
+                <MenuItem id={timedOut ? 'untimeout' : 'timeout'} textValue={timedOut ? 'Remover castigo' : 'Castigar'} className={item}>
+                  <Icon name="clock" />
+                  {timedOut ? 'Remover castigo' : 'Castigar'}
+                </MenuItem>
+              )}
+              {moderatable && (
+                <MenuItem id="kick" textValue="Expulsar" className={item}>
+                  <Icon name="logOut" />
+                  Expulsar
+                </MenuItem>
+              )}
+              {moderatable && (
+                <MenuItem id="ban" textValue="Banir" className={item}>
+                  <Icon name="ban" />
+                  Banir
                 </MenuItem>
               )}
             </Menu>

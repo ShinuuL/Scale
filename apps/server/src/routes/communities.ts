@@ -17,6 +17,7 @@ import { removeCommunityMedia } from './communityExtras.js';
 import { buildChannelMessages, loadReplies } from '../lib/channelMessageMeta.js';
 import { checkChannelPost, emitToChannel, hiddenChannelIds, isChannelManager, viewableChannel } from '../lib/channelPermissions.js';
 import { resolveChannelAccess } from '@scale/shared';
+import { activeTimeout, audit, timeoutOf, canModerateMember, timedOutBody } from '../lib/communityModeration.js';
 
 const idSchema = z.string().uuid();
 const params = z.object({ id: idSchema });
@@ -36,6 +37,9 @@ const inviteLimit = (request: FastifyRequest, reply: FastifyReply): boolean => {
   void reply.code(429).header('Retry-After', String(limit.retryAfterSeconds)).send({ error: 'Too many requests' });
   return true;
 };
+
+const isBanned = async (communityId: string, userId: string): Promise<boolean> =>
+  (await prisma.communityBan.count({ where: { communityId, userId } })) > 0;
 
 export async function communityRoutes(app: FastifyInstance): Promise<void> {
   const auth = { preHandler: [app.authenticate as never] };
@@ -66,7 +70,7 @@ export async function communityRoutes(app: FastifyInstance): Promise<void> {
     const accessOf = (r: { id: string; announcement: boolean }) => resolveChannelAccess({ manager, customRoleId: membership.customRoleId, announcement: r.announcement }, overrides.filter(o => o.roomId === r.id));
     const rooms = community.rooms.filter(r => accessOf(r).view);
     const unread = new Map((await channelUnreads(meOf(request), community.id)).map(row => [row.channelId, row.unread]));
-    return reply.send({ community: { id: community.id, name: community.name, ownerId: community.ownerId, iconUpdatedAt: community.iconUpdatedAt?.toISOString() ?? null, bannerUpdatedAt: community.bannerUpdatedAt?.toISOString() ?? null }, myRole: membership.role, myPermissions: permissionsOf(membership), roles: community.customRoles.map(r => ({ id: r.id, name: r.name, color: r.color, permissions: { manageChannels: r.manageChannels, manageInvites: r.manageInvites, manageMessages: r.manageMessages, kickMembers: r.kickMembers } })), categories: community.categories.map(c => ({ id: c.id, name: c.name, position: c.position })), channels: rooms.map(r => ({ id: r.id, name: r.name, kind: r.channelKind, position: r.position, categoryId: r.categoryId, topic: r.topic ?? null, unread: unread.get(r.id) ?? 0, announcement: r.announcement, slowModeSeconds: r.slowModeSeconds, canSend: accessOf(r).send, ...(manager ? { overrides: overrides.filter(o => o.roomId === r.id).map(({ target, viewChannel, sendMessages }) => ({ target, viewChannel, sendMessages })) } : {}) })), members: community.members.map(m => ({ userId: m.userId, name: m.user.name, username: m.user.username?.name ?? null, role: m.role, customRoleId: m.customRoleId })) });
+    return reply.send({ community: { id: community.id, name: community.name, ownerId: community.ownerId, iconUpdatedAt: community.iconUpdatedAt?.toISOString() ?? null, bannerUpdatedAt: community.bannerUpdatedAt?.toISOString() ?? null }, myRole: membership.role, myPermissions: permissionsOf(membership), roles: community.customRoles.map(r => ({ id: r.id, name: r.name, color: r.color, permissions: { manageChannels: r.manageChannels, manageInvites: r.manageInvites, manageMessages: r.manageMessages, kickMembers: r.kickMembers } })), categories: community.categories.map(c => ({ id: c.id, name: c.name, position: c.position })), channels: rooms.map(r => ({ id: r.id, name: r.name, kind: r.channelKind, position: r.position, categoryId: r.categoryId, topic: r.topic ?? null, unread: unread.get(r.id) ?? 0, announcement: r.announcement, slowModeSeconds: r.slowModeSeconds, canSend: accessOf(r).send, ...(manager ? { overrides: overrides.filter(o => o.roomId === r.id).map(({ target, viewChannel, sendMessages }) => ({ target, viewChannel, sendMessages })) } : {}) })), members: community.members.map(m => ({ userId: m.userId, name: m.user.name, username: m.user.username?.name ?? null, role: m.role, customRoleId: m.customRoleId, timeoutUntil: activeTimeout(m)?.toISOString() ?? null })) });
   });
   app.patch('/api/communities/:id', auth, async (request, reply) => {
     const p = params.safeParse(request.params); const body = communityCreateSchema.safeParse(request.body); if (!p.success || !body.success) return invalid(reply);
@@ -92,14 +96,19 @@ export async function communityRoutes(app: FastifyInstance): Promise<void> {
     const p = memberParams.safeParse(request.params); if (!p.success) return invalid(reply);
     const member = await findMembership(p.data.id, meOf(request)); if (!member) return missing(reply);
     const target = await findMembership(p.data.id, p.data.userId); if (!target) return missing(reply);
-    if (!permissionsOf(member).kickMembers || target.role === 'OWNER' || (target.role === 'ADMIN' && member.role !== 'OWNER') || p.data.userId === meOf(request)) return forbidden(reply);
-    await prisma.communityMember.delete({ where: { id: target.id } }); await evictCommunityUser(ioOf(app), p.data.id, p.data.userId); changed(app, p.data.id); return reply.send({ ok: true });
+    if (p.data.userId === meOf(request) || !canModerateMember(member, target)) return forbidden(reply);
+    const targetUser = await prisma.user.findUnique({ where: { id: p.data.userId }, select: { name: true } });
+    await prisma.communityMember.delete({ where: { id: target.id } });
+    await audit(p.data.id, { action: 'member.kick', actorId: meOf(request), targetId: p.data.userId, targetName: targetUser?.name ?? null }); await evictCommunityUser(ioOf(app), p.data.id, p.data.userId); changed(app, p.data.id); return reply.send({ ok: true });
   });
   app.patch('/api/communities/:id/members/:userId', auth, async (request, reply) => {
     const p = memberParams.safeParse(request.params); const body = communityMemberRoleSchema.safeParse(request.body); if (!p.success || !body.success) return invalid(reply);
     const member = await findMembership(p.data.id, meOf(request)); if (!member) return missing(reply); if (member.role !== 'OWNER') return forbidden(reply);
     const target = await findMembership(p.data.id, p.data.userId); if (!target) return missing(reply); if (target.role === 'OWNER') return forbidden(reply);
-    await prisma.communityMember.update({ where: { id: target.id }, data: body.data }); changed(app, p.data.id); return reply.send({ ok: true });
+    await prisma.communityMember.update({ where: { id: target.id }, data: body.data });
+    const targetUser = await prisma.user.findUnique({ where: { id: p.data.userId }, select: { name: true } });
+    await audit(p.data.id, { action: 'member.role', actorId: meOf(request), targetId: p.data.userId, targetName: targetUser?.name ?? null, detail: body.data.role });
+    changed(app, p.data.id); return reply.send({ ok: true });
   });
   // Cargos personalizados: so o OWNER cria, edita, apaga e atribui.
   const roleData = (input: CustomRoleInput) => ({ name: input.name, color: input.color.toLowerCase(), ...input.permissions });
@@ -108,26 +117,32 @@ export async function communityRoutes(app: FastifyInstance): Promise<void> {
     const member = await findMembership(p.data.id, meOf(request)); if (!member) return missing(reply); if (member.role !== 'OWNER') return forbidden(reply);
     const role = await prisma.$transaction(async tx => (await tx.communityCustomRole.count({ where: { communityId: p.data.id } })) >= MAX_CUSTOM_ROLES ? null : tx.communityCustomRole.create({ data: { communityId: p.data.id, ...roleData(body.data) } }));
     if (!role) return reply.code(409).send({ error: 'Role limit reached' });
+    await audit(p.data.id, { action: 'role.create', actorId: meOf(request), targetId: role.id, targetName: body.data.name });
     changed(app, p.data.id); return reply.code(201).send({ role: { id: role.id } });
   });
   app.patch('/api/community-roles/:id', auth, async (request, reply) => {
     const p = params.safeParse(request.params); const body = customRoleInputSchema.safeParse(request.body); if (!p.success || !body.success) return invalid(reply);
     const role = await prisma.communityCustomRole.findUnique({ where: { id: p.data.id } }); if (!role) return missing(reply);
     const member = await findMembership(role.communityId, meOf(request)); if (!member) return missing(reply); if (member.role !== 'OWNER') return forbidden(reply);
-    await prisma.communityCustomRole.update({ where: { id: role.id }, data: roleData(body.data) }); changed(app, role.communityId); return reply.send({ ok: true });
+    await prisma.communityCustomRole.update({ where: { id: role.id }, data: roleData(body.data) });
+    await audit(role.communityId, { action: 'role.update', actorId: meOf(request), targetId: role.id, targetName: body.data.name }); changed(app, role.communityId); return reply.send({ ok: true });
   });
   app.delete('/api/community-roles/:id', auth, async (request, reply) => {
     const p = params.safeParse(request.params); if (!p.success) return invalid(reply);
     const role = await prisma.communityCustomRole.findUnique({ where: { id: p.data.id } }); if (!role) return missing(reply);
     const member = await findMembership(role.communityId, meOf(request)); if (!member) return missing(reply); if (member.role !== 'OWNER') return forbidden(reply);
-    await prisma.communityCustomRole.delete({ where: { id: role.id } }); changed(app, role.communityId); return reply.send({ ok: true });
+    await prisma.communityCustomRole.delete({ where: { id: role.id } });
+    await audit(role.communityId, { action: 'role.delete', actorId: meOf(request), targetId: role.id, targetName: role.name }); changed(app, role.communityId); return reply.send({ ok: true });
   });
   app.put('/api/communities/:id/members/:userId/custom-role', auth, async (request, reply) => {
     const p = memberParams.safeParse(request.params); const body = memberCustomRoleSchema.safeParse(request.body); if (!p.success || !body.success) return invalid(reply);
     const member = await findMembership(p.data.id, meOf(request)); if (!member) return missing(reply); if (member.role !== 'OWNER') return forbidden(reply);
     const target = await findMembership(p.data.id, p.data.userId); if (!target) return missing(reply);
-    if (body.data.customRoleId) { const role = await prisma.communityCustomRole.findUnique({ where: { id: body.data.customRoleId } }); if (!role || role.communityId !== p.data.id) return missing(reply); }
-    await prisma.communityMember.update({ where: { id: target.id }, data: { customRoleId: body.data.customRoleId } }); changed(app, p.data.id); return reply.send({ ok: true });
+    let roleName: string | null = null;
+    if (body.data.customRoleId) { const role = await prisma.communityCustomRole.findUnique({ where: { id: body.data.customRoleId } }); if (!role || role.communityId !== p.data.id) return missing(reply); roleName = role.name; }
+    await prisma.communityMember.update({ where: { id: target.id }, data: { customRoleId: body.data.customRoleId } });
+    const targetUser = await prisma.user.findUnique({ where: { id: p.data.userId }, select: { name: true } });
+    await audit(p.data.id, { action: 'member.custom_role', actorId: meOf(request), targetId: p.data.userId, targetName: targetUser?.name ?? null, detail: roleName }); changed(app, p.data.id); return reply.send({ ok: true });
   });
   app.post('/api/communities/:id/channels', auth, async (request, reply) => {
     const p = params.safeParse(request.params); const body = channelCreateSchema.safeParse(request.body); if (!p.success || !body.success) return invalid(reply);
@@ -140,6 +155,7 @@ export async function communityRoutes(app: FastifyInstance): Promise<void> {
       return tx.room.create({ data: { communityId: p.data.id, name: body.data.name, channelKind: body.data.kind, position: (last._max.position ?? -1) + 1, isPersistent: true, isPrivate: true } });
     });
     if (!room) return reply.code(409).send({ error: 'Channel limit reached' });
+    await audit(p.data.id, { action: 'channel.create', actorId: meOf(request), targetId: room.id, targetName: room.name });
     changed(app, p.data.id);
     return reply.code(201).send({ channel: { id: room.id, name: room.name, kind: room.channelKind, position: room.position } });
   });
@@ -150,13 +166,15 @@ export async function communityRoutes(app: FastifyInstance): Promise<void> {
     const { name, topic } = body.data;
     // Topico so existe em canal de texto; vazio limpa (null).
     if (topic !== undefined && room.channelKind !== 'TEXT') return invalid(reply);
-    await prisma.room.update({ where: { id: room.id }, data: { ...(name === undefined ? {} : { name }), ...(topic === undefined ? {} : { topic: topic ? topic : null }) } }); changed(app, room.communityId); return reply.send({ ok: true });
+    await prisma.room.update({ where: { id: room.id }, data: { ...(name === undefined ? {} : { name }), ...(topic === undefined ? {} : { topic: topic ? topic : null }) } });
+    await audit(room.communityId, { action: 'channel.update', actorId: meOf(request), targetId: room.id, targetName: name ?? room.name, detail: name !== undefined && name !== room.name ? room.name : topic !== undefined ? 'topic' : null }); changed(app, room.communityId); return reply.send({ ok: true });
   });
   app.delete('/api/channels/:id', auth, async (request, reply) => {
     const p = params.safeParse(request.params); if (!p.success) return invalid(reply);
     const room = await prisma.room.findUnique({ where: { id: p.data.id } }); if (!room?.communityId) return missing(reply);
     const member = await findMembership(room.communityId, meOf(request)); if (!member) return missing(reply); if (!permissionsOf(member).manageChannels) return forbidden(reply);
-    await purgeRoom(ioOf(app), room.id, app.log); changed(app, room.communityId); return reply.send({ ok: true });
+    await purgeRoom(ioOf(app), room.id, app.log);
+    await audit(room.communityId, { action: 'channel.delete', actorId: meOf(request), targetId: room.id, targetName: room.name }); changed(app, room.communityId); return reply.send({ ok: true });
   });
   app.post('/api/communities/:id/invites', auth, async (request, reply) => {
     const p = params.safeParse(request.params); const body = communityInviteCreateSchema.safeParse(request.body); if (!p.success || !body.success) return invalid(reply);
@@ -183,6 +201,7 @@ export async function communityRoutes(app: FastifyInstance): Promise<void> {
     const invite = await prisma.communityInvite.findUnique({ where: { codeHash: hash(body.data.code) }, include: { community: { include: { _count: { select: { members: true } } } } } });
     if (!invite || invite.revokedAt || invite.expiresAt <= new Date() || (invite.maxUses !== null && invite.uses >= invite.maxUses)) return missing(reply);
     const member = await findMembership(invite.communityId, meOf(request));
+    if (!member && await isBanned(invite.communityId, meOf(request))) return reply.code(403).send({ error: 'Banned' });
     return reply.send({ community: { id: invite.community.id, name: invite.community.name, memberCount: invite.community._count.members }, alreadyMember: !!member });
   });
   app.post('/api/invites/accept', auth, async (request, reply) => {
@@ -194,6 +213,7 @@ export async function communityRoutes(app: FastifyInstance): Promise<void> {
         if (!invite || invite.revokedAt || invite.expiresAt <= new Date()) return { status: 'missing' as const };
         const existing = await tx.communityMember.findUnique({ where: { communityId_userId: { communityId: invite.communityId, userId: me } } });
         if (existing) return { status: 'ok' as const, communityId: invite.communityId, joined: false };
+        if (await tx.communityBan.findUnique({ where: { communityId_userId: { communityId: invite.communityId, userId: me } }, select: { id: true } })) return { status: 'banned' as const };
         if (invite.maxUses !== null && invite.uses >= invite.maxUses) return { status: 'missing' as const };
         if (await tx.communityMember.count({ where: { communityId: invite.communityId } }) >= MAX_COMMUNITY_MEMBERS || await tx.communityMember.count({ where: { userId: me } }) >= MAX_COMMUNITIES_JOINED) return { status: 'limit' as const };
         const updated = await tx.communityInvite.updateMany({ where: { codeHash, revokedAt: null, expiresAt: { gt: new Date() }, OR: [{ maxUses: null }, { uses: { lt: tx.communityInvite.fields.maxUses } }] }, data: { uses: { increment: 1 } } });
@@ -201,7 +221,7 @@ export async function communityRoutes(app: FastifyInstance): Promise<void> {
         await tx.communityMember.create({ data: { communityId: invite.communityId, userId: me, role: 'MEMBER' } });
         return { status: 'ok' as const, communityId: invite.communityId, joined: true };
       });
-      if (result.status === 'missing') return missing(reply); if (result.status === 'limit') return reply.code(409).send({ error: 'Member limit reached' });
+      if (result.status === 'missing') return missing(reply); if (result.status === 'banned') return reply.code(403).send({ error: 'Banned' }); if (result.status === 'limit') return reply.code(409).send({ error: 'Member limit reached' });
       if (result.joined) changed(app, result.communityId); return reply.send({ communityId: result.communityId });
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2003') return missing(reply);
@@ -227,6 +247,7 @@ export async function communityRoutes(app: FastifyInstance): Promise<void> {
     const me = meOf(request);
     const found = await viewableChannel(p.data.id, me); if (!found || found.room.channelKind !== 'TEXT') return missing(reply);
     const { room } = found;
+    const timedOut = await timeoutOf(room.communityId!, me); if (timedOut) return reply.code(403).send(timedOutBody(timedOut));
     const post = await checkChannelPost(room, found.access, me);
     if (!post.ok) { if (post.body.retryAfterSeconds) void reply.header('Retry-After', String(post.body.retryAfterSeconds)); return reply.code(post.status).send(post.body); }
     if (isChatRateLimited(`user:${me}`)) return reply.code(429).header('Retry-After', '5').send({ error: 'Too many messages' });
@@ -260,6 +281,7 @@ export async function communityRoutes(app: FastifyInstance): Promise<void> {
     const me = meOf(request);
     const found = await viewableChannel(p.data.id, me); if (!found || found.room.channelKind !== 'TEXT') return missing(reply);
     const { room } = found;
+    const timedOut = await timeoutOf(room.communityId!, me); if (timedOut) return reply.code(403).send(timedOutBody(timedOut));
     const message = await prisma.chatMessage.findUnique({ where: { id: p.data.messageId } }); if (!message || message.roomId !== room.id) return missing(reply);
     if (message.authorId !== me) return forbidden(reply);
     if (message.deletedAt || Date.now() - message.createdAt.getTime() > CHAT_EDIT_WINDOW_MS) return invalid(reply);

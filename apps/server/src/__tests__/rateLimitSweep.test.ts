@@ -35,6 +35,7 @@ describe('expurgo dos baldes de rate limit', () => {
       'channelReaction',
       'chat',
       'communityInvite',
+      'communityModeration',
       'dm',
       'friendRequest',
       'githubOAuth',

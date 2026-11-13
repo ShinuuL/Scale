@@ -10,6 +10,7 @@ import { ALLOWED_MIME_RE, CHAT_MESSAGE_MAX, MAX_FILES_PER_MESSAGE, ROOM_FILE_QUO
 import { guardRoomParticipation } from '../lib/roomAccess.js';
 import { toChannelMessage } from '../lib/communityAccess.js';
 import { checkChannelPost, emitToChannel, viewableChannel } from '../lib/channelPermissions.js';
+import { timedOutBody, timeoutOf } from '../lib/communityModeration.js';
 import { addChatFilesBytes, incQuotaExceeded } from '../lib/metrics.js';
 import { toPublicFile } from '../lib/publicDto.js';
 import { emitChatMessage } from '../socket/handler.js';
@@ -58,6 +59,8 @@ export async function filesRoutes(fastify: FastifyInstance): Promise<void> {
     if (room.communityId && participant.userId) {
       const found = await viewableChannel(room.id, participant.userId);
       if (!found) return reply.code(404).send({ error: 'Room not found' });
+      const timedOut = await timeoutOf(room.communityId, participant.userId);
+      if (timedOut) return reply.code(403).send(timedOutBody(timedOut));
       const post = await checkChannelPost(found.room, found.access, participant.userId);
       if (!post.ok) { if (post.body.retryAfterSeconds) void reply.header('Retry-After', String(post.body.retryAfterSeconds)); return reply.code(post.status).send(post.body); }
     }

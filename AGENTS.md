@@ -414,6 +414,19 @@ docker compose up --build -d
   `GET /api/me/privacy/export`, `docs/lgpd-moderacao.md` (inventário, LIA,
   ROPA, checklist) e `docs/moderacao.md` (operação e custos).
 - Canais de texto (Fase 2): responder com citação (`replyToId`), reações de conjunto fixo (tabela `ChatMessageReaction`, ícones SVG, balde `channelReaction` 20/10 s) e fixar mensagem (`manageMessages`, máx. 50/canal); rotas em `routes/channelMessageExtras.ts`, eventos `channel:reaction` e `channel:message-pin`.
+- Moderação de comunidade (Fase 3): castigo (60 s a 7 dias, motivo até 300;
+  não envia, não edita, não reage, não sobe imagem e não entra/fala na voz —
+  REST e socket), expulsão e banimento com motivo (ban impede o convite;
+  desbanir nas Configurações > Banidos). Hierarquia: `kickMembers` e nível
+  maior que o alvo (OWNER > ADMIN > cargo personalizado > MEMBER; dono nunca é
+  alvo). Ações no menu de contexto do membro, com `AppModal`. Alvo recebe
+  `community:moderation` em `user:<id>`; castigo, ban e expulsão o tiram da
+  voz. Balde `communityModeration`: 30 / 10 min por usuário. Rotas em
+  `routes/communityModeration.ts`; colunas `timeoutUntil/timeoutReason` em
+  `CommunityMember`, tabelas `CommunityBan` e `CommunityAuditLog`.
+- Auditoria de comunidade: castigo, ban, unban, expulsão, cargos, canais,
+  categorias, ordem e fixação; `GET /api/communities/:id/audit` (cursor, quem
+  tem alguma permissão de gestão) e aba "Auditoria" nas Configurações.
 
 ## Requisitos de Infra
 

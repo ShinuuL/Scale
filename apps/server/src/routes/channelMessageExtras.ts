@@ -8,6 +8,7 @@ import { permissionsOf, type Membership } from '../lib/communityAccess.js';
 import { emitToChannel, viewableChannel } from '../lib/channelPermissions.js';
 import { buildChannelMessages } from '../lib/channelMessageMeta.js';
 import { isChannelReactionRateLimited } from '../lib/rateLimit.js';
+import { activeTimeout, audit, timedOutBody } from '../lib/communityModeration.js';
 
 /**
  * Fase 2 das comunidades: reacoes (conjunto fixo) e mensagens fixadas nos
@@ -50,6 +51,7 @@ export async function channelMessageExtrasRoutes(app: FastifyInstance): Promise<
     const message = await prisma.chatMessage.findUnique({ where: { id: p.data.messageId }, select: { roomId: true, deletedAt: true } });
     if (!message || message.roomId !== access.roomId) return missing(reply);
     if (message.deletedAt) return invalid(reply);
+    const timedOut = activeTimeout(access.member); if (timedOut) return reply.code(403).send(timedOutBody(timedOut));
     if (isChannelReactionRateLimited(`user:${access.me}`)) return limited(reply);
     const key = { messageId_userId_reaction: { messageId: p.data.messageId, userId: access.me, reaction: body.data.reaction } };
     const existing = await prisma.chatMessageReaction.findUnique({ where: key });
@@ -87,6 +89,8 @@ export async function channelMessageExtrasRoutes(app: FastifyInstance): Promise<
     await prisma.chatMessage.update({ where: { id: p.data.messageId }, data: { pinnedAt, pinnedById: pin ? access.me : null } });
     const event: ChannelPinEvent = { channelId: access.roomId, messageId: p.data.messageId, pinnedAt: pinnedAt?.toISOString() ?? null, pinnedById: pin ? access.me : null };
     await emitToChannel(ioOf(app), access.communityId, access.roomId, 'channel:message-pin', event);
+    const channel = await prisma.room.findUnique({ where: { id: access.roomId }, select: { name: true } });
+    await audit(access.communityId, { action: pin ? 'message.pin' : 'message.unpin', actorId: access.me, targetId: p.data.messageId, targetName: channel?.name ?? null });
     return reply.send(event);
   };
   app.put('/api/channels/:id/messages/:messageId/pin', auth, (request, reply) => setPin(request, reply, true));
