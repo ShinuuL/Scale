@@ -50,7 +50,7 @@ function MessageEditForm({
             event.currentTarget.form?.requestSubmit();
           }
         }}
-        className="w-full rounded-lg border border-line bg-surface-secondary p-2 text-sm text-ink-primary"
+        className="w-full rounded-lg border border-line bg-surface-secondary p-2 text-base sm:text-sm text-ink-primary"
       />
       <Button type="submit" size="sm" disabled={busy || !value.trim()}>
         Salvar
@@ -178,7 +178,7 @@ function Composer({
             event.currentTarget.form?.requestSubmit();
           }
         }}
-        className="w-full resize-y rounded-lg border border-line bg-surface-secondary p-3 text-sm text-ink-primary"
+        className="w-full resize-y rounded-lg border border-line bg-surface-secondary p-3 text-base sm:text-sm text-ink-primary"
         placeholder={`Mensagem em ${name}`}
       />
       <div className="mt-2 flex items-center justify-between">

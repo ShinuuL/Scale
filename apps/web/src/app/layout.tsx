@@ -46,7 +46,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         {/* eslint-disable-next-line @next/next/no-sync-scripts */}
         <script src={PALETTE_BOOT_SRC} />
       </head>
-      <body className="min-h-screen bg-forest-950 text-slate-100 antialiased">
+      <body className="min-h-[100dvh] bg-forest-950 text-slate-100 antialiased">
         {/* Pular para o conteúdo link for accessibility */}
         <a href="#main-content" className="skip-link">
           Pular para o conteúdo

@@ -77,7 +77,8 @@
   .btn-ghost { color: var(--text-secondary); border: 1px solid transparent; }
   .btn-danger { background: #b63e4e; color: white; border: 1px solid transparent; }
   .btn-primary:disabled, .btn-secondary:disabled, .btn-ghost:disabled, .btn-danger:disabled { opacity: .5; cursor: not-allowed; }
-  .input-base { width: 100%; min-height: 44px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--bg-secondary); padding: 10px 12px; color: var(--text-primary); font-size: 14px; line-height: 20px; transition: border-color var(--motion-fast) var(--ease-standard); }
+  .input-base { width: 100%; min-height: 44px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--bg-secondary); padding: 10px 12px; color: var(--text-primary); font-size: 16px; line-height: 20px; transition: border-color var(--motion-fast) var(--ease-standard); }
+  @media (min-width: 640px) { .input-base { font-size: 14px; } }
   .input-base::placeholder { color: var(--text-muted); }
   .input-base:focus { border-color: var(--accent); outline: 2px solid var(--accent); outline-offset: 2px; }
   .badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 7px; border-radius: 4px; font-size: 11px; line-height: 16px; font-weight: 500; }

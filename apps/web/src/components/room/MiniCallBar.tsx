@@ -62,7 +62,7 @@ export function MiniCallBar({
             onClick={onToggleMute}
             aria-pressed={isMuted}
             aria-label={isMuted ? 'Ativar microfone' : 'Silenciar microfone'}
-            className={`flex h-9 w-9 items-center justify-center rounded-full transition-colors ${
+            className={`flex h-11 w-11 sm:h-9 sm:w-9 items-center justify-center rounded-full transition-colors ${
               isMuted
                 ? 'bg-red-500/15 text-red-300 hover:bg-red-500/25'
                 : 'text-ink-secondary hover:bg-surface-hover hover:text-ink-primary'
@@ -75,7 +75,7 @@ export function MiniCallBar({
           <Link
             href={callScreenPath(roomId, communityId)}
             aria-label="Voltar para a sala"
-            className="flex h-9 w-9 items-center justify-center rounded-full text-ink-secondary transition-colors hover:bg-surface-hover hover:text-ink-primary"
+            className="flex h-11 w-11 sm:h-9 sm:w-9 items-center justify-center rounded-full text-ink-secondary transition-colors hover:bg-surface-hover hover:text-ink-primary"
           >
             <Icon name="maximize" size={18} />
           </Link>
@@ -85,7 +85,7 @@ export function MiniCallBar({
             type="button"
             onClick={onLeave}
             aria-label="Sair da chamada"
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-red-500 text-white transition-colors hover:bg-red-600"
+            className="flex h-11 w-11 sm:h-9 sm:w-9 items-center justify-center rounded-full bg-red-500 text-white transition-colors hover:bg-red-600"
           >
             <Icon name="phone" size={18} className="rotate-[135deg]" />
           </button>

@@ -24,7 +24,7 @@ export interface Member {
 }
 
 const item =
-  'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-ink-muted hover:bg-surface-hover hover:text-ink-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent';
+  'flex min-h-11 w-full items-center gap-2 rounded-lg px-3 py-2 text-left sm:min-h-0 text-sm text-ink-muted hover:bg-surface-hover hover:text-ink-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent';
 const railButton =
   'flex h-11 w-11 items-center justify-center rounded-xl text-sm font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent';
 
