@@ -1,6 +1,11 @@
 import { z } from 'zod';
 import type { CreateRoomInput, RoomResponse, RoomListItem, AuthResponse, LoginInput, RegisterInput, Metrics } from './validation';
 import {
+  communityAuditEntrySchema,
+  communityBanSchema,
+  memberTimeoutSchema,
+  moderationReasonBodySchema,
+  type TimeoutDuration,
   acceptCallResponseSchema,
   activeCallsSchema,
   adminModerationStateSchema,
@@ -41,7 +46,7 @@ const communitySchema = z.object({ id: z.string(), name: z.string(), ownerId: z.
 const categorySchema = z.object({ id: z.string(), name: z.string(), position: z.number() });
 export type CommunityCategory = z.infer<typeof categorySchema>;
 const channelSchema = z.object({ id: z.string(), name: z.string(), kind: channelKindSchema, position: z.number(), categoryId: z.string().nullish(), topic: z.string().nullish(), unread: z.number().int().min(0).optional() });
-const memberSchema = z.object({ userId: z.string(), name: z.string(), username: z.string().nullable(), role: communityRoleSchema, customRoleId: z.string().nullable().default(null) });
+const memberSchema = z.object({ userId: z.string(), name: z.string(), username: z.string().nullable(), role: communityRoleSchema, customRoleId: z.string().nullable().default(null), timeoutUntil: z.string().nullable().optional() });
 const customRoleSchema = z.object({ id: z.string(), name: z.string(), color: z.string(), permissions: communityPermissionsSchema });
 const noPermissions = { manageChannels: false, manageInvites: false, manageMessages: false, kickMembers: false };
 export const channelMessageSchema = z.object({ id: z.string(), channelId: z.string(), author: z.object({ id: z.string().nullable(), name: z.string(), username: z.string().nullable() }), content: z.string(), createdAt: z.string(), editedAt: z.string().nullable(), deletedAt: z.string().nullable(), files: z.array(z.object({ id: z.string(), filename: z.string(), mime: z.string(), size: z.number() })).default([]), replyTo: channelReplySchema.nullable().default(null), reactions: z.array(channelReactionSummarySchema).default([]), pinnedAt: z.string().nullable().default(null), pinnedById: z.string().nullable().default(null) });
@@ -615,6 +620,14 @@ class ApiClient {
   async updateCommunityRole(roleId: string, input: CustomRoleInput): Promise<void> { okSchema.parse(await this.request(`/api/community-roles/${encodeURIComponent(roleId)}`, { method: 'PATCH', body: JSON.stringify(customRoleInputSchema.parse(input)) })); }
   async deleteCommunityRole(roleId: string): Promise<void> { okSchema.parse(await this.request(`/api/community-roles/${encodeURIComponent(roleId)}`, { method: 'DELETE', body: '{}' })); }
   async setMemberCustomRole(id: string, userId: string, customRoleId: string | null): Promise<void> { okSchema.parse(await this.request(`/api/communities/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}/custom-role`, { method: 'PUT', body: JSON.stringify(memberCustomRoleSchema.parse({ customRoleId })) })); }
+  // ─── Moderacao de comunidade (Fase 3) ──
+  async timeoutCommunityMember(id: string, userId: string, duration: TimeoutDuration, reason?: string): Promise<void> { await this.request(`/api/communities/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}/timeout`, { method: 'PUT', body: JSON.stringify(memberTimeoutSchema.parse({ duration, reason })) }); }
+  async clearCommunityTimeout(id: string, userId: string): Promise<void> { okSchema.parse(await this.request(`/api/communities/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}/timeout`, { method: 'DELETE', body: '{}' })); }
+  async kickCommunityMember(id: string, userId: string, reason?: string): Promise<void> { okSchema.parse(await this.request(`/api/communities/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}/kick`, { method: 'POST', body: JSON.stringify(moderationReasonBodySchema.parse({ reason })) })); }
+  async banCommunityMember(id: string, userId: string, reason?: string): Promise<void> { okSchema.parse(await this.request(`/api/communities/${encodeURIComponent(id)}/bans/${encodeURIComponent(userId)}`, { method: 'PUT', body: JSON.stringify(moderationReasonBodySchema.parse({ reason })) })); }
+  async unbanCommunityMember(id: string, userId: string): Promise<void> { okSchema.parse(await this.request(`/api/communities/${encodeURIComponent(id)}/bans/${encodeURIComponent(userId)}`, { method: 'DELETE', body: '{}' })); }
+  async listCommunityBans(id: string) { return z.object({ bans: z.array(communityBanSchema) }).parse(await this.request(`/api/communities/${encodeURIComponent(id)}/bans`)); }
+  async getCommunityAudit(id: string, cursor?: string) { const qs = cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''; return z.object({ entries: z.array(communityAuditEntrySchema), nextCursor: z.string().nullable() }).parse(await this.request(`/api/communities/${encodeURIComponent(id)}/audit${qs}`)); }
   async revokeCommunityInvite(id: string): Promise<void> { okSchema.parse(await this.request(`/api/invites/${encodeURIComponent(id)}`, { method: 'DELETE', body: '{}' })); }
   async previewCommunityInvite(code: string) { return z.object({ community: z.object({ id: z.string(), name: z.string(), memberCount: z.number() }), alreadyMember: z.boolean() }).parse(await this.request('/api/invites/preview', { method: 'POST', body: JSON.stringify(communityInviteCodeSchema.parse({ code })) })); }
   async acceptCommunityInvite(code: string) { return z.object({ communityId: z.string() }).parse(await this.request('/api/invites/accept', { method: 'POST', body: JSON.stringify(communityInviteCodeSchema.parse({ code })) })); }

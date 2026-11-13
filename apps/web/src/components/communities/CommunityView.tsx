@@ -22,6 +22,8 @@ import { ChannelChat } from './ChannelChat';
 import { MessageSearchDialog } from './MessageSearchDialog';
 import { useChannelTyping } from '@/hooks/useChannelTyping';
 import { ConfirmDialog } from './ConfirmDialog';
+import { ModerationDialog, moderationError, type ModerationAction } from './ModerationDialogs';
+import { moderationNotice, outranks } from '@scale/shared';
 import {
   CommunitySettingsDialog,
   CreateCommunityDialog,
@@ -89,6 +91,7 @@ export function CommunityView({
   const [order, setOrder] = useState<string[]>([]);
   const [friends, setFriends] = useState<FriendsList | null>(null);
   const [notice, setNotice] = useState('');
+  const [moderation, setModeration] = useState<{ member: Member; action: ModerationAction } | null>(null);
   useEffect(() => setOrder(readOrder()), []);
   const loadFriends = useCallback(
     () =>
@@ -139,6 +142,14 @@ export function CommunityView({
       onMessage={(member) => router.push(`/friends?dm=${encodeURIComponent(member.userId)}`)}
       roleName={(member) => detail.roles.find((role) => role.id === member.customRoleId)?.name}
       isOnline={(member) => onlineIds.has(member.userId)}
+      canModerate={(member) => {
+        const me = detail.members.find((m) => m.userId === meId);
+        return Boolean(me && detail.myPermissions.kickMembers && member.userId !== meId && outranks(me, member));
+      }}
+      onModerate={(member, action) => {
+        if (action !== 'untimeout') { setModeration({ member, action }); return; }
+        void api.clearCommunityTimeout(detail.community.id, member.userId).then(refresh, (err: unknown) => setNotice(moderationError(err)));
+      }}
     />
   );
   const activeCall = useActiveCall();
@@ -304,6 +315,12 @@ export function CommunityView({
     },
     onDeleted: gone,
     onRemoved: gone,
+    onModeration: (event) => {
+      setNotice(moderationNotice(event));
+      // Castigo, ban ou expulsao: o servidor ja me tirou da voz; encerra a chamada local.
+      const inHere = detail?.channels.some((channel) => channel.id === activeCall?.roomId);
+      if (event.action !== 'untimeout' && inHere) window.dispatchEvent(new Event('scale:end-call'));
+    },
     onVoiceStates: (states) => {
       setVoice(states);
       setRefreshVersion((version) => version + 1);
@@ -507,6 +524,21 @@ export function CommunityView({
             setDialog(null);
             void refreshList();
             onNavigate(id);
+          }}
+        />
+      )}
+      {moderation && detail && (
+        <ModerationDialog
+          action={moderation.action}
+          member={moderation.member}
+          onClose={() => setModeration(null)}
+          onConfirm={async ({ duration, reason }) => {
+            const { community } = detail;
+            const userId = moderation.member.userId;
+            if (moderation.action === 'timeout') await api.timeoutCommunityMember(community.id, userId, duration, reason);
+            else if (moderation.action === 'kick') await api.kickCommunityMember(community.id, userId, reason);
+            else await api.banCommunityMember(community.id, userId, reason);
+            refresh();
           }}
         />
       )}

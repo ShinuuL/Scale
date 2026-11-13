@@ -21,6 +21,8 @@ import {
   type CommunityVoiceState,
   type ChannelMessageEditEvent,
   type ChannelMessageDeleteEvent,
+  communityModerationEventSchema,
+  type CommunityModerationEvent,
 } from '@scale/shared';
 import { channelMessageSchema, type ChannelMessage } from '@/lib/api';
 import { getWsUrl } from '@/hooks/useSocket';
@@ -34,6 +36,8 @@ export interface CommunityEventHandlers {
   onChanged?: () => void;
   onDeleted?: () => void;
   onRemoved?: () => void;
+  /** Fase 3: castigo/ban/expulsao recebidos por MIM nesta comunidade. */
+  onModeration?: (event: CommunityModerationEvent) => void;
   onVoiceStates?: (states: CommunityVoiceState[]) => void;
   onVoiceState?: (state: CommunityVoiceState) => void;
   /** Estado inicial de presenca (a cada inscricao): quem da comunidade esta online. */
@@ -93,6 +97,10 @@ export function useCommunityEvents(
     });
     socket.on('community:removed', (raw: unknown) => {
       if (matches(raw)) handlersRef.current.onRemoved?.();
+    });
+    socket.on('community:moderation', (raw: unknown) => {
+      const parsed = communityModerationEventSchema.safeParse(raw);
+      if (parsed.success && parsed.data.communityId === communityId) handlersRef.current.onModeration?.(parsed.data);
     });
     socket.on('community:voice-state', (raw: unknown) => {
       const parsed = communityVoiceStateSchema.safeParse(raw);
