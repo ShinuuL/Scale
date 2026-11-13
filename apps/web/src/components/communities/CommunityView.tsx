@@ -5,7 +5,9 @@ import { Dialog, Heading, Modal, ModalOverlay } from 'react-aria-components';
 import type { CommunityVoiceState } from '@scale/shared';
 import { useRouter } from 'next/navigation';
 import type { FriendsList } from '@scale/shared';
-import { api, type CommunityDetail, type CommunityListItem } from '@/lib/api';
+import { api, communityImageUrl, type CommunityDetail, type CommunityListItem } from '@/lib/api';
+import type { CommunityLayout } from '@scale/shared';
+import { applyLayout } from './channelLayout';
 import { callScreenPath, startBackgroundCall, useActiveCall } from '@/lib/callControl';
 import { useCommunityEvents } from '@/hooks/useCommunityEvents';
 import { useUserEvents } from '@/hooks/useUserEvents';
@@ -312,10 +314,27 @@ export function CommunityView({
     const color = detail?.roles.find((role) => role.id === member.customRoleId)?.color;
     return color ? [[member.userId, color] as const] : [];
   }));
+  // Ordem/categorias: aplica na hora e grava; erro (ex.: 409 lista velha) recarrega.
+  const saveLayout = (layout: CommunityLayout) => {
+    if (!detail) return;
+    const id = detail.community.id;
+    setDetail((current) =>
+      current && current.community.id === id
+        ? { ...current, ...applyLayout(current.channels, current.categories ?? [], layout) }
+        : current,
+    );
+    api.saveCommunityLayout(id, layout).catch(() => {
+      setError('Não foi possível salvar a ordem dos canais.');
+      refresh();
+    });
+  };
   const channels = detail && (
     <ChannelList
       name={detail.community.name}
       channels={detail.channels}
+      categories={detail.categories}
+      bannerUrl={communityImageUrl(detail.community.id, 'banner', detail.community.bannerUpdatedAt)}
+      onLayout={perms?.manageChannels ? saveLayout : undefined}
       selected={selected?.id}
       voiceStates={voice}
       speakingUserIds={speakingIds}

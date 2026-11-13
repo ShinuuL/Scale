@@ -134,12 +134,34 @@ model Community {
   name      String
   ownerId   String
   createdAt DateTime @default(now())
+  /// Icone e banner (uploads/community-media). Colunas novas anulaveis: db push aplica sem perda.
+  iconPath        String?
+  iconMime        String?
+  iconUpdatedAt   DateTime?
+  bannerPath      String?
+  bannerMime      String?
+  bannerUpdatedAt DateTime?
 
   owner   User              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   members     CommunityMember[]
+  categories  CommunityCategory[]
   invites     CommunityInvite[]
   rooms       Room[]
   customRoles CommunityCustomRole[]
+}
+
+/// Categoria de canais (opcional por canal). Tabela nova: db push cria sem perda.
+model CommunityCategory {
+  id          String   @id @default(uuid())
+  communityId String
+  name        String
+  position    Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  rooms     Room[]
+
+  @@index([communityId])
 }
 
 /// Cargo personalizado (nome, cor, permissoes). Soma-se ao cargo base; nunca tira poder.
@@ -210,8 +232,11 @@ model Room {
   communityId      String?
   channelKind      String?
   position         Int       @default(0)
+  /// Categoria do canal (anulavel; apagar a categoria solta o canal).
+  categoryId       String?
 
   community     Community?    @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  category      CommunityCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   owner         User?         @relation(fields: [ownerId], references: [id], onDelete: SetNull)
   roomMembers   RoomMember[]
   readStates    ChannelReadState[]

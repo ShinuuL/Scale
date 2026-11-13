@@ -13,6 +13,7 @@ import { evictCommunityUser, evictCommunity } from '../socket/handler.js';
 import { purgeRoom } from '../lib/roomDeletion.js';
 import { getClientIp } from '../lib/clientIp.js';
 import { channelUnreads, emitCommunityActivity, markChannelsRead, totalsByCommunity } from '../lib/unread.js';
+import { removeCommunityMedia } from './communityExtras.js';
 
 const idSchema = z.string().uuid();
 const params = z.object({ id: idSchema });
@@ -48,15 +49,15 @@ export async function communityRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/communities', auth, async (request, reply) => {
     const rows = await prisma.communityMember.findMany({ where: { userId: meOf(request) }, include: { community: true }, orderBy: { joinedAt: 'asc' } });
     const unread = totalsByCommunity(await channelUnreads(meOf(request)));
-    return reply.send({ communities: rows.map(row => ({ id: row.community.id, name: row.community.name, role: row.role, unread: unread.get(row.community.id) ?? 0 })) });
+    return reply.send({ communities: rows.map(row => ({ id: row.community.id, name: row.community.name, role: row.role, iconUpdatedAt: row.community.iconUpdatedAt?.toISOString() ?? null, unread: unread.get(row.community.id) ?? 0 })) });
   });
   app.get('/api/communities/:id', auth, async (request, reply) => {
     const p = params.safeParse(request.params); if (!p.success) return invalid(reply);
     const membership = await findMembership(p.data.id, meOf(request)); if (!membership) return missing(reply);
-    const community = await prisma.community.findUnique({ where: { id: p.data.id }, include: { rooms: { orderBy: { position: 'asc' } }, customRoles: { orderBy: { createdAt: 'asc' } }, members: { include: { user: { include: { username: true } } }, orderBy: { joinedAt: 'asc' } } } });
+    const community = await prisma.community.findUnique({ where: { id: p.data.id }, include: { rooms: { orderBy: { position: 'asc' } }, categories: { orderBy: { position: 'asc' } }, customRoles: { orderBy: { createdAt: 'asc' } }, members: { include: { user: { include: { username: true } } }, orderBy: { joinedAt: 'asc' } } } });
     if (!community) return missing(reply);
     const unread = new Map((await channelUnreads(meOf(request), community.id)).map(row => [row.channelId, row.unread]));
-    return reply.send({ community: { id: community.id, name: community.name, ownerId: community.ownerId }, myRole: membership.role, myPermissions: permissionsOf(membership), roles: community.customRoles.map(r => ({ id: r.id, name: r.name, color: r.color, permissions: { manageChannels: r.manageChannels, manageInvites: r.manageInvites, manageMessages: r.manageMessages, kickMembers: r.kickMembers } })), channels: community.rooms.map(r => ({ id: r.id, name: r.name, kind: r.channelKind, position: r.position, unread: unread.get(r.id) ?? 0 })), members: community.members.map(m => ({ userId: m.userId, name: m.user.name, username: m.user.username?.name ?? null, role: m.role, customRoleId: m.customRoleId })) });
+    return reply.send({ community: { id: community.id, name: community.name, ownerId: community.ownerId, iconUpdatedAt: community.iconUpdatedAt?.toISOString() ?? null, bannerUpdatedAt: community.bannerUpdatedAt?.toISOString() ?? null }, myRole: membership.role, myPermissions: permissionsOf(membership), roles: community.customRoles.map(r => ({ id: r.id, name: r.name, color: r.color, permissions: { manageChannels: r.manageChannels, manageInvites: r.manageInvites, manageMessages: r.manageMessages, kickMembers: r.kickMembers } })), categories: community.categories.map(c => ({ id: c.id, name: c.name, position: c.position })), channels: community.rooms.map(r => ({ id: r.id, name: r.name, kind: r.channelKind, position: r.position, categoryId: r.categoryId, unread: unread.get(r.id) ?? 0 })), members: community.members.map(m => ({ userId: m.userId, name: m.user.name, username: m.user.username?.name ?? null, role: m.role, customRoleId: m.customRoleId })) });
   });
   app.patch('/api/communities/:id', auth, async (request, reply) => {
     const p = params.safeParse(request.params); const body = communityCreateSchema.safeParse(request.body); if (!p.success || !body.success) return invalid(reply);
@@ -70,6 +71,7 @@ export async function communityRoutes(app: FastifyInstance): Promise<void> {
     await evictCommunity(ioOf(app), p.data.id);
     const rooms = await prisma.room.findMany({ where: { communityId: p.data.id }, select: { id: true } });
     for (const room of rooms) await purgeRoom(ioOf(app), room.id, app.log);
+    await removeCommunityMedia(p.data.id);
     await prisma.community.delete({ where: { id: p.data.id } }); return reply.send({ ok: true });
   });
   app.post('/api/communities/:id/leave', auth, async (request, reply) => {
@@ -124,7 +126,9 @@ export async function communityRoutes(app: FastifyInstance): Promise<void> {
     const room = await prisma.$transaction(async tx => {
       const count = await tx.room.count({ where: { communityId: p.data.id } });
       if (count >= MAX_CHANNELS_PER_COMMUNITY) return null;
-      return tx.room.create({ data: { communityId: p.data.id, name: body.data.name, channelKind: body.data.kind, position: count, isPersistent: true, isPrivate: true } });
+      // Fim da lista: maior posicao + 1 (apos reordenar/apagar, count pode colidir).
+      const last = await tx.room.aggregate({ where: { communityId: p.data.id }, _max: { position: true } });
+      return tx.room.create({ data: { communityId: p.data.id, name: body.data.name, channelKind: body.data.kind, position: (last._max.position ?? -1) + 1, isPersistent: true, isPrivate: true } });
     });
     if (!room) return reply.code(409).send({ error: 'Channel limit reached' });
     changed(app, p.data.id);
