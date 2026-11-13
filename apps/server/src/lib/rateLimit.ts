@@ -516,3 +516,17 @@ export function isCommunityInviteRateLimited(ip: string): RateLimitResult {
 export function resetCommunityInviteRateLimit(ip: string): void {
   reset(communityInviteStore, ip);
 }
+
+// Busca de mensagens nas comunidades: 30 / min por USUARIO (cada busca varre
+// ate alguns milhares de linhas no SQLite).
+const MESSAGE_SEARCH_WINDOW_MS = 60_000;
+const MESSAGE_SEARCH_MAX = 30;
+const messageSearchStore = createBucket('messageSearch');
+
+export function isMessageSearchRateLimited(userId: string): RateLimitResult {
+  return take(messageSearchStore, userId, MESSAGE_SEARCH_WINDOW_MS, MESSAGE_SEARCH_MAX);
+}
+
+export function resetMessageSearchRateLimit(userId: string): void {
+  reset(messageSearchStore, userId);
+}
