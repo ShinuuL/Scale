@@ -374,6 +374,11 @@ docker compose up --build -d
     `friends:changed` e `dm:message`. DTO público sem e-mail.
   - Foto de amigo: `GET /api/users/:userId/avatar` (amigo ou si mesmo; sem
     amizade = 404 igual a "sem foto")
+- Comunidades, presença e indicadores de voz: `community:presence`
+  (online = algum socket logado; estado inicial em `onlineUserIds` do ack de
+  `community:subscribe`), lista "Online — N"/"Offline — N"; membros da voz com
+  `muted`/`deafened`/`screenSharing` e `community:voice-speaking` (cliente manda
+  `peer:voice-flags`, "falando" só em transições, no máximo 1 a cada 400 ms)
 - Foto na chamada (cartões do canal de voz): a própria via `/api/me/avatar`; a
   dos outros via `GET /api/rooms/:roomId/peers/:peerId/avatar` — exige room
   ticket (ou dono) e só serve peer logado que está NA sala agora. O `userId`

@@ -6,6 +6,10 @@ import { z } from 'zod';
 import {
   communitySubscriptionAckSchema,
   communityVoiceStateSchema,
+  communityPresenceSchema,
+  communityVoiceSpeakingSchema,
+  type CommunityPresence,
+  type CommunityVoiceSpeaking,
   channelMessageEditEventSchema,
   channelMessageDeleteEventSchema,
   type CommunityVoiceState,
@@ -24,6 +28,10 @@ export interface CommunityEventHandlers {
   onRemoved?: () => void;
   onVoiceStates?: (states: CommunityVoiceState[]) => void;
   onVoiceState?: (state: CommunityVoiceState) => void;
+  /** Estado inicial de presenca (a cada inscricao): quem da comunidade esta online. */
+  onOnlineUsers?: (userIds: string[]) => void;
+  onPresence?: (event: CommunityPresence) => void;
+  onVoiceSpeaking?: (event: CommunityVoiceSpeaking) => void;
   onError?: (error: string) => void;
 }
 
@@ -60,6 +68,7 @@ export function useCommunityEvents(
           return;
         }
         handlersRef.current.onVoiceStates?.(result.data.voiceStates);
+        handlersRef.current.onOnlineUsers?.(result.data.onlineUserIds);
         handlersRef.current.onChanged?.();
       });
     });
@@ -76,6 +85,14 @@ export function useCommunityEvents(
     socket.on('community:voice-state', (raw: unknown) => {
       const parsed = communityVoiceStateSchema.safeParse(raw);
       if (parsed.success) handlersRef.current.onVoiceState?.(parsed.data);
+    });
+    socket.on('community:presence', (raw: unknown) => {
+      const parsed = communityPresenceSchema.safeParse(raw);
+      if (parsed.success && parsed.data.communityId === communityId) handlersRef.current.onPresence?.(parsed.data);
+    });
+    socket.on('community:voice-speaking', (raw: unknown) => {
+      const parsed = communityVoiceSpeakingSchema.safeParse(raw);
+      if (parsed.success) handlersRef.current.onVoiceSpeaking?.(parsed.data);
     });
     socket.on('channel:message', (raw: unknown) => {
       const parsed = channelMessageSchema.safeParse(raw);
