@@ -130,6 +130,16 @@
     .app-header { padding: 0 20px; }
     .pwa-features { left: 5px; }
   }
+  /* Barra lateral principal oculta por tela (botao no cabecalho). No celular ela e a barra inferior e nunca some. */
+  @media (min-width: 640px) {
+    .app-shell.app-shell-no-rail { grid-template-columns: 232px minmax(0, 1fr); }
+    .app-shell.app-shell-no-rail.app-shell-no-context { grid-template-columns: minmax(0, 1fr); }
+    .app-shell-no-rail .app-rail { display: none; }
+  }
+  @media (min-width: 640px) and (max-width: 1023px) {
+    .app-shell.app-shell-no-rail { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 639px) { .app-rail-toggle { display: none; } }
   @media (max-width: 639px) {
     .app-shell { display: flex; flex-direction: column; padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
     .app-rail { position: fixed; z-index: 30; bottom: 0; left: 0; right: 0; height: calc(64px + env(safe-area-inset-bottom)); padding: 4px 12px env(safe-area-inset-bottom); border-top: 1px solid var(--border); border-right: 0; }

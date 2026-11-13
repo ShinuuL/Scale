@@ -33,6 +33,16 @@ export function AppShell({ activeSection, title, contextSidebar, hideContext = f
     sync(); media.addEventListener('change', sync);
     return () => media.removeEventListener('change', sync);
   }, []);
+  // Barra principal oculta, lembrada por tela (ex.: esconder so em Comunidades).
+  const railKey = `scale:rail-hidden:${activeSection}`;
+  const [railHidden, setRailHidden] = useState(false);
+  useEffect(() => {
+    try { setRailHidden(window.localStorage.getItem(railKey) === '1'); } catch { setRailHidden(false); }
+  }, [railKey]);
+  const toggleRail = () => setRailHidden((hidden) => {
+    try { window.localStorage.setItem(railKey, hidden ? '0' : '1'); } catch { /* sem storage: vale so nesta visita */ }
+    return !hidden;
+  });
   const contextRef = useRef<HTMLDialogElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const contextFocusTarget = useRef<string | null>(null);
@@ -42,7 +52,7 @@ export function AppShell({ activeSection, title, contextSidebar, hideContext = f
     if (onNavigate && !onNavigate(href)) event.preventDefault();
   };
   return (
-    <div className={`app-shell${hideContext ? ' app-shell-no-context' : ''}`}>
+    <div className={`app-shell${hideContext ? ' app-shell-no-context' : ''}${railHidden ? ' app-shell-no-rail' : ''}`}>
       <aside className="app-rail" aria-label="Navegação principal">
         <Link href="/" aria-label="Scale — Salas" onClick={(event) => allowNavigation(event, '/')} className="flex h-11 w-11 items-center justify-center rounded-lg">
           <Logo size={34} priority />
@@ -61,6 +71,7 @@ export function AppShell({ activeSection, title, contextSidebar, hideContext = f
       <div className="app-workspace">
         <header className="app-header">
           <div className="flex min-w-0 items-center gap-3">
+            <button type="button" className="app-rail-toggle room-icon-button" aria-label={railHidden ? 'Mostrar barra lateral' : 'Ocultar barra lateral'} aria-pressed={railHidden} title={railHidden ? 'Mostrar barra lateral' : 'Ocultar barra lateral'} onClick={toggleRail}><Icon name="sidebar" size={19} /></button>
             <span className="app-mobile-logo"><Logo size={26} /></span>
             {!hideContext && contextSidebar && <button ref={triggerRef} type="button" className="app-context-trigger room-icon-button" aria-label="Abrir painel lateral" aria-haspopup="dialog" onClick={() => setContextOpen(true)}><Icon name="archive" size={19} /></button>}
             <h1 className="truncate">{title ?? 'Scale'}</h1>
