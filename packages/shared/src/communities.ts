@@ -31,12 +31,36 @@ export const channelMessageSendSchema = z.object({
   content: z.string().trim().min(1).max(CHAT_MESSAGE_MAX),
 });
 export const communitySubscriptionSchema = z.object({ communityId: z.string().uuid() });
+/** Membro conectado num canal de voz: mudo/deafen/tela vem de `peer:audio-state` e `peer:voice-flags`. */
+export const communityVoiceMemberSchema = z.object({
+  userId: z.string(),
+  name: z.string(),
+  muted: z.boolean().default(false),
+  deafened: z.boolean().default(false),
+  screenSharing: z.boolean().default(false),
+});
 export const communityVoiceStateSchema = z.object({
   channelId: z.string().uuid(),
-  members: z.array(z.object({ userId: z.string(), name: z.string() })),
+  members: z.array(communityVoiceMemberSchema),
+});
+/** `community:voice-speaking`: transicao de "falando" (cliente limita a frequencia). */
+export const communityVoiceSpeakingSchema = z.object({
+  channelId: z.string().uuid(),
+  userId: z.string(),
+  speaking: z.boolean(),
+});
+/** `community:presence`: membro ficou online (1o socket logado) ou offline (ultimo saiu). */
+export const communityPresenceSchema = z.object({
+  communityId: z.string().uuid(),
+  userId: z.string(),
+  online: z.boolean(),
 });
 export const communitySubscriptionAckSchema = z.union([
-  z.object({ success: z.literal(true), voiceStates: z.array(communityVoiceStateSchema) }),
+  z.object({
+    success: z.literal(true),
+    voiceStates: z.array(communityVoiceStateSchema),
+    onlineUserIds: z.array(z.string()).default([]),
+  }),
   z.object({ error: z.string() }),
 ]);
 export const channelMessageEditEventSchema = z.object({
@@ -52,6 +76,9 @@ export type CommunityRole = z.infer<typeof communityRoleSchema>;
 export type ChannelKind = z.infer<typeof channelKindSchema>;
 export type CommunitySubscription = z.infer<typeof communitySubscriptionSchema>;
 export type CommunityVoiceState = z.infer<typeof communityVoiceStateSchema>;
+export type CommunityVoiceMember = z.infer<typeof communityVoiceMemberSchema>;
+export type CommunityVoiceSpeaking = z.infer<typeof communityVoiceSpeakingSchema>;
+export type CommunityPresence = z.infer<typeof communityPresenceSchema>;
 export type CommunitySubscriptionAck = z.infer<typeof communitySubscriptionAckSchema>;
 export type ChannelMessageEditEvent = z.infer<typeof channelMessageEditEventSchema>;
 export type ChannelMessageDeleteEvent = z.infer<typeof channelMessageDeleteEventSchema>;

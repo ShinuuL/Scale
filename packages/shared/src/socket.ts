@@ -68,6 +68,22 @@ export const audioStateSchema = z.object({
 
 export type AudioStatePayload = z.infer<typeof audioStateSchema>;
 
+/**
+ * `peer:voice-flags` (cliente -> servidor): deafen, tela e "falando" do proprio
+ * peer. So alimenta os indicadores do canal de voz da comunidade. `speaking`
+ * chega apenas em transicoes, com intervalo minimo no cliente (throttle).
+ */
+export const voiceFlagsSchema = z
+  .object({
+    roomId: z.string().uuid(),
+    deafened: z.boolean().optional(),
+    screenSharing: z.boolean().optional(),
+    speaking: z.boolean().optional(),
+  })
+  .strict();
+
+export type VoiceFlagsPayload = z.infer<typeof voiceFlagsSchema>;
+
 // --- Chat schemas (Opção A) — trim aplicado no handler (content.trim()) antes do safeParse ---
 
 export const chatMessageSchema = z.object({
