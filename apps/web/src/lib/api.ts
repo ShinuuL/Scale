@@ -40,17 +40,18 @@ import { createRoomSchema, authResponseSchema, roomResponseSchema, roomListItemS
 
 import { communityCreateSchema, channelCreateSchema, channelUpdateSchema, communityMemberRoleSchema, communityInviteCreateSchema, communityInviteCodeSchema, channelMessageSendSchema, communityRoleSchema, channelKindSchema, communityPermissionsSchema, customRoleInputSchema, memberCustomRoleSchema, categoryInputSchema, communityLayoutSchema, type CustomRoleInput, type CommunityImageKind, type CommunityLayout } from '@scale/shared';
 import { channelOverrideSchema, channelSettingsSchema, type ChannelSettings } from '@scale/shared';
+import { channelUserLimitSchema, communityWelcomeSchema, type CommunityWelcome } from '@scale/shared';
 import { channelReplySchema, channelReactionSummarySchema, channelReactionEventSchema, channelReactionToggleSchema, channelPinEventSchema, type ChannelReaction } from '@scale/shared';
 
 const okSchema = z.object({ ok: z.literal(true) });
-const communitySchema = z.object({ id: z.string(), name: z.string(), ownerId: z.string(), iconUpdatedAt: z.string().nullish(), bannerUpdatedAt: z.string().nullish() });
+const communitySchema = z.object({ id: z.string(), name: z.string(), ownerId: z.string(), iconUpdatedAt: z.string().nullish(), bannerUpdatedAt: z.string().nullish(), welcome: z.object({ channelId: z.string(), message: z.string() }).nullish() });
 const categorySchema = z.object({ id: z.string(), name: z.string(), position: z.number() });
 export type CommunityCategory = z.infer<typeof categorySchema>;
-const channelSchema = z.object({ id: z.string(), name: z.string(), kind: channelKindSchema, position: z.number(), categoryId: z.string().nullish(), topic: z.string().nullish(), unread: z.number().int().min(0).optional(), announcement: z.boolean().optional(), slowModeSeconds: z.number().int().min(0).optional(), canSend: z.boolean().optional(), overrides: z.array(channelOverrideSchema).optional() });
+const channelSchema = z.object({ id: z.string(), name: z.string(), kind: channelKindSchema, position: z.number(), categoryId: z.string().nullish(), topic: z.string().nullish(), userLimit: z.number().int().nullish(), unread: z.number().int().min(0).optional(), announcement: z.boolean().optional(), slowModeSeconds: z.number().int().min(0).optional(), canSend: z.boolean().optional(), overrides: z.array(channelOverrideSchema).optional() });
 const memberSchema = z.object({ userId: z.string(), name: z.string(), username: z.string().nullable(), role: communityRoleSchema, customRoleId: z.string().nullable().default(null), timeoutUntil: z.string().nullable().optional() });
 const customRoleSchema = z.object({ id: z.string(), name: z.string(), color: z.string(), permissions: communityPermissionsSchema });
 const noPermissions = { manageChannels: false, manageInvites: false, manageMessages: false, kickMembers: false };
-export const channelMessageSchema = z.object({ id: z.string(), channelId: z.string(), author: z.object({ id: z.string().nullable(), name: z.string(), username: z.string().nullable() }), content: z.string(), createdAt: z.string(), editedAt: z.string().nullable(), deletedAt: z.string().nullable(), files: z.array(z.object({ id: z.string(), filename: z.string(), mime: z.string(), size: z.number() })).default([]), replyTo: channelReplySchema.nullable().default(null), reactions: z.array(channelReactionSummarySchema).default([]), pinnedAt: z.string().nullable().default(null), pinnedById: z.string().nullable().default(null) });
+export const channelMessageSchema = z.object({ id: z.string(), channelId: z.string(), author: z.object({ id: z.string().nullable(), name: z.string(), username: z.string().nullable() }), content: z.string(), createdAt: z.string(), editedAt: z.string().nullable(), deletedAt: z.string().nullable(), files: z.array(z.object({ id: z.string(), filename: z.string(), mime: z.string(), size: z.number() })).default([]), replyTo: channelReplySchema.nullable().default(null), reactions: z.array(channelReactionSummarySchema).default([]), pinnedAt: z.string().nullable().default(null), pinnedById: z.string().nullable().default(null), system: z.boolean().optional() });
 const messageSearchResponseSchema = z.object({ results: z.array(z.object({ id: z.string(), channelId: z.string(), channelName: z.string(), author: z.object({ id: z.string().nullable(), name: z.string(), username: z.string().nullable() }), content: z.string(), createdAt: z.string() })), nextCursor: z.string().nullable() });
 const communityDetailSchema = z.object({ community: communitySchema, myRole: communityRoleSchema, myPermissions: communityPermissionsSchema.default(noPermissions), roles: z.array(customRoleSchema).default([]), categories: z.array(categorySchema).optional(), channels: z.array(channelSchema), members: z.array(memberSchema) });
 export type CommunityCustomRole = z.infer<typeof customRoleSchema>;
@@ -569,6 +570,8 @@ class ApiClient {
   async updateChannelTopic(id: string, topic: string): Promise<void> { okSchema.parse(await this.request(`/api/channels/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(channelUpdateSchema.parse({ topic })) })); }
   /** Fase 3: aviso, modo lento e sobrescritas por cargo (substitui todas). */
   async saveChannelSettings(id: string, settings: ChannelSettings): Promise<void> { okSchema.parse(await this.request(`/api/channels/${encodeURIComponent(id)}/settings`, { method: 'PUT', body: JSON.stringify(channelSettingsSchema.parse(settings)) })); }
+  async setChannelUserLimit(id: string, userLimit: number | null): Promise<void> { okSchema.parse(await this.request(`/api/channels/${encodeURIComponent(id)}/user-limit`, { method: 'PUT', body: JSON.stringify(channelUserLimitSchema.parse({ userLimit })) })); }
+  async setCommunityWelcome(id: string, input: CommunityWelcome): Promise<void> { okSchema.parse(await this.request(`/api/communities/${encodeURIComponent(id)}/welcome`, { method: 'PUT', body: JSON.stringify(communityWelcomeSchema.parse(input)) })); }
   async deleteChannel(id: string): Promise<void> { okSchema.parse(await this.request(`/api/channels/${encodeURIComponent(id)}`, { method: 'DELETE', body: '{}' })); }
   async searchCommunityMessages(communityId: string, input: MessageSearchQuery): Promise<MessageSearchResponse> {
     const parsed = messageSearchQuerySchema.parse(input);
@@ -637,7 +640,7 @@ class ApiClient {
   async getCommunityAudit(id: string, cursor?: string) { const qs = cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''; return z.object({ entries: z.array(communityAuditEntrySchema), nextCursor: z.string().nullable() }).parse(await this.request(`/api/communities/${encodeURIComponent(id)}/audit${qs}`)); }
   async revokeCommunityInvite(id: string): Promise<void> { okSchema.parse(await this.request(`/api/invites/${encodeURIComponent(id)}`, { method: 'DELETE', body: '{}' })); }
   async previewCommunityInvite(code: string) { return z.object({ community: z.object({ id: z.string(), name: z.string(), memberCount: z.number() }), alreadyMember: z.boolean() }).parse(await this.request('/api/invites/preview', { method: 'POST', body: JSON.stringify(communityInviteCodeSchema.parse({ code })) })); }
-  async acceptCommunityInvite(code: string) { return z.object({ communityId: z.string() }).parse(await this.request('/api/invites/accept', { method: 'POST', body: JSON.stringify(communityInviteCodeSchema.parse({ code })) })); }
+  async acceptCommunityInvite(code: string) { return z.object({ communityId: z.string(), welcomeChannelId: z.string().nullish() }).parse(await this.request('/api/invites/accept', { method: 'POST', body: JSON.stringify(communityInviteCodeSchema.parse({ code })) })); }
 
   // ─── Gestao de administradores (so admin; 403 para os demais) ──
   async getAdminUsers(params: AdminUsersParams = {}): Promise<AdminUsersPage> {

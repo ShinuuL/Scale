@@ -16,6 +16,7 @@ import type { Channel, Member } from './CommunityParts';
 import { CategoriesSection, CommunityImagesSection } from './CommunityAppearance';
 import { buildSections, setChannelCategory } from './channelLayout';
 import { AuditPanel, BansPanel, SettingsTabs, type SettingsTab } from './ModerationDialogs';
+import { VoiceLimitSelect, WelcomeSection } from './CommunityWelcome';
 
 const selectClass =
   'w-full rounded-lg border border-line bg-surface-secondary p-2 text-sm text-ink-primary';
@@ -217,7 +218,10 @@ function ChannelSettingsRow({
   onTopic,
   roles = [],
   onSettings,
+  extra,
 }: {
+  /** Controles extras na linha (ex.: limite do canal de voz). */
+  extra?: ReactNode;
   channel: Channel;
   roles?: CommunityCustomRole[];
   /** Fase 3: permissoes, aviso e modo lento do canal. */
@@ -255,6 +259,7 @@ function ChannelSettingsRow({
             </select>
           </label>
         )}
+        {extra}
         <Button
           variant="ghost"
           size="sm"
@@ -577,6 +582,7 @@ export function CommunitySettingsDialog({
             onTopic={channel.kind === 'TEXT' ? (value) => run(() => api.updateChannelTopic(channel.id, value)) : undefined}
             roles={roles}
             onSettings={(settings) => run(() => api.saveChannelSettings(channel.id, settings))}
+            extra={channel.kind === 'VOICE' ? <VoiceLimitSelect channel={channel} run={run} /> : undefined}
             onDelete={() =>
               setConfirm({
                 title: `Apagar canal ${channel.name}?`,
@@ -622,6 +628,9 @@ export function CommunitySettingsDialog({
           </Button>
         </form>
       </section>}
+      {(myRole === 'OWNER' || myRole === 'ADMIN') && (
+        <WelcomeSection communityId={community.id} channels={channels} welcome={community.welcome} run={run} />
+      )}
       {myPermissions.manageChannels && (
         <CategoriesSection
           communityId={community.id}

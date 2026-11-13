@@ -18,6 +18,7 @@ import { buildChannelMessages, loadReplies } from '../lib/channelMessageMeta.js'
 import { checkChannelPost, emitToChannel, hiddenChannelIds, isChannelManager, viewableChannel } from '../lib/channelPermissions.js';
 import { resolveChannelAccess } from '@scale/shared';
 import { activeTimeout, audit, timeoutOf, canModerateMember, timedOutBody } from '../lib/communityModeration.js';
+import { postWelcomeMessage, welcomeChannelOf } from '../lib/communityWelcome.js';
 
 const idSchema = z.string().uuid();
 const params = z.object({ id: idSchema });
@@ -70,7 +71,7 @@ export async function communityRoutes(app: FastifyInstance): Promise<void> {
     const accessOf = (r: { id: string; announcement: boolean }) => resolveChannelAccess({ manager, customRoleId: membership.customRoleId, announcement: r.announcement }, overrides.filter(o => o.roomId === r.id));
     const rooms = community.rooms.filter(r => accessOf(r).view);
     const unread = new Map((await channelUnreads(meOf(request), community.id)).map(row => [row.channelId, row.unread]));
-    return reply.send({ community: { id: community.id, name: community.name, ownerId: community.ownerId, iconUpdatedAt: community.iconUpdatedAt?.toISOString() ?? null, bannerUpdatedAt: community.bannerUpdatedAt?.toISOString() ?? null }, myRole: membership.role, myPermissions: permissionsOf(membership), roles: community.customRoles.map(r => ({ id: r.id, name: r.name, color: r.color, permissions: { manageChannels: r.manageChannels, manageInvites: r.manageInvites, manageMessages: r.manageMessages, kickMembers: r.kickMembers } })), categories: community.categories.map(c => ({ id: c.id, name: c.name, position: c.position })), channels: rooms.map(r => ({ id: r.id, name: r.name, kind: r.channelKind, position: r.position, categoryId: r.categoryId, topic: r.topic ?? null, unread: unread.get(r.id) ?? 0, announcement: r.announcement, slowModeSeconds: r.slowModeSeconds, canSend: accessOf(r).send, ...(manager ? { overrides: overrides.filter(o => o.roomId === r.id).map(({ target, viewChannel, sendMessages }) => ({ target, viewChannel, sendMessages })) } : {}) })), members: community.members.map(m => ({ userId: m.userId, name: m.user.name, username: m.user.username?.name ?? null, role: m.role, customRoleId: m.customRoleId, timeoutUntil: activeTimeout(m)?.toISOString() ?? null })) });
+    return reply.send({ community: { id: community.id, name: community.name, ownerId: community.ownerId, iconUpdatedAt: community.iconUpdatedAt?.toISOString() ?? null, bannerUpdatedAt: community.bannerUpdatedAt?.toISOString() ?? null, welcome: await welcomeChannelOf(community.id) }, myRole: membership.role, myPermissions: permissionsOf(membership), roles: community.customRoles.map(r => ({ id: r.id, name: r.name, color: r.color, permissions: { manageChannels: r.manageChannels, manageInvites: r.manageInvites, manageMessages: r.manageMessages, kickMembers: r.kickMembers } })), categories: community.categories.map(c => ({ id: c.id, name: c.name, position: c.position })), channels: rooms.map(r => ({ id: r.id, name: r.name, kind: r.channelKind, position: r.position, categoryId: r.categoryId, topic: r.topic ?? null, userLimit: r.userLimit ?? null, unread: unread.get(r.id) ?? 0, announcement: r.announcement, slowModeSeconds: r.slowModeSeconds, canSend: accessOf(r).send, ...(manager ? { overrides: overrides.filter(o => o.roomId === r.id).map(({ target, viewChannel, sendMessages }) => ({ target, viewChannel, sendMessages })) } : {}) })), members: community.members.map(m => ({ userId: m.userId, name: m.user.name, username: m.user.username?.name ?? null, role: m.role, customRoleId: m.customRoleId, timeoutUntil: activeTimeout(m)?.toISOString() ?? null })) });
   });
   app.patch('/api/communities/:id', auth, async (request, reply) => {
     const p = params.safeParse(request.params); const body = communityCreateSchema.safeParse(request.body); if (!p.success || !body.success) return invalid(reply);
@@ -222,7 +223,11 @@ export async function communityRoutes(app: FastifyInstance): Promise<void> {
         return { status: 'ok' as const, communityId: invite.communityId, joined: true };
       });
       if (result.status === 'missing') return missing(reply); if (result.status === 'banned') return reply.code(403).send({ error: 'Banned' }); if (result.status === 'limit') return reply.code(409).send({ error: 'Member limit reached' });
-      if (result.joined) changed(app, result.communityId); return reply.send({ communityId: result.communityId });
+      if (!result.joined) return reply.send({ communityId: result.communityId, welcomeChannelId: (await welcomeChannelOf(result.communityId))?.channelId ?? null });
+      changed(app, result.communityId);
+      // Boas-vindas: mensagem de sistema no canal escolhido; o cliente abre nele.
+      const welcomeChannelId = await postWelcomeMessage(ioOf(app), result.communityId, me).catch((err: unknown) => { app.log.warn({ err }, 'welcome message failed'); return null; });
+      return reply.send({ communityId: result.communityId, welcomeChannelId });
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2003') return missing(reply);
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {

@@ -142,6 +142,9 @@ model Community {
   bannerPath      String?
   bannerMime      String?
   bannerUpdatedAt DateTime?
+  /// Boas-vindas (Fase 3): canal de texto e modelo com {nome}. Anulaveis: db push sem perda.
+  welcomeChannelId String?
+  welcomeMessage   String?
 
   owner   User              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   members     CommunityMember[]
@@ -246,6 +249,8 @@ model Room {
   announcement     Boolean   @default(false)
   /// Fase 3: modo lento em segundos (0 = desligado; ate 6 h).
   slowModeSeconds  Int       @default(0)
+  /// Limite de pessoas do canal de voz (Fase 3, 2..8; null = teto do mesh).
+  userLimit        Int?
 
   community     Community?    @relation(fields: [communityId], references: [id], onDelete: Cascade)
   category      CommunityCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
@@ -278,6 +283,8 @@ model ChatMessage {
   /// Fixada no canal (Fase 2). Colunas anulaveis: db push aplica sem perda.
   pinnedAt    DateTime?
   pinnedById  String?
+  /// Mensagem de sistema (Fase 3, boas-vindas): sem autor, ninguem edita.
+  isSystem    Boolean   @default(false)
 
   room      Room                  @relation(fields: [roomId], references: [id], onDelete: Cascade)
   files     ChatFile[]

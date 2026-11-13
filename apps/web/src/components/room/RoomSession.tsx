@@ -12,6 +12,7 @@ import { useChat } from '@/hooks/useChat';
 import { usePeerAvatars } from '@/hooks/usePeerAvatars';
 import { useScreenModeration } from '@/hooks/useScreenModeration';
 import type { ModerationConfig } from '@scale/shared';
+import { VOICE_CHANNEL_FULL_ERROR } from '@scale/shared';
 import { ScreenShareGateDialog } from '@/components/room/ScreenShareGateDialog';
 import { ReportDialog } from '@/components/room/ReportDialog';
 import { ChatPanel } from '@/components/ChatPanel';
@@ -456,8 +457,8 @@ export function RoomSession({
             }
           })
           .catch((err: unknown) => {
-            const message =
-              err instanceof Error && err.message ? err.message : 'Falha ao entrar na sala';
+            const raw = err instanceof Error && err.message ? err.message : 'Falha ao entrar na sala';
+            const message = raw === VOICE_CHANNEL_FULL_ERROR ? 'Canal de voz cheio' : raw;
             if (mode === 'first') {
               setError(message);
               return;

@@ -427,6 +427,7 @@ docker compose up --build -d
 - Auditoria de comunidade: castigo, ban, unban, expulsão, cargos, canais,
   categorias, ordem e fixação; `GET /api/communities/:id/audit` (cursor, quem
   tem alguma permissão de gestão) e aba "Auditoria" nas Configurações.
+- Voz e boas-vindas (Fase 3, `routes/communityWelcome.ts`): limite opcional de pessoas por canal de voz (`Room.userLimit` 2..8, nunca acima do teto do mesh; `PUT /api/channels/:id/user-limit`, `manageChannels`); o `join-room` recusa com `Voice channel is full` e a lista mostra "3/4" e "Cheio". Canal de boas-vindas (`PUT /api/communities/:id/welcome`, OWNER/ADMIN, canal de texto + modelo `{nome}` até 500): o aceite de convite posta mensagem `isSystem` (sem autor, ninguém edita; moderador apaga) e devolve `welcomeChannelId`, onde o novo membro abre.
 
 ## Requisitos de Infra
 
