@@ -34,6 +34,8 @@ export const communityInviteCodeSchema = z.object({
 });
 export const channelMessageSendSchema = z.object({
   content: z.string().trim().min(1).max(CHAT_MESSAGE_MAX),
+  /** Resposta (Fase 2): mensagem do MESMO canal; ausente = mensagem comum. */
+  replyToId: z.string().uuid().optional(),
 });
 export const communitySubscriptionSchema = z.object({ communityId: z.string().uuid() });
 /** Membro conectado num canal de voz: mudo/deafen/tela vem de `peer:audio-state` e `peer:voice-flags`. */
@@ -130,3 +132,32 @@ export const formatTypingText = (names: string[]): string | null => {
   if (names.length === 2) return `${names[0]} e ${names[1]} estão digitando`;
   return 'Várias pessoas estão digitando';
 };
+/* ─── Fase 2: resposta, reacoes e mensagens fixadas ─────────────────── */
+/** Conjunto FIXO de reacoes (icones SVG no front; nada de emoji). */
+export const CHANNEL_REACTIONS = ['like', 'heart', 'check', 'star', 'eyes', 'alert'] as const;
+export const channelReactionSchema = z.enum(CHANNEL_REACTIONS);
+export const CHANNEL_REACTION_LABELS: Record<ChannelReaction, string> = {
+  like: 'Curtir', heart: 'Coração', check: 'Concordo', star: 'Estrela', eyes: 'Vendo', alert: 'Importante',
+};
+export const channelReactionToggleSchema = z.object({ reaction: channelReactionSchema });
+/** Maximo de mensagens fixadas por canal. */
+export const MAX_PINNED_PER_CHANNEL = 50;
+/** Trecho da mensagem citada (autor + inicio do texto). */
+export const REPLY_EXCERPT_MAX = 120;
+export const channelReplySchema = z.object({
+  id: z.string(), authorName: z.string(), excerpt: z.string(), deleted: z.boolean(),
+});
+export const channelReactionSummarySchema = z.object({ reaction: channelReactionSchema, userIds: z.array(z.string()) });
+/** `channel:reaction`: estado completo de UMA reacao numa mensagem (quem reagiu). */
+export const channelReactionEventSchema = z.object({
+  channelId: z.string().uuid(), messageId: z.string().uuid(), reaction: channelReactionSchema, userIds: z.array(z.string()),
+});
+/** `channel:message-pin`: fixou (pinnedAt) ou desafixou (null). */
+export const channelPinEventSchema = z.object({
+  channelId: z.string().uuid(), messageId: z.string().uuid(), pinnedAt: z.string().nullable(), pinnedById: z.string().nullable(),
+});
+export type ChannelReaction = z.infer<typeof channelReactionSchema>;
+export type ChannelReply = z.infer<typeof channelReplySchema>;
+export type ChannelReactionSummary = z.infer<typeof channelReactionSummarySchema>;
+export type ChannelReactionEvent = z.infer<typeof channelReactionEventSchema>;
+export type ChannelPinEvent = z.infer<typeof channelPinEventSchema>;

@@ -530,3 +530,25 @@ export function isMessageSearchRateLimited(userId: string): RateLimitResult {
 export function resetMessageSearchRateLimit(userId: string): void {
   reset(messageSearchStore, userId);
 }
+
+// --- Reacoes/fixar em canal de comunidade (20 / 10 s por usuario) ---
+// Toggle grava/apaga uma linha e emite um evento para a comunidade inteira.
+
+const CHANNEL_REACTION_WINDOW_MS = 10_000;
+const CHANNEL_REACTION_MAX = 20;
+const channelReactionStore = createBucket('channelReaction');
+
+export function isChannelReactionRateLimited(key: string): boolean {
+  const now = Date.now();
+  const entry = channelReactionStore.get(key);
+  if (!entry || now > entry.resetAt) {
+    channelReactionStore.set(key, { count: 1, resetAt: now + CHANNEL_REACTION_WINDOW_MS });
+    return false;
+  }
+  entry.count++;
+  return entry.count > CHANNEL_REACTION_MAX;
+}
+
+export function resetChannelReactionRateLimit(key: string): void {
+  channelReactionStore.delete(key);
+}

@@ -11,6 +11,8 @@ import { Icon } from '@/components/ui/Icon';
 import { ConfirmDialog } from './ConfirmDialog';
 import { ChannelTopic } from './ChannelTopic';
 import { createTypingSender } from '@/hooks/useChannelTyping';
+import { PinnedPanel, ReactionBar, ReplyQuote, jumpToMessage, messageAnchorId } from './MessageExtras';
+import type { ChannelReaction } from '@scale/shared';
 
 const MAX_IMAGES = 5;
 const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
@@ -81,7 +83,17 @@ function MessageItem({
   onSave,
   onCancel,
   onDelete,
+  canPin,
+  onReply,
+  onReact,
+  onTogglePin,
+  onJump,
 }: {
+  canPin: boolean;
+  onReply: () => void;
+  onReact: (reaction: ChannelReaction) => void;
+  onTogglePin: () => void;
+  onJump: (id: string) => void;
   message: ChannelMessage;
   meId: string;
   canManage: boolean;
@@ -96,7 +108,8 @@ function MessageItem({
   onDelete: () => void;
 }) {
   return (
-    <article id={`channel-msg-${message.id}`} className="group rounded-lg py-3 transition-colors">
+    <article id={messageAnchorId(message.id)} className="group rounded-md py-3 transition-colors">
+      {message.replyTo && <ReplyQuote replyTo={message.replyTo} onJump={onJump} />}
       <div className="flex flex-wrap items-baseline gap-2">
         <strong className="text-sm text-ink-primary" style={color ? { color } : undefined}>{message.author.name}</strong>
         <time className="text-xs text-ink-muted" dateTime={message.createdAt}>
@@ -104,6 +117,12 @@ function MessageItem({
         </time>
         {message.editedAt && !message.deletedAt && (
           <span className="text-xs text-ink-muted">editada</span>
+        )}
+        {message.pinnedAt && !message.deletedAt && (
+          <span className="flex items-center gap-1 text-xs text-ink-muted">
+            <Icon name="pin" size={12} />
+            fixada
+          </span>
         )}
       </div>
       {editing && !message.deletedAt ? (
@@ -134,8 +153,29 @@ function MessageItem({
           )}
         </div>
       )}
+      {!message.deletedAt && <ReactionBar message={message} meId={meId} onToggle={onReact} />}
       {!message.deletedAt && !editing && (
         <div className="flex gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="min-h-8"
+            aria-label={`Responder a ${message.author.name}`}
+            onClick={onReply}
+          >
+            Responder
+          </Button>
+          {canPin && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="min-h-8"
+              aria-label={`${message.pinnedAt ? 'Desafixar' : 'Fixar'} mensagem de ${message.author.name}`}
+              onClick={onTogglePin}
+            >
+              {message.pinnedAt ? 'Desafixar' : 'Fixar'}
+            </Button>
+          )}
           {message.author.id === meId &&
             Date.now() - new Date(message.createdAt).getTime() < CHAT_EDIT_WINDOW_MS && (
               <Button
@@ -175,7 +215,11 @@ function Composer({
   inputRef,
   images,
   onImages,
+  replyingTo,
+  onCancelReply,
 }: {
+  replyingTo: ChannelMessage | null;
+  onCancelReply: () => void;
   name: string;
   draft: string;
   onChange: (value: string) => void;
@@ -188,6 +232,17 @@ function Composer({
   const fileRef = useRef<HTMLInputElement>(null);
   return (
     <form onSubmit={onSubmit} className="border-t border-line p-4">
+      {replyingTo && (
+        <div className="mb-2 flex items-center justify-between gap-2 rounded-md bg-surface-secondary px-3 py-1 text-xs text-ink-secondary">
+          <span className="flex min-w-0 items-center gap-1 truncate">
+            <Icon name="reply" size={14} />
+            Respondendo a <strong>{replyingTo.author.name}</strong>
+          </span>
+          <button type="button" className="room-icon-button !h-6 !w-6" aria-label="Cancelar resposta" title="Cancelar resposta" onClick={onCancelReply}>
+            <Icon name="close" size={14} />
+          </button>
+        </div>
+      )}
       <label htmlFor="channel-message" className="sr-only">
         Mensagem
       </label>
@@ -305,6 +360,8 @@ export function ChannelChat({
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState<ChannelMessage | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<ChannelMessage | null>(null);
+  const [pinsOpen, setPinsOpen] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const stickToBottom = useRef(true);
@@ -320,7 +377,7 @@ export function ChannelChat({
   // Resultado da busca: so rola se a mensagem ja estiver carregada; senao o canal apenas abre.
   useEffect(() => {
     if (!focusMessageId || state.loading || state.channelId !== channelId) return;
-    const el = document.getElementById(`channel-msg-${focusMessageId}`);
+    const el = document.getElementById(messageAnchorId(focusMessageId));
     if (el) {
       stickToBottom.current = false;
       el.scrollIntoView?.({ block: 'center' });
@@ -342,12 +399,15 @@ export function ChannelChat({
     try {
       const { message } = images.length > 0
         ? await api.uploadChannelImages(channelId, images, draft.trim())
-        : await api.sendChannelMessage(channelId, draft);
+        : replyingTo
+          ? await api.sendChannelMessage(channelId, draft, replyingTo.id)
+          : await api.sendChannelMessage(channelId, draft);
       stickToBottom.current = true;
       dispatch({ type: 'message', message });
       typingSender.stop();
       setDraft('');
       setImages([]);
+      setReplyingTo(null);
     } catch (err) {
       const status = (err as { status?: number }).status;
       setError(status === 413 ? 'Imagem grande demais ou cota do canal cheia.' : status === 400 ? 'Formato de imagem não aceito.' : status === 429 ? 'Muitos envios. Aguarde um pouco.' : 'Não foi possível enviar a mensagem.');
@@ -378,6 +438,24 @@ export function ChannelChat({
       setBusy(false);
     }
   }
+  async function react(messageId: string, reaction: ChannelReaction) {
+    try {
+      dispatch({ type: 'reaction', event: await api.toggleChannelReaction(channelId, messageId, reaction) });
+    } catch (err) {
+      setError((err as { status?: number }).status === 429 ? 'Muitas reações. Aguarde um pouco.' : 'Não foi possível reagir.');
+    }
+  }
+  async function togglePin(message: ChannelMessage) {
+    try {
+      dispatch({ type: 'pin', event: await api.setChannelPin(channelId, message.id, !message.pinnedAt) });
+    } catch (err) {
+      setError((err as { status?: number }).status === 409 ? 'Limite de mensagens fixadas neste canal.' : 'Não foi possível fixar a mensagem.');
+    }
+  }
+  const jump = (id: string) => {
+    if (!jumpToMessage(id)) setError('A mensagem original não está carregada. Use "Carregar anteriores".');
+  };
+  const pinVersion = messages.filter((message) => message.pinnedAt).length;
   async function older() {
     if (!state.cursor || olderBusy.current) return;
     olderBusy.current = true;
@@ -416,6 +494,9 @@ export function ChannelChat({
               <Icon name="search" aria-hidden />
             </Button>
           )}
+          <button type="button" className="room-icon-button" aria-label="Mensagens fixadas" title="Mensagens fixadas" onClick={() => setPinsOpen(true)}>
+            <Icon name="pin" size={18} />
+          </button>
         </div>
         <ChannelTopic topic={topic} canEdit={Boolean(onSaveTopic)} onSave={onSaveTopic} />
       </header>
@@ -460,6 +541,14 @@ export function ChannelChat({
               onSave={() => void saveEdit()}
               onCancel={cancelEdit}
               onDelete={() => setDeleting(message)}
+              canPin={canManage}
+              onReply={() => {
+                setReplyingTo(message);
+                inputRef.current?.focus();
+              }}
+              onReact={(reaction) => void react(message.id, reaction)}
+              onTogglePin={() => void togglePin(message)}
+              onJump={jump}
             />
           ))}
         </div>
@@ -481,7 +570,15 @@ export function ChannelChat({
         inputRef={inputRef}
         images={images}
         onImages={pickImages}
+        replyingTo={replyingTo}
+        onCancelReply={() => {
+          setReplyingTo(null);
+          inputRef.current?.focus();
+        }}
       />
+      {pinsOpen && (
+        <PinnedPanel channelId={channelId} version={pinVersion} onClose={() => setPinsOpen(false)} onJump={jump} />
+      )}
       {deleting && (
         <ConfirmDialog
           title="Apagar esta mensagem?"

@@ -75,7 +75,7 @@ describe('ChannelChat: digitando e topico', () => {
   it('mostra indicador em regiao polite e avisa digitacao/parada ao enviar', async () => {
     vi.spyOn(api, 'getChannelMessages').mockResolvedValue({ messages: [], nextCursor: null });
     vi.spyOn(api, 'sendChannelMessage').mockResolvedValue({
-      message: { id: 'm1', channelId: 'canal', author: { id: 'me', name: 'Eu', username: null }, content: 'oi', createdAt: new Date().toISOString(), editedAt: null, files: [], deletedAt: null },
+      message: { id: 'm1', channelId: 'canal', author: { id: 'me', name: 'Eu', username: null }, content: 'oi', createdAt: new Date().toISOString(), editedAt: null, files: [], deletedAt: null, replyTo: null, reactions: [], pinnedAt: null, pinnedById: null },
     } as Awaited<ReturnType<typeof api.sendChannelMessage>>);
     const onTyping = vi.fn();
     render(<Harness typingText="Ana está digitando" onTyping={onTyping} />);

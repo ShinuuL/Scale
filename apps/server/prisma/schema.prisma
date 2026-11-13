@@ -37,6 +37,7 @@ model User {
   moderationEvents ModerationEvent[]
   roomMembers RoomMember[]
   channelReadStates ChannelReadState[]
+  messageReactions ChatMessageReaction[]
 
   username               Username?
   githubAccount          GithubAccount?
@@ -262,13 +263,34 @@ model ChatMessage {
   editedAt    DateTime?
   deletedAt   DateTime?
   createdAt   DateTime  @default(now())
+  /// Resposta (Fase 2, canais de comunidade): id da mensagem citada. Sem FK: a citada pode sumir.
+  replyToId   String?
+  /// Fixada no canal (Fase 2). Colunas anulaveis: db push aplica sem perda.
+  pinnedAt    DateTime?
+  pinnedById  String?
 
-  room  Room       @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  files ChatFile[]
+  room      Room                  @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  files     ChatFile[]
+  reactions ChatMessageReaction[]
 
   @@index([roomId, createdAt])
   @@index([roomId, deletedAt])
   @@index([authorId])
+}
+
+/// Reacao (Fase 2): conjunto fixo de icones; um usuario reage uma vez por tipo.
+model ChatMessageReaction {
+  id        String   @id @default(uuid())
+  messageId String
+  userId    String
+  reaction  String
+  createdAt DateTime @default(now())
+
+  message ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, reaction])
+  @@index([messageId])
 }
 
 model ChatFile {
