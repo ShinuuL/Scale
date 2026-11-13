@@ -35,20 +35,31 @@ cargo clippy -- -D warnings
 
 ## Instaladores
 
-Com o [cargo-packager](https://crates.io/crates/cargo-packager):
+Com o [cargo-packager](https://crates.io/crates/cargo-packager) (o
+`before-packaging-command` do `Cargo.toml` já compila o release):
 
 ```bash
 cargo install cargo-packager --locked
 
-# Linux: .deb + AppImage
-cargo packager --release
-
-# Windows (NSIS + MSI): ver ci/build.yml — build em windows-latest
-# ou cross com cargo-xwin a partir do Linux
-cargo install cargo-xwin --locked
-cargo xwin build --release
-cargo xwin packager --release
+cargo packager --release --formats nsis            # Windows: setup .exe
+cargo packager --release --formats deb,appimage    # Linux
 ```
 
-Saída em `target/release/bundles/`. Um workflow de exemplo está em
-[`ci/build.yml`](ci/build.yml).
+Saída em `target/dist/`.
+
+## Publicar uma versão (GitHub Releases)
+
+1. Suba `version` no `Cargo.toml` (ex.: `0.2.0`) e faça merge na `main`.
+2. `git tag desktop-v0.2.0 && git push origin desktop-v0.2.0`
+
+O workflow [`desktop-release.yml`](../../.github/workflows/desktop-release.yml)
+confere tag = `Cargo.toml`, roda testes e clippy, gera os instaladores em
+runners Windows e Linux e publica a release com `SHA256SUMS`.
+
+## Aviso de atualização
+
+Ao abrir, o app consulta `api.github.com/repos/ShinuuL/Scale/releases` e, se
+houver release `desktop-v*` (sem rascunho/pré-release) mais nova que a versão
+compilada, mostra uma faixa no topo com "Baixar atualização" (abre a página da
+release no navegador). Não baixa nem executa nada sozinho. Fork: compile com
+`SCALE_UPDATE_REPO=dono/repo`.

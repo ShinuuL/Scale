@@ -67,6 +67,8 @@ pub struct ScaleApp {
     pub subscribed: HashSet<String>,
     /// Evita laço infinito de refresh: uma tentativa por 401.
     pub refreshing: bool,
+    /// Release mais nova encontrada (some ao clicar em "Depois").
+    pub update: Option<crate::updater::UpdateInfo>,
 }
 
 impl ScaleApp {
@@ -118,6 +120,7 @@ impl ScaleApp {
             status_message: String::new(),
             subscribed: HashSet::new(),
             refreshing: false,
+            update: None,
         }
     }
 
@@ -125,6 +128,16 @@ impl ScaleApp {
     /// volta; nunca toca no estado da UI.
     pub fn spawn(&self, fut: impl std::future::Future<Output = ()> + Send + 'static) {
         self.rt.spawn(fut);
+    }
+
+    /// Consulta as GitHub Releases uma vez por início do app.
+    pub fn check_for_update(&self) {
+        let tx = self.events_tx.clone();
+        self.spawn(async move {
+            if let Some(info) = crate::updater::check().await {
+                let _ = tx.send(UiEvent::UpdateAvailable(info));
+            }
+        });
     }
 
     fn origin_token(&self) -> Option<(String, String)> {
@@ -574,6 +587,7 @@ impl ScaleApp {
     pub fn apply_ui_event(&mut self, event: UiEvent, ctx: &egui::Context) {
         ctx.request_repaint();
         match event {
+            UiEvent::UpdateAvailable(info) => self.update = Some(info),
             UiEvent::HealthChecked(Ok(())) => {
                 self.connect_busy = false;
                 let origin = match config::validate_origin(&self.origin_input) {

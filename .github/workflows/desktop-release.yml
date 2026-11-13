@@ -1,0 +1,131 @@
+# Release do desktop nativo (Rust/egui) nas GitHub Releases.
+#
+# Como publicar:
+#   1. Suba `version` em apps/desktop-native/Cargo.toml (ex.: 0.2.0) e faça merge na main.
+#   2. git tag desktop-v0.2.0 && git push origin desktop-v0.2.0
+# O workflow confere tag = Cargo.toml, roda testes/clippy, gera os instaladores
+# (Windows NSIS, Linux .deb + AppImage) com SHA256SUMS e publica a release.
+# Os apps instalados consultam as releases `desktop-v*` ao abrir e avisam.
+# PRs/pushes que mexem no desktop só rodam a verificação (sem release).
+name: Desktop release
+
+on:
+  push:
+    tags: ["desktop-v*"]
+  pull_request:
+    paths: ["apps/desktop-native/**", ".github/workflows/desktop-release.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+defaults:
+  run:
+    shell: bash
+    working-directory: apps/desktop-native
+
+jobs:
+  build:
+    name: Instalador ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows
+            os: windows-latest
+            formats: nsis
+          - name: linux
+            os: ubuntu-22.04
+            formats: deb,appimage
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Conferir tag x Cargo.toml
+        if: startsWith(github.ref, 'refs/tags/desktop-v')
+        run: |
+          set -euo pipefail
+          CARGO_VERSION=$(grep -m1 '^version' Cargo.toml | sed -E 's/version = "(.*)"/\1/')
+          TAG_VERSION="${GITHUB_REF_NAME#desktop-v}"
+          if [ "$CARGO_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME nao bate com Cargo.toml ($CARGO_VERSION)"
+            exit 1
+          fi
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Dependencias de sistema (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libxcb1-dev libxcb-render0-dev libxcb-shape0-dev \
+            libxcb-xfixes0-dev libxkbcommon-dev libfontconfig1-dev \
+            libfreetype6-dev pkg-config libfuse2
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop-native
+
+      - run: cargo test --locked
+      - run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Instalar cargo-packager
+        run: cargo install cargo-packager --locked
+
+      - name: Gerar instaladores
+        run: cargo packager --release --formats ${{ matrix.formats }}
+
+      - name: Listar saida
+        run: ls -la target/dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scale-desktop-${{ matrix.name }}
+          if-no-files-found: error
+          path: |
+            apps/desktop-native/target/dist/*.exe
+            apps/desktop-native/target/dist/*.deb
+            apps/desktop-native/target/dist/*.AppImage
+
+  release:
+    name: Publicar release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/desktop-v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Criar release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#desktop-v}"
+          # Notas a partir da ultima release do desktop (ignora releases de outras partes).
+          PREV=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName \
+            -q '[.[] | select(.tagName | startswith("desktop-v"))][0].tagName // ""')
+          ARGS=(--repo "$GITHUB_REPOSITORY" --title "Scale Desktop $VERSION" --generate-notes)
+          [ -n "$PREV" ] && ARGS+=(--notes-start-tag "$PREV")
+          gh release create "$GITHUB_REF_NAME" dist/* "${ARGS[@]}"

@@ -90,6 +90,47 @@ fn day_separator(ui: &mut egui::Ui, day: &str) {
 impl ScaleApp {
     // ---- tela: conectar ao servidor ----
 
+    /// Faixa no topo quando há release nova do desktop. Abre a página da
+    /// release no navegador; o usuário baixa e roda o instalador.
+    pub fn render_update_banner(&mut self, ui: &mut egui::Ui) {
+        let Some(info) = self.update.clone() else { return };
+        let mut dismiss = false;
+        egui::Panel::top("atualizacao")
+            .resizable(false)
+            .frame(
+                egui::Frame::NONE
+                    .fill(colors::ACCENT_SUBTLE)
+                    .inner_margin(egui::Margin::symmetric(16, 8)),
+            )
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "Nova versão do Scale disponível: {} (você usa {}).",
+                            info.version,
+                            crate::updater::CURRENT_VERSION
+                        ))
+                        .color(colors::TEXT_PRIMARY),
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button("Depois").clicked() {
+                            dismiss = true;
+                        }
+                        if ui
+                            .button(egui::RichText::new("Baixar atualização").color(colors::ACCENT))
+                            .on_hover_text("Abre a página da versão no navegador")
+                            .clicked()
+                        {
+                            ui.ctx().open_url(egui::OpenUrl::new_tab(&info.url));
+                        }
+                    });
+                });
+            });
+        if dismiss {
+            self.update = None;
+        }
+    }
+
     pub fn render_connect(&mut self, ui: &mut egui::Ui) {
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE.fill(colors::BG_BASE))

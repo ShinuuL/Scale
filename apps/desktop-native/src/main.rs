@@ -4,6 +4,9 @@
 //! login por e-mail/senha. A rede roda em tarefas tokio; a UI (eframe) recebe
 //! os eventos por canal e nunca bloqueia.
 
+// Release no Windows: sem janela de console atrás do app.
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 mod api;
 mod app;
 mod config;
@@ -13,6 +16,7 @@ mod state;
 mod theme;
 mod token_store;
 mod ui;
+mod updater;
 mod util;
 
 use std::time::Duration;
@@ -45,6 +49,7 @@ fn main() -> eframe::Result<()> {
             if app.screen == Screen::Login && app.token.is_some() {
                 app.restore_session();
             }
+            app.check_for_update();
             Ok(Box::new(app))
         }),
     )
@@ -71,6 +76,8 @@ impl eframe::App for ScaleApp {
         if friends_dirty {
             self.load_friends();
         }
+
+        self.render_update_banner(ui);
 
         match self.screen {
             Screen::Conectar => self.render_connect(ui),

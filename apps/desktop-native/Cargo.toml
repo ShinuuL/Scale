@@ -24,6 +24,8 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 product-name = "Scale"
 identifier = "br.com.codecoffee.scale"
 out-dir = "target/dist"
+# cargo-packager nao compila sozinho: gera o binario release antes de empacotar.
+before-packaging-command = "cargo build --release"
 binaries = [{ path = "scale-desktop", main = true }]
 icons = ["assets/icon-512.png"]
 category = "Utility"

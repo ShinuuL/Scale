@@ -162,5 +162,7 @@ pub enum UiEvent {
     SocketDisconnected,
     /// Resultado do refresh de sessão: novo JWT se o servidor regravou o cookie.
     SessionRefreshed(Option<String>),
+    /// Nova versão do desktop publicada nas GitHub Releases.
+    UpdateAvailable(crate::updater::UpdateInfo),
     Err(String),
 }
