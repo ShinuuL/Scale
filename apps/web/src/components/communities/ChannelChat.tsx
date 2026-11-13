@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useRef, useState, type Dispatch, type FormEvent } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type FormEvent } from 'react';
 import { CHAT_EDIT_WINDOW_MS, CHAT_MESSAGE_MAX } from '@scale/shared';
 import { api, type ChannelMessage } from '@/lib/api';
 import type { ChannelMessagesAction, ChannelMessagesState } from '@/hooks/useChannelMessages';
@@ -9,6 +9,8 @@ import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Icon } from '@/components/ui/Icon';
 import { ConfirmDialog } from './ConfirmDialog';
+import { ChannelTopic } from './ChannelTopic';
+import { createTypingSender } from '@/hooks/useChannelTyping';
 
 const MAX_IMAGES = 5;
 const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
@@ -253,6 +255,10 @@ export function ChannelChat({
   authorColors,
   state,
   dispatch,
+  topic = null,
+  onSaveTopic,
+  typingText = null,
+  onTyping,
 }: {
   channelId: string;
   name: string;
@@ -261,8 +267,22 @@ export function ChannelChat({
   authorColors?: ReadonlyMap<string, string>;
   state: ChannelMessagesState;
   dispatch: Dispatch<ChannelMessagesAction>;
+  /** Topico do canal; `onSaveTopic` so vem para quem gerencia canais. */
+  topic?: string | null;
+  onSaveTopic?: (topic: string) => Promise<void>;
+  /** Texto pronto do indicador ("X esta digitando") ou null. */
+  typingText?: string | null;
+  onTyping?: (typing: boolean) => void;
 }) {
   const [draft, setDraft] = useState('');
+  const onTypingRef = useRef(onTyping);
+  onTypingRef.current = onTyping;
+  const typingSender = useMemo(() => createTypingSender((typing) => onTypingRef.current?.(typing)), []);
+  useEffect(() => () => typingSender.stop(), [typingSender]);
+  const changeDraft = (value: string) => {
+    setDraft(value);
+    typingSender.input(value);
+  };
   const [images, setImages] = useState<File[]>([]);
   const pickImages = (files: File[]) => {
     const valid = files.filter((file) => file.type.startsWith('image/') && file.size <= MAX_IMAGE_BYTES);
@@ -305,6 +325,7 @@ export function ChannelChat({
         : await api.sendChannelMessage(channelId, draft);
       stickToBottom.current = true;
       dispatch({ type: 'message', message });
+      typingSender.stop();
       setDraft('');
       setImages([]);
     } catch (err) {
@@ -367,7 +388,10 @@ export function ChannelChat({
   }
   return (
     <section aria-label={`Canal ${name}`} className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
-      <h2 className="border-b border-line px-5 py-4 font-semibold text-ink-primary">{name}</h2>
+      <header className="border-b border-line px-5 py-4">
+        <h2 className="font-semibold text-ink-primary">{name}</h2>
+        <ChannelTopic topic={topic} canEdit={Boolean(onSaveTopic)} onSave={onSaveTopic} />
+      </header>
       <div
         ref={listRef}
         onScroll={(event) => {
@@ -418,10 +442,13 @@ export function ChannelChat({
           {error || state.error}
         </Banner>
       )}
+      <p aria-live="polite" className="min-h-5 px-5 text-xs text-ink-muted">
+        {typingText ?? ''}
+      </p>
       <Composer
         name={name}
         draft={draft}
-        onChange={setDraft}
+        onChange={changeDraft}
         onSubmit={send}
         busy={busy}
         inputRef={inputRef}

@@ -26,6 +26,7 @@ export interface Channel {
   position: number;
   unread?: number;
   categoryId?: string | null;
+  topic?: string | null;
 }
 export interface Member {
   userId: string;

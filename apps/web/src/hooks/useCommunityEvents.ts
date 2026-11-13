@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { io } from 'socket.io-client';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { io, type Socket } from 'socket.io-client';
 import { z } from 'zod';
 import {
   communitySubscriptionAckSchema,
@@ -12,6 +12,8 @@ import {
   type CommunityVoiceSpeaking,
   channelMessageEditEventSchema,
   channelMessageDeleteEventSchema,
+  channelTypingEventSchema,
+  type ChannelTypingEvent,
   type CommunityVoiceState,
   type ChannelMessageEditEvent,
   type ChannelMessageDeleteEvent,
@@ -32,6 +34,8 @@ export interface CommunityEventHandlers {
   onOnlineUsers?: (userIds: string[]) => void;
   onPresence?: (event: CommunityPresence) => void;
   onVoiceSpeaking?: (event: CommunityVoiceSpeaking) => void;
+  /** Outro membro comecou/parou de digitar num canal de texto. */
+  onTyping?: (event: ChannelTypingEvent) => void;
   onError?: (error: string) => void;
 }
 
@@ -39,10 +43,11 @@ export interface CommunityEventHandlers {
 export function useCommunityEvents(
   communityId: string | null,
   handlers: CommunityEventHandlers,
-): { connected: boolean } {
+): { connected: boolean; emitTyping: (channelId: string, typing: boolean) => void } {
   const [connected, setConnected] = useState(false);
   const handlersRef = useRef(handlers);
   handlersRef.current = handlers;
+  const socketRef = useRef<Socket | null>(null);
   useEffect(() => {
     if (!communityId) return;
     let active = true;
@@ -52,6 +57,7 @@ export function useCommunityEvents(
       reconnection: true,
       timeout: 20000,
     });
+    socketRef.current = socket;
     const matches = (raw: unknown): boolean =>
       z.object({ communityId: z.string() }).safeParse(raw).data?.communityId === communityId;
     socket.on('connect', () => {
@@ -106,12 +112,22 @@ export function useCommunityEvents(
       const parsed = channelMessageDeleteEventSchema.safeParse(raw);
       if (parsed.success) handlersRef.current.onMessageDelete?.(parsed.data);
     });
+    socket.on('channel:typing', (raw: unknown) => {
+      const parsed = channelTypingEventSchema.safeParse(raw);
+      if (parsed.success && parsed.data.communityId === communityId) handlersRef.current.onTyping?.(parsed.data);
+    });
     return () => {
       active = false;
+      socketRef.current = null;
       if (socket.connected) socket.emit('community:unsubscribe', { communityId });
       socket.disconnect();
       setConnected(false);
     };
   }, [communityId]);
-  return { connected };
+  // Sinal efemero: sem conexao, simplesmente nao vai.
+  const emitTyping = useCallback((channelId: string, typing: boolean) => {
+    const socket = socketRef.current;
+    if (socket?.connected) socket.emit('channel:typing', { channelId, typing });
+  }, []);
+  return { connected, emitTyping };
 }

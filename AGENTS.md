@@ -383,6 +383,7 @@ docker compose up --build -d
 - Comunidade: ícone/banner (`PUT|GET|DELETE /api/communities/:id/{icon|banner}`, OWNER/ADMIN
   enviam, membros leem, mesmo desenho do avatar) e categorias de canais recolhíveis com ordem
   persistida (`/categories`, `/community-categories/:id`, `PUT /layout`; `manageChannels`)
+- Canais de texto da comunidade: "digitando" efêmero (`channel:typing`, só membro inscrito, sem gravar, expira em ~6 s) e tópico do canal (`topic` anulável, até 200, `manageChannels`)
 - Foto na chamada (cartões do canal de voz): a própria via `/api/me/avatar`; a
   dos outros via `GET /api/rooms/:roomId/peers/:peerId/avatar` — exige room
   ticket (ou dono) e só serve peer logado que está NA sala agora. O `userId`
