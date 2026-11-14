@@ -12,3 +12,4 @@ export * from './communityModeration.js';
 export * from './communityWelcome.js';
 export * from './communityEvents.js';
 export * from './threads.js';
+export * from './communityNickname.js';

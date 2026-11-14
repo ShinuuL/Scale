@@ -579,3 +579,16 @@ export function isCommunityEventRateLimited(userId: string): RateLimitResult {
 export function resetCommunityEventRateLimit(userId: string): void {
   reset(communityEventStore, userId);
 }
+
+// Apelido por comunidade (Fase 4): 10 / 10 min por usuario.
+const COMMUNITY_NICKNAME_WINDOW_MS = 10 * 60_000;
+const COMMUNITY_NICKNAME_MAX = 10;
+const communityNicknameStore = createBucket('communityNickname');
+
+export function isCommunityNicknameRateLimited(userId: string): RateLimitResult {
+  return take(communityNicknameStore, userId, COMMUNITY_NICKNAME_WINDOW_MS, COMMUNITY_NICKNAME_MAX);
+}
+
+export function resetCommunityNicknameRateLimit(userId: string): void {
+  reset(communityNicknameStore, userId);
+}

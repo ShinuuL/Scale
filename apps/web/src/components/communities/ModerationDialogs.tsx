@@ -193,10 +193,13 @@ export function BansPanel({ communityId }: { communityId: string }) {
   );
 }
 
+/** Acoes cujo detalhe (o que mudou) aparece depois de dois pontos. */
+const DETAILED = new Set<CommunityAuditEntry['action']>(['member.nickname', 'channel.settings', 'channel.user_limit', 'community.welcome']);
+
 /** Texto de uma linha do registro. */
 export function auditText(entry: CommunityAuditEntry): string {
-  const target = entry.targetName ? ` ${entry.targetName}` : '';
-  const detail = entry.detail && entry.action === 'member.timeout' ? ` por ${entry.detail}` : '';
+  const target = entry.targetName ? `${entry.action === 'community.welcome' ? ' em' : ''} ${entry.targetName}` : '';
+  const detail = !entry.detail ? '' : entry.action === 'member.timeout' ? ` por ${entry.detail}` : DETAILED.has(entry.action) ? `: ${entry.detail}` : '';
   return `${entry.actorName} · ${COMMUNITY_AUDIT_LABELS[entry.action]}${target}${detail}`;
 }
 

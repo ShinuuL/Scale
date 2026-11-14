@@ -425,11 +425,20 @@ docker compose up --build -d
   `routes/communityModeration.ts`; colunas `timeoutUntil/timeoutReason` em
   `CommunityMember`, tabelas `CommunityBan` e `CommunityAuditLog`.
 - Auditoria de comunidade: castigo, ban, unban, expulsão, cargos, canais,
-  categorias, ordem e fixação; `GET /api/communities/:id/audit` (cursor, quem
+  categorias, ordem, fixação, apelido de outro, configurações do canal,
+  limite de voz e boas-vindas; `GET /api/communities/:id/audit` (cursor, quem
   tem alguma permissão de gestão) e aba "Auditoria" nas Configurações.
 - Voz e boas-vindas (Fase 3, `routes/communityWelcome.ts`): limite opcional de pessoas por canal de voz (`Room.userLimit` 2..8, nunca acima do teto do mesh; `PUT /api/channels/:id/user-limit`, `manageChannels`); o `join-room` recusa com `Voice channel is full` e a lista mostra "3/4" e "Cheio". Canal de boas-vindas (`PUT /api/communities/:id/welcome`, OWNER/ADMIN, canal de texto + modelo `{nome}` até 500): o aceite de convite posta mensagem `isSystem` (sem autor, ninguém edita; moderador apaga) e devolve `welcomeChannelId`, onde o novo membro abre.
 - Eventos agendados (Fase 4, `routes/communityEvents.ts`, tabelas `CommunityEvent` e `CommunityEventInterest`): título 1..100, descrição até 1000, início, fim e canal de voz opcionais (canal VOICE que o criador vê; canal oculto ao leitor sai como "sem canal"). `GET|POST /api/communities/:id/events` (lista só os não terminados, máx. 50 futuros), `PATCH|DELETE /api/community-events/:id` (dono, ADMIN ou `manageChannels`; criar/editar/cancelar vão para a auditoria) e `PUT /api/community-events/:id/interest` ("Tenho interesse", qualquer membro). Toda escrita emite `community:changed`. Balde `communityEvent`: 30 / min por usuário. UI: botão Eventos no cabeçalho com selo das próximas 24 h e `AppModal` com lista e formulário (`datetime-local`). Sem agendador nem notificação.
 - Tópicos (Fase 4, `routes/channelThreads.ts`): "Abrir tópico" numa mensagem de canal de texto (nome 1..80; um por mensagem) cria `ChannelThread`; as respostas têm `ChatMessage.threadId` e ficam fora do canal principal. A origem mostra "N respostas · Abrir tópico" e o tópico abre num painel lateral (`ThreadPanel.tsx`) com histórico paginado e compositor próprio. Rotas: `POST /api/channels/:id/messages/:messageId/thread`, `GET /api/threads/:id`, `GET|POST /api/threads/:id/messages`, `PATCH /api/threads/:id` (`{ archived }`, `manageMessages`; arquivado não aceita envio = 409). Mesmas regras do canal pai (ver, enviar, aviso, modo lento, castigo). Tempo real por `emitToChannel`: `channel:message` com `threadId` e `channel:thread` (resumo). Sem reações nem citação dentro do tópico.
+- Apelido por comunidade (Fase 4, `routes/communityNickname.ts`): coluna
+  opcional `CommunityMember.nickname` (zod 1..32, trim; vazio/null limpa).
+  `PUT /api/communities/:id/members/:userId/nickname`: o próprio membro muda o
+  seu; o de outro exige `kickMembers` + hierarquia (`canModerateMember`) e vai
+  para a auditoria. Balde `communityNickname`: 10 / 10 min por usuário. Emite
+  `community:changed`. A UI troca o nome pelo apelido na lista de membros, nos
+  autores do canal, no "digitando" e nos cartões de voz; o nome real fica no
+  `title` e no perfil. "Mudar apelido" no menu de contexto e no perfil.
 
 ## Requisitos de Infra
 
