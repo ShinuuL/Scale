@@ -428,6 +428,7 @@ docker compose up --build -d
   categorias, ordem e fixação; `GET /api/communities/:id/audit` (cursor, quem
   tem alguma permissão de gestão) e aba "Auditoria" nas Configurações.
 - Voz e boas-vindas (Fase 3, `routes/communityWelcome.ts`): limite opcional de pessoas por canal de voz (`Room.userLimit` 2..8, nunca acima do teto do mesh; `PUT /api/channels/:id/user-limit`, `manageChannels`); o `join-room` recusa com `Voice channel is full` e a lista mostra "3/4" e "Cheio". Canal de boas-vindas (`PUT /api/communities/:id/welcome`, OWNER/ADMIN, canal de texto + modelo `{nome}` até 500): o aceite de convite posta mensagem `isSystem` (sem autor, ninguém edita; moderador apaga) e devolve `welcomeChannelId`, onde o novo membro abre.
+- Eventos agendados (Fase 4, `routes/communityEvents.ts`, tabelas `CommunityEvent` e `CommunityEventInterest`): título 1..100, descrição até 1000, início, fim e canal de voz opcionais (canal VOICE que o criador vê; canal oculto ao leitor sai como "sem canal"). `GET|POST /api/communities/:id/events` (lista só os não terminados, máx. 50 futuros), `PATCH|DELETE /api/community-events/:id` (dono, ADMIN ou `manageChannels`; criar/editar/cancelar vão para a auditoria) e `PUT /api/community-events/:id/interest` ("Tenho interesse", qualquer membro). Toda escrita emite `community:changed`. Balde `communityEvent`: 30 / min por usuário. UI: botão Eventos no cabeçalho com selo das próximas 24 h e `AppModal` com lista e formulário (`datetime-local`). Sem agendador nem notificação.
 
 ## Requisitos de Infra
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Button as AriaButton, Menu, MenuItem, MenuTrigger, Popover } from 'react-aria-components';
 import { AppModal } from '@/components/ui/AppModal';
 import { Icon } from '@/components/ui/Icon';
@@ -208,6 +208,7 @@ export function ChannelList({
   categories = [],
   bannerUrl,
   onLayout,
+  headerExtra,
 }: {
   name: string;
   channels: Channel[];
@@ -232,6 +233,8 @@ export function ChannelList({
   activeVoiceId?: string;
   activeVoiceJoined?: boolean;
   onOpenCall?: (channel: Channel) => void;
+  /** Acoes extras ao lado do menu (Fase 4: botao Eventos). */
+  headerExtra?: ReactNode;
 }) {
   return (
     <section className="flex h-full w-full flex-col bg-surface-secondary p-3">
@@ -246,6 +249,7 @@ export function ChannelList({
       )}
       <div className="flex items-center gap-1">
         <h2 className="min-w-0 flex-1 truncate px-3 py-2 font-semibold text-ink-primary">{name}</h2>
+        {headerExtra}
         <MenuTrigger>
           <Tooltip label="Menu da comunidade">
             <AriaButton

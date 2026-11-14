@@ -154,6 +154,7 @@ model Community {
   customRoles CommunityCustomRole[]
   bans        CommunityBan[]
   auditLogs   CommunityAuditLog[]
+  events      CommunityEvent[]
 }
 
 /// Categoria de canais (opcional por canal). Tabela nova: db push cria sem perda.
@@ -481,4 +482,35 @@ model CommunityAuditLog {
   community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
 
   @@index([communityId, createdAt])
+}
+
+/// Evento agendado (Fase 4). Tabela nova: db push cria sem perda. Criador e
+/// canal sem relacao (nao mexe em User/Room): canal apagado vira "sem canal".
+model CommunityEvent {
+  id          String    @id @default(uuid())
+  communityId String
+  creatorId   String
+  creatorName String
+  title       String
+  description String?
+  startsAt    DateTime
+  endsAt      DateTime?
+  channelId   String?
+  createdAt   DateTime  @default(now())
+
+  community Community               @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  interests CommunityEventInterest[]
+
+  @@index([communityId, startsAt])
+}
+
+/// "Tenho interesse" (Fase 4): um por usuario e evento.
+model CommunityEventInterest {
+  eventId   String
+  userId    String
+  createdAt DateTime @default(now())
+
+  event CommunityEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@id([eventId, userId])
 }
