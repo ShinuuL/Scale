@@ -62,7 +62,7 @@ test.describe('criar sala na home', () => {
 
 test('visitante sem sessão cai na landing, não direto como convidado', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByRole('heading', { level: 1, name: 'Sua sala de voz, sem complicação.' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Chama a turma. Abre a sala.' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Perfil de Convidado' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Continuar como convidado' }).click();
   await expect(page.getByRole('button', { name: 'Perfil de Convidado' })).toBeVisible();
