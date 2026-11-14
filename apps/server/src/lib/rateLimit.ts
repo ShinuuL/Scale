@@ -565,3 +565,17 @@ export function isCommunityModerationRateLimited(userId: string): RateLimitResul
 export function resetCommunityModerationRateLimit(userId: string): void {
   reset(communityModerationStore, userId);
 }
+
+// Eventos da comunidade (Fase 4): criar/editar/cancelar/interesse, 30 / min
+// por USUARIO. A rota exige login e cada escrita emite `community:changed`.
+const COMMUNITY_EVENT_WINDOW_MS = 60_000;
+const COMMUNITY_EVENT_MAX = 30;
+const communityEventStore = createBucket('communityEvent');
+
+export function isCommunityEventRateLimited(userId: string): RateLimitResult {
+  return take(communityEventStore, userId, COMMUNITY_EVENT_WINDOW_MS, COMMUNITY_EVENT_MAX);
+}
+
+export function resetCommunityEventRateLimit(userId: string): void {
+  reset(communityEventStore, userId);
+}

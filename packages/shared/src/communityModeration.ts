@@ -30,7 +30,7 @@ export const COMMUNITY_AUDIT_ACTIONS = [
   'member.role', 'member.custom_role', 'role.create', 'role.update', 'role.delete',
   'channel.create', 'channel.update', 'channel.delete',
   'category.create', 'category.update', 'category.delete', 'layout.update',
-  'message.pin', 'message.unpin',
+  'message.pin', 'message.unpin', 'event.create', 'event.update', 'event.cancel',
 ] as const;
 export const communityAuditActionSchema = z.enum(COMMUNITY_AUDIT_ACTIONS);
 export type CommunityAuditAction = z.infer<typeof communityAuditActionSchema>;
@@ -42,6 +42,7 @@ export const COMMUNITY_AUDIT_LABELS: Record<CommunityAuditAction, string> = {
   'channel.update': 'Editou o canal', 'channel.delete': 'Apagou o canal', 'category.create': 'Criou a categoria',
   'category.update': 'Renomeou a categoria', 'category.delete': 'Apagou a categoria',
   'layout.update': 'Reorganizou os canais', 'message.pin': 'Fixou mensagem em', 'message.unpin': 'Desafixou mensagem em',
+  'event.create': 'Criou o evento', 'event.update': 'Editou o evento', 'event.cancel': 'Cancelou o evento',
 };
 export const communityAuditEntrySchema = z.object({
   id: z.string(),
