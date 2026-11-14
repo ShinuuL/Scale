@@ -20,6 +20,7 @@ import { Tooltip } from '@/components/ui/Tooltip';
 import { ChannelList, CommunityRail, MemberList, type FriendStatus, type Member } from './CommunityParts';
 import { ChannelChat } from './ChannelChat';
 import { MessageSearchDialog } from './MessageSearchDialog';
+import { CommunityEventsButton } from './CommunityEvents';
 import { useChannelTyping } from '@/hooks/useChannelTyping';
 import { ConfirmDialog } from './ConfirmDialog';
 import { ModerationDialog, moderationError, type ModerationAction } from './ModerationDialogs';
@@ -72,6 +73,8 @@ export function CommunityView({
   const [dialog, setDialog] = useState<DialogName>(null);
   // Busca de mensagens (Fase 2): dialogo proprio + mensagem a destacar no canal aberto.
   const [searchOpen, setSearchOpen] = useState(false);
+  // Eventos (Fase 4): incrementa a cada community:changed para recarregar a lista.
+  const [eventsKey, setEventsKey] = useState(0);
   const [focusMessageId, setFocusMessageId] = useState<string | null>(null);
   const clearFocus = useCallback(() => setFocusMessageId(null), []);
   const [voice, setVoice] = useState<CommunityVoiceState[]>([]);
@@ -311,6 +314,7 @@ export function CommunityView({
     onPin: (event) => dispatch({ type: 'pin', event }),
     onChanged: () => {
       refresh();
+      setEventsKey((key) => key + 1);
       void refreshList();
     },
     onDeleted: gone,
@@ -384,6 +388,14 @@ export function CommunityView({
         setDialog(null);
         router.push(callScreenPath(channel.id, detail.community.id));
       }}
+      headerExtra={
+        <CommunityEventsButton
+          communityId={detail.community.id}
+          canManage={Boolean(perms?.manageChannels)}
+          voiceChannels={detail.channels.filter((c) => c.kind === 'VOICE')}
+          refreshKey={eventsKey}
+        />
+      }
       onInvite={() => setDialog('invite')}
       onSettings={() => setDialog('settings')}
       canManage={!!canManage}

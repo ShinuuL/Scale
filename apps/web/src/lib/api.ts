@@ -40,6 +40,7 @@ import { createRoomSchema, authResponseSchema, roomResponseSchema, roomListItemS
 
 import { communityCreateSchema, channelCreateSchema, channelUpdateSchema, communityMemberRoleSchema, communityInviteCreateSchema, communityInviteCodeSchema, channelMessageSendSchema, communityRoleSchema, channelKindSchema, communityPermissionsSchema, customRoleInputSchema, memberCustomRoleSchema, categoryInputSchema, communityLayoutSchema, type CustomRoleInput, type CommunityImageKind, type CommunityLayout } from '@scale/shared';
 import { channelOverrideSchema, channelSettingsSchema, type ChannelSettings } from '@scale/shared';
+import { communityEventInputSchema, communityEventInterestSchema, communityEventListSchema, type CommunityEventInput } from '@scale/shared';
 import { channelUserLimitSchema, communityWelcomeSchema, type CommunityWelcome } from '@scale/shared';
 import { channelReplySchema, channelReactionSummarySchema, channelReactionEventSchema, channelReactionToggleSchema, channelPinEventSchema, type ChannelReaction } from '@scale/shared';
 
@@ -572,6 +573,12 @@ class ApiClient {
   async saveChannelSettings(id: string, settings: ChannelSettings): Promise<void> { okSchema.parse(await this.request(`/api/channels/${encodeURIComponent(id)}/settings`, { method: 'PUT', body: JSON.stringify(channelSettingsSchema.parse(settings)) })); }
   async setChannelUserLimit(id: string, userLimit: number | null): Promise<void> { okSchema.parse(await this.request(`/api/channels/${encodeURIComponent(id)}/user-limit`, { method: 'PUT', body: JSON.stringify(channelUserLimitSchema.parse({ userLimit })) })); }
   async setCommunityWelcome(id: string, input: CommunityWelcome): Promise<void> { okSchema.parse(await this.request(`/api/communities/${encodeURIComponent(id)}/welcome`, { method: 'PUT', body: JSON.stringify(communityWelcomeSchema.parse(input)) })); }
+  // Fase 4: eventos agendados.
+  async listCommunityEvents(id: string) { return communityEventListSchema.parse(await this.request(`/api/communities/${encodeURIComponent(id)}/events`)); }
+  async createCommunityEvent(id: string, input: CommunityEventInput): Promise<void> { await this.request(`/api/communities/${encodeURIComponent(id)}/events`, { method: 'POST', body: JSON.stringify(communityEventInputSchema.parse(input)) }); }
+  async updateCommunityEvent(eventId: string, input: CommunityEventInput): Promise<void> { okSchema.parse(await this.request(`/api/community-events/${encodeURIComponent(eventId)}`, { method: 'PATCH', body: JSON.stringify(communityEventInputSchema.parse(input)) })); }
+  async cancelCommunityEvent(eventId: string): Promise<void> { okSchema.parse(await this.request(`/api/community-events/${encodeURIComponent(eventId)}`, { method: 'DELETE', body: '{}' })); }
+  async setCommunityEventInterest(eventId: string, interested: boolean) { return z.object({ interested: z.boolean(), interestedCount: z.number().int() }).parse(await this.request(`/api/community-events/${encodeURIComponent(eventId)}/interest`, { method: 'PUT', body: JSON.stringify(communityEventInterestSchema.parse({ interested })) })); }
   async deleteChannel(id: string): Promise<void> { okSchema.parse(await this.request(`/api/channels/${encodeURIComponent(id)}`, { method: 'DELETE', body: '{}' })); }
   async searchCommunityMessages(communityId: string, input: MessageSearchQuery): Promise<MessageSearchResponse> {
     const parsed = messageSearchQuerySchema.parse(input);
