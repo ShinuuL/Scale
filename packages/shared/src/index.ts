@@ -10,3 +10,4 @@ export * from './messageSearch.js';
 export * from './channelSettings.js';
 export * from './communityModeration.js';
 export * from './communityWelcome.js';
+export * from './threads.js';
