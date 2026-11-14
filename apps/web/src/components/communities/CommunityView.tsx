@@ -588,7 +588,7 @@ export function CommunityView({
           detail={detail}
           meId={meId}
           onClose={() => setDialog(null)}
-          onChanged={refresh}
+          onChanged={() => { refresh(); void refreshList(); }}
           onGone={gone}
         />
       )}

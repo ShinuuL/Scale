@@ -9,7 +9,7 @@ import { io as ioClient, type Socket } from 'socket.io-client';
 import { prisma } from '../lib/prisma.js';
 import { signToken } from '../lib/auth.js';
 import { resetEnv } from '../lib/env.js';
-import { resetChatRateLimit, resetCommunityInviteRateLimit } from '../lib/rateLimit.js';
+import { resetChatRateLimit, resetCommunityInviteRateLimit, resetProfileUpdateRateLimit } from '../lib/rateLimit.js';
 import { authPlugin } from '../plugins/auth.js';
 import { communityRoutes } from '../routes/communities.js';
 import { roomRoutes } from '../routes/rooms.js';

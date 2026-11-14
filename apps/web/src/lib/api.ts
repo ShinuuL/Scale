@@ -555,6 +555,7 @@ class ApiClient {
     return { entries: z.array(moderationAuditEntrySchema).parse(data.entries) };
   }
   // ─── Comunidades ─────────────────────────────────────────────
+  /** URL do icone; `v` muda a cada troca (o GET tem cache privado). */
   async listCommunities() { return communityListSchema.parse(await this.request('/api/communities')); }
   async getCommunity(id: string) { return communityDetailSchema.parse(await this.request(`/api/communities/${encodeURIComponent(id)}`)); }
   async createCommunity(name: string) {

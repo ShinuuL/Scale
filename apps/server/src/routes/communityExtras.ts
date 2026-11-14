@@ -28,6 +28,7 @@ import { detectAvatarMime } from './profile.js';
  * nao membro = 404 (nao revela a comunidade).
  */
 export const COMMUNITY_MEDIA_ROOT = path.resolve(UPLOADS_ROOT, 'community-media');
+const LEGACY_ICONS_ROOT = path.resolve(UPLOADS_ROOT, 'community-icons');
 
 const EXT: Record<(typeof AVATAR_MIMES)[number], string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' };
 /** Colunas da imagem `kind` com os valores dados (null = remover). */
@@ -53,7 +54,8 @@ const meOf = (request: FastifyRequest): string => request.userId!;
 /** Caminho absoluto da imagem, sempre dentro de COMMUNITY_MEDIA_ROOT (sandbox). */
 function mediaAbsPath(relPath: string): string | null {
   const abs = path.resolve(process.cwd(), relPath);
-  return abs.startsWith(COMMUNITY_MEDIA_ROOT + path.sep) ? abs : null;
+  // Icones enviados pela rota antiga (uploads/community-icons) continuam validos.
+  return abs.startsWith(COMMUNITY_MEDIA_ROOT + path.sep) || abs.startsWith(LEGACY_ICONS_ROOT + path.sep) ? abs : null;
 }
 
 async function removeMediaFile(relPath: string | null): Promise<void> {

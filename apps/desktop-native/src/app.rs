@@ -67,7 +67,15 @@ pub struct ScaleApp {
     pub subscribed: HashSet<String>,
     /// Evita laço infinito de refresh: uma tentativa por 401.
     pub refreshing: bool,
+    /// Release mais nova encontrada (some ao clicar em "Depois").
+    pub update: crate::state::UpdateState,
 }
+
+/// Tempo entre "atualização pronta" e o reinício automático.
+pub const RESTART_DELAY: std::time::Duration = std::time::Duration::from_secs(15);
+
+/// "Adiar" reinicia depois desse tempo.
+pub const POSTPONE: std::time::Duration = std::time::Duration::from_secs(30 * 60);
 
 impl ScaleApp {
     pub fn new(_cc: &eframe::CreationContext<'_>, rt: Handle) -> Self {
@@ -75,13 +83,10 @@ impl ScaleApp {
         let (socket_tx, socket_rx) = std::sync::mpsc::channel::<SocketEvent>();
         let socket = socketio::spawn(&rt, socket_tx);
 
-        let saved_origin = config::load_origin().unwrap_or_default();
+        // Servidor fixo (produção); a tela "Conectar" só existe em debug.
+        let saved_origin = config::initial_origin();
         let token = token_store::load();
-        let screen = if saved_origin.is_empty() {
-            Screen::Conectar
-        } else {
-            Screen::Login
-        };
+        let screen = Screen::Login;
 
         Self {
             rt,
@@ -118,6 +123,7 @@ impl ScaleApp {
             status_message: String::new(),
             subscribed: HashSet::new(),
             refreshing: false,
+            update: crate::state::UpdateState::Nenhuma,
         }
     }
 
@@ -125,6 +131,24 @@ impl ScaleApp {
     /// volta; nunca toca no estado da UI.
     pub fn spawn(&self, fut: impl std::future::Future<Output = ()> + Send + 'static) {
         self.rt.spawn(fut);
+    }
+
+    /// Consulta as GitHub Releases uma vez por início do app.
+    pub fn check_for_update(&self) {
+        let tx = self.events_tx.clone();
+        self.spawn(async move {
+            if let Some(info) = crate::updater::check().await {
+                let _ = tx.send(UiEvent::UpdateAvailable(info));
+            }
+        });
+    }
+
+    /// Roda o instalador e encerra o app (o instalador reabre o Scale).
+    pub fn install_update(&mut self, update: &crate::updater::Downloaded) {
+        match crate::updater::install_and_restart(update) {
+            Ok(()) => std::process::exit(0),
+            Err(err) => self.update = crate::state::UpdateState::Falhou(err),
+        }
     }
 
     fn origin_token(&self) -> Option<(String, String)> {
@@ -574,6 +598,24 @@ impl ScaleApp {
     pub fn apply_ui_event(&mut self, event: UiEvent, ctx: &egui::Context) {
         ctx.request_repaint();
         match event {
+            UiEvent::UpdateAvailable(info) => {
+                if crate::updater::can_self_install(&info) {
+                    self.update = crate::state::UpdateState::Baixando(info.version.clone());
+                    let tx = self.events_tx.clone();
+                    self.spawn(async move {
+                        let _ = tx.send(UiEvent::UpdateDownloaded(crate::updater::download(&info).await));
+                    });
+                } else {
+                    self.update = crate::state::UpdateState::Manual(info);
+                }
+            }
+            UiEvent::UpdateDownloaded(Ok(update)) => {
+                self.update = crate::state::UpdateState::Pronta {
+                    update,
+                    deadline: std::time::Instant::now() + crate::app::RESTART_DELAY,
+                };
+            }
+            UiEvent::UpdateDownloaded(Err(err)) => self.update = crate::state::UpdateState::Falhou(err),
             UiEvent::HealthChecked(Ok(())) => {
                 self.connect_busy = false;
                 let origin = match config::validate_origin(&self.origin_input) {

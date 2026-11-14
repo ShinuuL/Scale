@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { ApplicationFeatures } from './ApplicationFeatures';
 
 const requestPermission = vi.fn(async () => 'granted' as NotificationPermission);
@@ -106,4 +106,27 @@ describe('optional application features', () => {
     expect(document.activeElement).toBe(summary);
   });
 
+  it('guides iOS Safari through Add to Home Screen and remembers "Agora não"', () => {
+    const ua = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1';
+    Object.defineProperty(navigator, 'userAgent', { configurable: true, value: ua });
+    onTestFinished(() => { Reflect.deleteProperty(navigator, 'userAgent'); });
+    const { unmount } = render(<ApplicationFeatures />);
+    const offer = screen.getByRole('complementary', { name: 'Instalar o Scale' });
+    expect(offer).toHaveTextContent('Adicionar à Tela de Início');
+    expect(offer).toHaveTextContent('iOS 16.4');
+    fireEvent.click(screen.getByRole('button', { name: 'Agora não' }));
+    expect(screen.queryByRole('complementary', { name: 'Instalar o Scale' })).not.toBeInTheDocument();
+    expect(localStorage.getItem('scale:install-offer')).toBe('dismissed');
+    unmount();
+    render(<ApplicationFeatures />);
+    expect(screen.queryByRole('complementary', { name: 'Instalar o Scale' })).not.toBeInTheDocument();
+  });
+  it('hides installation when already running standalone', () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({ matches: query === '(display-mode: standalone)', media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+    render(<ApplicationFeatures />);
+    const prompt = Object.assign(new Event('beforeinstallprompt'), { prompt: vi.fn(async () => {}), userChoice: Promise.resolve({ outcome: 'dismissed' as const }) });
+    act(() => { window.dispatchEvent(prompt); });
+    expect(screen.queryByRole('button', { name: 'Instalar Scale' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('complementary', { name: 'Instalar o Scale' })).not.toBeInTheDocument();
+  });
 });

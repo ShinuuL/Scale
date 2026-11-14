@@ -13,6 +13,21 @@ interface InstallPrompt extends Event {
 const callSchema = z.object({ active: z.boolean() });
 const notificationSchema = z.object({ tag: z.string().max(80).optional() });
 const NOTIFICATIONS_KEY = 'scale:notifications';
+const INSTALL_OFFER_KEY = 'scale:install-offer';
+
+/** Rodando como app instalado (Android/desktop por media query; iOS por navigator.standalone). */
+export function isStandalone(win: Window = window): boolean {
+  const iosStandalone = (win.navigator as Navigator & { standalone?: boolean }).standalone === true;
+  return iosStandalone || Boolean(win.matchMedia?.('(display-mode: standalone)').matches);
+}
+
+/** iPhone/iPad no Safari: instala so por Compartilhar > Adicionar a Tela de Inicio. */
+export function isIosSafari(nav: Navigator = navigator): boolean {
+  const ua = nav.userAgent;
+  const ios = /iPhone|iPad|iPod/.test(ua) || (nav.platform === 'MacIntel' && nav.maxTouchPoints > 1);
+  return ios && /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS/.test(ua);
+}
+
 /** Instalador nativo (Rust, apps/desktop-native). Sem URL no build, so resta o PWA. */
 const DESKTOP_DOWNLOAD_URL = z.string().url().startsWith('https://').safeParse(process.env.NEXT_PUBLIC_DESKTOP_DOWNLOAD_URL).data;
 const actionClass = 'btn-secondary min-h-11 px-4 py-2 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-400';
@@ -46,6 +61,9 @@ export function ApplicationFeatures() {
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
   const notificationsRef = useRef(false);
+  const [standalone, setStandalone] = useState(false);
+  const [iosManual, setIosManual] = useState(false);
+  const [offerVisible, setOfferVisible] = useState(false);
 
   useEffect(() => {
     let disposed = false;
@@ -61,7 +79,7 @@ export function ApplicationFeatures() {
       event.preventDefault();
       setInstallPrompt(event as InstallPrompt);
     };
-    const installed = () => setInstallPrompt(null);
+    const installed = () => { setInstallPrompt(null); setOfferVisible(false); };
     const notify = (event: Event) => {
       if (!notificationsRef.current || document.visibilityState !== 'hidden' || Notification.permission !== 'granted') return;
       const parsed = notificationSchema.safeParse((event as CustomEvent<unknown>).detail);
@@ -92,6 +110,10 @@ export function ApplicationFeatures() {
       installing?.addEventListener('statechange', workerChanged);
     };
     syncNetwork();
+    const runningStandalone = isStandalone();
+    setStandalone(runningStandalone);
+    setIosManual(!runningStandalone && isIosSafari());
+    try { setOfferVisible(!runningStandalone && localStorage.getItem(INSTALL_OFFER_KEY) !== 'dismissed'); } catch { /* Sem storage: nao oferece. */ }
     setNotificationSupported('Notification' in window && window.isSecureContext);
     try {
       const enabled = 'Notification' in window && Notification.permission === 'granted' && localStorage.getItem(NOTIFICATIONS_KEY) === 'on';
@@ -160,6 +182,11 @@ export function ApplicationFeatures() {
     } finally { setBusy(false); }
   }
 
+  function dismissOffer() {
+    setOfferVisible(false);
+    try { localStorage.setItem(INSTALL_OFFER_KEY, 'dismissed'); } catch { /* Vale so nesta sessao. */ }
+  }
+
   async function install() {
     if (!installPrompt || busy) return;
     setBusy(true);
@@ -167,6 +194,7 @@ export function ApplicationFeatures() {
       await installPrompt.prompt();
       await installPrompt.userChoice;
       setInstallPrompt(null);
+      setOfferVisible(false);
     } catch { setStatus('Use o menu do navegador para instalar o Scale.'); }
     finally { setBusy(false); }
   }
@@ -178,13 +206,35 @@ export function ApplicationFeatures() {
         <summary onClick={(event) => { if (detailsRef.current?.open) { event.preventDefault(); closeSettings(); } else triggerRef.current = null; }} className="w-fit cursor-pointer rounded-lg py-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-400"><Icon name="monitor" size={16} /><span>Aplicativo e notificações</span></summary>
         <div className="flex flex-wrap items-center gap-3 py-3">
           {DESKTOP_DOWNLOAD_URL && <a href={DESKTOP_DOWNLOAD_URL} className={actionClass} rel="noopener noreferrer" download>Baixar para Windows</a>}
-          {installPrompt && <button type="button" className={actionClass} onClick={() => void install()} disabled={busy}>{DESKTOP_DOWNLOAD_URL ? 'Instalar no navegador' : 'Instalar Scale'}</button>}
+          {!standalone && installPrompt && <button type="button" className={actionClass} onClick={() => void install()} disabled={busy}>{DESKTOP_DOWNLOAD_URL ? 'Instalar no navegador' : 'Instalar Scale'}</button>}
           {notificationSupported && <button type="button" className={actionClass} onClick={() => void toggleNotifications()} disabled={busy} aria-pressed={notifications}>{notifications ? 'Desativar notificações' : 'Ativar notificações'}</button>}
-          <p className="max-w-prose text-sm">Notificações opcionais, sem prévia de mensagens, enquanto o aplicativo estiver aberto. Para instalar, use também o menu do navegador.</p>
+          <p className="max-w-prose text-sm">Notificações opcionais, sem prévia de mensagens, enquanto o aplicativo estiver aberto.{standalone ? '' : ' Para instalar, use também o menu do navegador.'}</p>
         </div>
+        {iosManual && <IosInstallSteps />}
         <p role="status" className="max-w-prose text-sm text-slate-200">{status}</p>
         {updateReady && <p role="status" className="max-w-prose py-2">{callActive ? 'Atualização pronta. Sua chamada continua; atualize depois de sair.' : 'Atualização pronta. Feche todas as janelas do Scale e abra novamente para aplicar.'}</p>}
       </details>
+      {offerVisible && (installPrompt || iosManual) && (
+        <aside aria-label="Instalar o Scale" className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] left-4 right-4 z-40 mx-auto max-w-sm rounded-xl border border-white/10 bg-forest-900 p-4 text-sm text-slate-100 shadow-lg">
+          <p className="font-medium">Instale o Scale no seu aparelho</p>
+          {iosManual ? <IosInstallSteps /> : <p className="mt-1 text-slate-300">Abre em tela cheia, direto da tela inicial.</p>}
+          <div className="mt-3 flex flex-wrap justify-end gap-2">
+            <button type="button" className={actionClass} onClick={dismissOffer}>Agora não</button>
+            {installPrompt && !iosManual && <button type="button" className={actionClass} onClick={() => void install()} disabled={busy}>Instalar</button>}
+          </div>
+        </aside>
+      )}
     </>
+  );
+}
+
+function IosInstallSteps() {
+  return (
+    <div className="max-w-prose py-2 text-sm text-slate-200">
+      <p className="flex flex-wrap items-center gap-1">
+        Toque em <span className="inline-flex items-center gap-1 font-medium"><Icon name="share" size={16} />Compartilhar</span> e depois em <span className="font-medium">Adicionar à Tela de Início</span>.
+      </p>
+      <p className="mt-1 text-slate-300">No iPhone, as notificações exigem o app instalado (iOS 16.4 ou mais recente).</p>
+    </div>
   );
 }

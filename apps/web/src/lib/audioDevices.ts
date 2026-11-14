@@ -135,11 +135,26 @@ export function supportsSinkId(): boolean {
 export async function applySavedSink(el: HTMLMediaElement): Promise<void> {
   const sinkable = el as HTMLMediaElement & { setSinkId?: (id: string) => Promise<void> };
   if (typeof sinkable.setSinkId !== 'function') return;
+  const saved = getSavedDeviceId('output');
+  // Padrão sem troca anterior: não chama setSinkId (no celular a chamada com ''
+  // pode prender o áudio no alto-falante). Só volta ao padrão se já foi trocado.
+  const current = (el as HTMLMediaElement & { sinkId?: string }).sinkId ?? '';
+  if (saved === DEFAULT_DEVICE_ID && current === DEFAULT_DEVICE_ID) return;
   try {
-    await sinkable.setSinkId(getSavedDeviceId('output'));
+    await sinkable.setSinkId(saved);
   } catch (err) {
     console.warn('[audio] setSinkId falhou:', err);
   }
+}
+
+/**
+ * Saída escolhível? Sem setSinkId (iOS) ou com só o padrão na lista (Android,
+ * com permissão) o sistema decide entre alto-falante e fone.
+ */
+export function canChooseOutput(list: AudioDeviceList | null): boolean {
+  if (!supportsSinkId()) return false;
+  if (list && list.hasLabels && list.outputs.length <= 1) return false;
+  return true;
 }
 
 /** Assina mudanças de escolha (mesma aba). Devolve a função de cancelar. */

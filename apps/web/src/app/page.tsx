@@ -343,7 +343,7 @@ function HomePageInner() {
 
   if (!mounted) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-[100dvh] flex items-center justify-center">
         <div className="text-brand-400 text-lg">
           <Logo variant="full" />
         </div>

@@ -68,6 +68,15 @@ Sistema de videochamadas P2P (mesh) com escamas de dragão — sala de voz e tel
 - Chamada persistente: a sessão da sala vive no `RoomHost` do layout raiz;
   fora de `/room` a tela fica oculta e a `MiniCallBar` mostra a chamada.
 
+## Desktop nativo (Rust, `apps/desktop-native`)
+
+- **Regra de versao:** toda mudanca em `apps/desktop-native` sobe `version` no
+  `Cargo.toml`. Padrao: sobe o patch (`0.1.1` -> `0.1.2`...); minor/major
+  (`0.2.0`) so por decisao explicita. O PR falha sem isso; o merge na `main` publica a release
+  `desktop-v<version>` com instaladores e `SHA256SUMS` (`desktop-release.yml`).
+- O app se atualiza sozinho pelas releases, sempre conferindo o SHA-256.
+  Detalhes em `apps/desktop-native/README.md`.
+
 ## Desktop (Electron)
 
 `apps/desktop` (pacote `scale-desktop`) **nao empacota o frontend**: abre a origin
@@ -348,6 +357,13 @@ docker compose up --build -d
   (até 5 por mensagem, quota da sala). No canal de texto ser **membro** é a prova
   de participação (não há `join-room`); só `image/*` é aceito. A mensagem sai
   como `channel:message` para a comunidade, com `files` no DTO.
+- Ícone de comunidade: servido pela rota de ícone e banner (`communityExtras.ts`,
+  `uploads/community-media`, DTO `iconUpdatedAt`). Ícones antigos gravados em
+  `uploads/community-icons` continuam válidos para leitura e remoção.
+- Aviso de atualização: o build grava `out/version.json` e embute o mesmo id em
+  `NEXT_PUBLIC_BUILD_ID` (`next.config.js`). `UpdatePrompt` confere a cada 5 min
+  e ao voltar para a aba; versão diferente = aviso "Recarregar" (nunca recarrega
+  sozinho; em chamada avisa que ela cai).
 - Cargos personalizados de comunidade (tabela `CommunityCustomRole`, até 20):
   nome, cor e permissões (`manageChannels`, `manageInvites`, `manageMessages`,
   `kickMembers`). Um por membro (`CommunityMember.customRoleId`, anulável).
@@ -355,7 +371,7 @@ docker compose up --build -d
   exclusivo do OWNER. Só o OWNER cria, edita, apaga e atribui. Rotas checam
   `permissionsOf()` (`lib/communityAccess.ts`). A cor pinta o nome no chat.
 - Sistema de ícones internos: UI sem emojis, `apps/web/src/components/ui/Icon.tsx`
-  com 38 ícones (SVG vetorial, `stroke="currentColor"`), sem dependência externa
+  com 47 ícones (SVG vetorial, `stroke="currentColor"`), sem dependência externa
 - Configurações (menu de perfil, ícone `settings`): nome de usuário
   (`PATCH /api/me`, reemite o JWT), foto de perfil (`PUT|GET|DELETE
   /api/me/avatar`, até 32 MB, PNG/JPEG/WebP por magic bytes, em

@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Dialog, Heading, Modal, ModalOverlay } from 'react-aria-components';
 import { Banner } from '@/components/ui/Banner';
 import { Button } from '@/components/ui/Button';
@@ -19,7 +19,7 @@ import { AuditPanel, BansPanel, SettingsTabs, type SettingsTab } from './Moderat
 import { VoiceLimitSelect, WelcomeSection } from './CommunityWelcome';
 
 const selectClass =
-  'w-full rounded-lg border border-line bg-surface-secondary p-2 text-sm text-ink-primary';
+  'w-full rounded-lg border border-line bg-surface-secondary p-2 text-base sm:text-sm text-ink-primary';
 function Frame({
   title,
   onClose,

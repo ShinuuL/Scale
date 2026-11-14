@@ -33,6 +33,8 @@ export const CHAT_FILE_ACCEPT =
 
 /** Tamanho maximo da foto de perfil (bytes; 32 MB decimais). */
 export const MAX_AVATAR_SIZE_BYTES = 32_000_000;
+/** Icone de comunidade: PNG/JPEG/WebP ate 8 MB. */
+export const MAX_COMMUNITY_ICON_BYTES = 8_000_000;
 
 /** Formatos aceitos na foto de perfil (conferidos por magic bytes no servidor). */
 export const AVATAR_MIMES = ['image/png', 'image/jpeg', 'image/webp'] as const;
