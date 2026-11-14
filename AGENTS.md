@@ -428,6 +428,7 @@ docker compose up --build -d
   categorias, ordem e fixação; `GET /api/communities/:id/audit` (cursor, quem
   tem alguma permissão de gestão) e aba "Auditoria" nas Configurações.
 - Voz e boas-vindas (Fase 3, `routes/communityWelcome.ts`): limite opcional de pessoas por canal de voz (`Room.userLimit` 2..8, nunca acima do teto do mesh; `PUT /api/channels/:id/user-limit`, `manageChannels`); o `join-room` recusa com `Voice channel is full` e a lista mostra "3/4" e "Cheio". Canal de boas-vindas (`PUT /api/communities/:id/welcome`, OWNER/ADMIN, canal de texto + modelo `{nome}` até 500): o aceite de convite posta mensagem `isSystem` (sem autor, ninguém edita; moderador apaga) e devolve `welcomeChannelId`, onde o novo membro abre.
+- Tópicos (Fase 4, `routes/channelThreads.ts`): "Abrir tópico" numa mensagem de canal de texto (nome 1..80; um por mensagem) cria `ChannelThread`; as respostas têm `ChatMessage.threadId` e ficam fora do canal principal. A origem mostra "N respostas · Abrir tópico" e o tópico abre num painel lateral (`ThreadPanel.tsx`) com histórico paginado e compositor próprio. Rotas: `POST /api/channels/:id/messages/:messageId/thread`, `GET /api/threads/:id`, `GET|POST /api/threads/:id/messages`, `PATCH /api/threads/:id` (`{ archived }`, `manageMessages`; arquivado não aceita envio = 409). Mesmas regras do canal pai (ver, enviar, aviso, modo lento, castigo). Tempo real por `emitToChannel`: `channel:message` com `threadId` e `channel:thread` (resumo). Sem reações nem citação dentro do tópico.
 
 ## Requisitos de Infra
 
