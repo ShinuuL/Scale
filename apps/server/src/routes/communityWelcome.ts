@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { channelUserLimitSchema, communityWelcomeSchema } from '@scale/shared';
 import { prisma } from '../lib/prisma.js';
 import { canModerate, communityRoom, findMembership, permissionsOf } from '../lib/communityAccess.js';
+import { audit } from '../lib/communityModeration.js';
 
 /**
  * Fase 3 (voz e boas-vindas):
@@ -27,12 +28,14 @@ export async function communityWelcomeRoutes(app: FastifyInstance): Promise<void
   app.put('/api/channels/:id/user-limit', auth, async (request, reply) => {
     const p = params.safeParse(request.params); const body = channelUserLimitSchema.safeParse(request.body);
     if (!p.success || !body.success) return invalid(reply);
-    const room = await prisma.room.findUnique({ where: { id: p.data.id }, select: { id: true, communityId: true, channelKind: true } });
+    const room = await prisma.room.findUnique({ where: { id: p.data.id }, select: { id: true, name: true, communityId: true, channelKind: true } });
     if (!room?.communityId) return missing(reply);
     const member = await findMembership(room.communityId, meOf(request)); if (!member) return missing(reply);
     if (!permissionsOf(member).manageChannels) return forbidden(reply);
     if (room.channelKind !== 'VOICE') return invalid(reply);
     await prisma.room.update({ where: { id: room.id }, data: { userLimit: body.data.userLimit } });
+    const limit = body.data.userLimit;
+    await audit(room.communityId, { action: 'channel.user_limit', actorId: meOf(request), targetId: room.id, targetName: room.name, detail: limit ? `${limit} pessoas` : 'sem limite' });
     changed(app, room.communityId);
     return reply.send({ ok: true });
   });
@@ -42,11 +45,17 @@ export async function communityWelcomeRoutes(app: FastifyInstance): Promise<void
     if (!p.success || !body.success) return invalid(reply);
     const member = await findMembership(p.data.id, meOf(request)); if (!member) return missing(reply);
     if (!canModerate(member.role)) return forbidden(reply);
+    let channelName: string | null = null;
     if (body.data.channelId) {
-      const room = await prisma.room.findUnique({ where: { id: body.data.channelId }, select: { communityId: true, channelKind: true } });
+      const room = await prisma.room.findUnique({ where: { id: body.data.channelId }, select: { communityId: true, channelKind: true, name: true } });
       if (room?.communityId !== p.data.id || room.channelKind !== 'TEXT') return invalid(reply);
+      channelName = room.name;
     }
     await prisma.community.update({ where: { id: p.data.id }, data: { welcomeChannelId: body.data.channelId, welcomeMessage: body.data.message } });
+    await audit(p.data.id, {
+      action: 'community.welcome', actorId: meOf(request), targetId: body.data.channelId, targetName: channelName,
+      detail: channelName ? 'mensagem atualizada' : 'desligadas',
+    });
     changed(app, p.data.id);
     return reply.send({ ok: true });
   });

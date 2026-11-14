@@ -199,6 +199,8 @@ model CommunityMember {
   /// Castigo (Fase 3): ate quando nao envia, nao reage e nao entra na voz. Colunas anulaveis.
   timeoutUntil  DateTime?
   timeoutReason String?
+  /// Apelido na comunidade (Fase 4), 1..32. Coluna anulavel: db push aplica sem perda.
+  nickname      String?
 
   customRole CommunityCustomRole? @relation(fields: [customRoleId], references: [id], onDelete: SetNull)
 

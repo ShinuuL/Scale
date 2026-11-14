@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { CHANNEL_EVERYONE, channelSettingsSchema } from '@scale/shared';
 import { prisma } from '../lib/prisma.js';
 import { communityRoom, findMembership, permissionsOf } from '../lib/communityAccess.js';
+import { audit } from '../lib/communityModeration.js';
 
 /**
  * Fase 3: configuracao do canal (quem tem manageChannels).
@@ -38,6 +39,11 @@ export async function channelSettingsRoutes(app: FastifyInstance): Promise<void>
       prisma.channelPermissionOverride.deleteMany({ where: { roomId: room.id } }),
       ...kept.map((o) => prisma.channelPermissionOverride.create({ data: { roomId: room.id, ...o } })),
     ]);
+    const changes: string[] = [];
+    if (room.announcement !== announcement) changes.push(announcement ? 'aviso ligado' : 'aviso desligado');
+    if (room.slowModeSeconds !== slowModeSeconds) changes.push(slowModeSeconds ? `modo lento ${slowModeSeconds} s` : 'modo lento desligado');
+    changes.push(`${kept.length} ${kept.length === 1 ? 'permissão' : 'permissões'}`);
+    await audit(room.communityId, { action: 'channel.settings', actorId: request.userId!, targetId: room.id, targetName: room.name, detail: changes.join(', ') });
     ioOf(app)?.to(communityRoom(room.communityId)).emit('community:changed', { communityId: room.communityId });
     return reply.send({ ok: true });
   });
