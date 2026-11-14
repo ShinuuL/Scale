@@ -1,4 +1,4 @@
-import { CHANNEL_REACTIONS, REPLY_EXCERPT_MAX, channelReactionSchema, type ChannelReactionSummary, type ChannelReply } from '@scale/shared';
+import { CHANNEL_REACTIONS, REPLY_EXCERPT_MAX, channelReactionSchema, type ChannelReactionSummary, type ChannelReply, type ChannelThreadSummary } from '@scale/shared';
 import { prisma } from './prisma.js';
 import { toChannelMessage } from './communityAccess.js';
 import { SYSTEM_AUTHOR } from './communityWelcome.js';
@@ -54,14 +54,39 @@ export async function loadReactions(messageIds: string[]): Promise<Map<string, C
   return result;
 }
 
+/** Linha do topico + contagem de respostas -> resumo publico. */
+export function toThreadSummary(row: { id: string; roomId: string; rootMessageId: string; name: string; archivedAt: Date | null; createdById: string }, stats: { count: number; last: Date | null }): ChannelThreadSummary {
+  return { id: row.id, channelId: row.roomId, rootMessageId: row.rootMessageId, name: row.name, replyCount: stats.count, lastReplyAt: stats.last?.toISOString() ?? null, archivedAt: row.archivedAt?.toISOString() ?? null, createdById: row.createdById };
+}
+
+/** Topicos (Fase 4) por id da mensagem de origem, com contagem de respostas nao apagadas. */
+export async function loadThreads(messageIds: string[]): Promise<Map<string, ChannelThreadSummary>> {
+  const result = new Map<string, ChannelThreadSummary>();
+  if (messageIds.length === 0) return result;
+  const threads = await prisma.channelThread.findMany({ where: { rootMessageId: { in: messageIds } } });
+  if (threads.length === 0) return result;
+  const stats = await prisma.chatMessage.groupBy({ by: ['threadId'], where: { threadId: { in: threads.map(t => t.id) }, deletedAt: null }, _count: { _all: true }, _max: { createdAt: true } });
+  const byThread = new Map(stats.map(s => [s.threadId, { count: s._count._all, last: s._max.createdAt }]));
+  for (const thread of threads) result.set(thread.rootMessageId, toThreadSummary(thread, byThread.get(thread.id) ?? { count: 0, last: null }));
+  return result;
+}
+
+/** Resumo de UM topico (apos criar, responder ou arquivar). */
+export async function threadSummaryOf(threadId: string): Promise<ChannelThreadSummary | null> {
+  const thread = await prisma.channelThread.findUnique({ where: { id: threadId } });
+  if (!thread) return null;
+  return (await loadThreads([thread.rootMessageId])).get(thread.rootMessageId) ?? null;
+}
+
 type MessageRow = Parameters<typeof toChannelMessage>[0] & { authorId: string | null; guestName: string | null; replyToId: string | null };
 
 /** DTOs completos (autor, citacao, reacoes) de uma lista de mensagens do mesmo canal. */
 export async function buildChannelMessages(roomId: string, rows: MessageRow[]): Promise<Array<ReturnType<typeof toChannelMessage>>> {
-  const [authors, replies, reactions] = await Promise.all([
+  const [authors, replies, reactions, threads] = await Promise.all([
     prisma.user.findMany({ where: { id: { in: rows.flatMap(row => (row.authorId ? [row.authorId] : [])) } }, include: { username: true } }),
     loadReplies(roomId, rows.flatMap(row => (row.replyToId ? [row.replyToId] : []))),
     loadReactions(rows.map(row => row.id)),
+    loadThreads(rows.map(row => row.id)),
   ]);
   const users = new Map(authors.map(user => [user.id, user]));
   return rows.map(row => {
@@ -70,6 +95,7 @@ export async function buildChannelMessages(roomId: string, rows: MessageRow[]): 
     return toChannelMessage(row, author, {
       replyTo: row.replyToId ? replies.get(row.replyToId) ?? null : null,
       reactions: reactions.get(row.id) ?? [],
+      thread: threads.get(row.id) ?? null,
     });
   });
 }

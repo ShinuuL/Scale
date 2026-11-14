@@ -1,10 +1,10 @@
-import type { ChannelReactionSummary, ChannelReply, CommunityPermissions, CommunityRole } from '@scale/shared';
+import type { ChannelReactionSummary, ChannelReply, ChannelThreadSummary, CommunityPermissions, CommunityRole } from '@scale/shared';
 import { prisma } from './prisma.js';
 import { toPublicFile } from './publicDto.js';
 
 interface ChannelMessageRow {
   id: string; roomId: string; content: string; createdAt: Date; editedAt: Date | null; deletedAt: Date | null;
-  pinnedAt?: Date | null; pinnedById?: string | null; isSystem?: boolean;
+  pinnedAt?: Date | null; pinnedById?: string | null; isSystem?: boolean; threadId?: string | null;
   files?: Array<{ id: string; filename: string; mime: string; size: number; deletedAt: Date | null }>;
 }
 
@@ -12,7 +12,7 @@ interface ChannelMessageRow {
 export function toChannelMessage(
   row: ChannelMessageRow,
   author: { id: string | null; name: string; username: string | null },
-  extras: { replyTo?: ChannelReply | null; reactions?: ChannelReactionSummary[] } = {},
+  extras: { replyTo?: ChannelReply | null; reactions?: ChannelReactionSummary[]; thread?: ChannelThreadSummary | null } = {},
 ) {
   return {
     id: row.id, channelId: row.roomId, author, content: row.content,
@@ -24,6 +24,10 @@ export function toChannelMessage(
     pinnedById: row.pinnedById ?? null,
     /** Mensagem de sistema (boas-vindas): sem autor editavel. */
     system: row.isSystem ?? false,
+    /** Fase 4: mensagem dentro de um topico (null = canal principal). */
+    threadId: row.threadId ?? null,
+    /** Fase 4: topico aberto a partir desta mensagem. */
+    thread: extras.thread ?? null,
   };
 }
 

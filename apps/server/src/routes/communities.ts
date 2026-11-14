@@ -242,8 +242,8 @@ export async function communityRoutes(app: FastifyInstance): Promise<void> {
     const found = await viewableChannel(p.data.id, meOf(request)); if (!found || found.room.channelKind !== 'TEXT') return missing(reply);
     const { room } = found;
     let cursorDate: Date | undefined;
-    if (query.data.cursor) { const cursor = await prisma.chatMessage.findUnique({ where: { id: query.data.cursor } }); if (!cursor || cursor.roomId !== room.id) return missing(reply); cursorDate = cursor.createdAt; }
-    const rows = await prisma.chatMessage.findMany({ where: { roomId: room.id, ...(cursorDate && query.data.cursor ? { OR: [{ createdAt: { lt: cursorDate } }, { createdAt: cursorDate, id: { lt: query.data.cursor } }] } : {}) }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: query.data.limit, include: { files: true } });
+    if (query.data.cursor) { const cursor = await prisma.chatMessage.findUnique({ where: { id: query.data.cursor } }); if (!cursor || cursor.roomId !== room.id || cursor.threadId) return missing(reply); cursorDate = cursor.createdAt; }
+    const rows = await prisma.chatMessage.findMany({ where: { roomId: room.id, threadId: null, ...(cursorDate && query.data.cursor ? { OR: [{ createdAt: { lt: cursorDate } }, { createdAt: cursorDate, id: { lt: query.data.cursor } }] } : {}) }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: query.data.limit, include: { files: true } });
     const messages = await buildChannelMessages(room.id, rows.reverse());
     return reply.send({ messages, nextCursor: rows.length === query.data.limit ? rows[0]?.id ?? null : null });
   });

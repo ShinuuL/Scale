@@ -22,10 +22,12 @@ import {
   type ChannelMessageEditEvent,
   type ChannelMessageDeleteEvent,
   communityModerationEventSchema,
+  channelThreadEventSchema,
   type CommunityModerationEvent,
 } from '@scale/shared';
 import { channelMessageSchema, type ChannelMessage } from '@/lib/api';
 import { getWsUrl } from '@/hooks/useSocket';
+import { threadBus } from '@/lib/threadEvents';
 
 export interface CommunityEventHandlers {
   onMessage?: (message: ChannelMessage) => void;
@@ -116,15 +118,26 @@ export function useCommunityEvents(
     });
     socket.on('channel:message', (raw: unknown) => {
       const parsed = channelMessageSchema.safeParse(raw);
-      if (parsed.success) handlersRef.current.onMessage?.(parsed.data);
+      if (!parsed.success) return;
+      // Fase 4: mensagem de topico nao entra no canal principal.
+      if (parsed.data.threadId) threadBus.emit({ type: 'message', message: parsed.data });
+      else handlersRef.current.onMessage?.(parsed.data);
     });
     socket.on('channel:message-edit', (raw: unknown) => {
       const parsed = channelMessageEditEventSchema.safeParse(raw);
-      if (parsed.success) handlersRef.current.onMessageEdit?.(parsed.data);
+      if (!parsed.success) return;
+      handlersRef.current.onMessageEdit?.(parsed.data);
+      threadBus.emit({ type: 'edit', event: parsed.data });
     });
     socket.on('channel:message-delete', (raw: unknown) => {
       const parsed = channelMessageDeleteEventSchema.safeParse(raw);
-      if (parsed.success) handlersRef.current.onMessageDelete?.(parsed.data);
+      if (!parsed.success) return;
+      handlersRef.current.onMessageDelete?.(parsed.data);
+      threadBus.emit({ type: 'delete', event: parsed.data });
+    });
+    socket.on('channel:thread', (raw: unknown) => {
+      const parsed = channelThreadEventSchema.safeParse(raw);
+      if (parsed.success) threadBus.emit({ type: 'thread', event: parsed.data });
     });
     socket.on('channel:typing', (raw: unknown) => {
       const parsed = channelTypingEventSchema.safeParse(raw);

@@ -261,6 +261,7 @@ model Room {
   chatMessages  ChatMessage[]
   chatFiles     ChatFile[]
   permissionOverrides ChannelPermissionOverride[]
+  threads       ChannelThread[]
 
   @@index([communityId])
   @@index([isPersistent, status])
@@ -286,6 +287,8 @@ model ChatMessage {
   pinnedById  String?
   /// Mensagem de sistema (Fase 3, boas-vindas): sem autor, ninguem edita.
   isSystem    Boolean   @default(false)
+  /// Topico (Fase 4): mensagem dentro de um ChannelThread; null = canal principal. Sem FK (coluna anulavel).
+  threadId    String?
 
   room      Room                  @relation(fields: [roomId], references: [id], onDelete: Cascade)
   files     ChatFile[]
@@ -294,6 +297,24 @@ model ChatMessage {
   @@index([roomId, createdAt])
   @@index([roomId, deletedAt])
   @@index([authorId])
+  @@index([threadId, createdAt])
+}
+
+/// Topico (Fase 4): conversa aberta a partir de uma mensagem de canal de texto.
+/// Mesmas permissoes do canal pai; arquivado nao aceita envio.
+model ChannelThread {
+  id            String    @id @default(uuid())
+  roomId        String
+  rootMessageId String    @unique
+  name          String
+  createdById   String
+  archivedAt    DateTime?
+  archivedById  String?
+  createdAt     DateTime  @default(now())
+
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@index([roomId])
 }
 
 /// Reacao (Fase 2): conjunto fixo de icones; um usuario reage uma vez por tipo.
