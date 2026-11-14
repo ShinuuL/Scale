@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type FormEvent } from 'react';
-import { CHAT_EDIT_WINDOW_MS, CHAT_MESSAGE_MAX, formatCountdown } from '@scale/shared';
+import { CHAT_EDIT_WINDOW_MS, CHAT_MESSAGE_MAX, formatCountdown, formatThreadReplies } from '@scale/shared';
 import { api, type ChannelMessage } from '@/lib/api';
 import type { ChannelMessagesAction, ChannelMessagesState } from '@/hooks/useChannelMessages';
 import { Banner } from '@/components/ui/Banner';
@@ -13,6 +13,8 @@ import { ChannelTopic } from './ChannelTopic';
 import { createTypingSender } from '@/hooks/useChannelTyping';
 import { PinnedPanel, ReactionBar, ReplyQuote, jumpToMessage, messageAnchorId } from './MessageExtras';
 import { useCooldown } from './slowMode';
+import { CreateThreadDialog, ThreadPanel, threadFooterLabel } from './ThreadPanel';
+import { threadBus } from '@/lib/threadEvents';
 import type { ChannelReaction } from '@scale/shared';
 
 const MAX_IMAGES = 5;
@@ -119,7 +121,13 @@ function MessageItem({
   onReact,
   onTogglePin,
   onJump,
+  canStartThread = false,
+  onOpenThread,
 }: {
+  /** Fase 4: pode abrir topico a partir desta mensagem (envio liberado no canal). */
+  canStartThread?: boolean;
+  /** Abre o topico existente ou o dialogo de criar. */
+  onOpenThread?: () => void;
   canPin: boolean;
   onReply: () => void;
   onReact: (reaction: ChannelReaction) => void;
@@ -186,6 +194,18 @@ function MessageItem({
         </div>
       )}
       {!message.deletedAt && <ReactionBar message={message} meId={meId} onToggle={onReact} />}
+      {message.thread && onOpenThread && (
+        <button
+          type="button"
+          className="mt-1 flex items-center gap-1 rounded-md text-xs font-medium text-brand-300 hover:underline"
+          aria-label={`Abrir tópico ${message.thread.name}, ${formatThreadReplies(message.thread.replyCount)}${message.thread.archivedAt ? ', arquivado' : ''}`}
+          onClick={onOpenThread}
+        >
+          <Icon name="chat" size={14} aria-hidden />
+          {threadFooterLabel(message.thread)}
+          {message.thread.archivedAt ? ' (arquivado)' : ''}
+        </button>
+      )}
       {!message.deletedAt && !editing && (
         <div className="flex gap-2">
           <Button
@@ -197,6 +217,17 @@ function MessageItem({
           >
             Responder
           </Button>
+          {canStartThread && !message.thread && onOpenThread && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="min-h-8"
+              aria-label={`Abrir tópico a partir da mensagem de ${message.author.name}`}
+              onClick={onOpenThread}
+            >
+              Abrir tópico
+            </Button>
+          )}
           {canPin && (
             <Button
               variant="ghost"
@@ -414,6 +445,17 @@ export function ChannelChat({
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [replyingTo, setReplyingTo] = useState<ChannelMessage | null>(null);
   const [pinsOpen, setPinsOpen] = useState(false);
+  const [threadId, setThreadId] = useState<string | null>(null);
+  const [threadFrom, setThreadFrom] = useState<ChannelMessage | null>(null);
+  useEffect(() => setThreadId(null), [channelId]);
+  // Fase 4: contagem/arquivamento do topico atualiza a mensagem de origem.
+  useEffect(
+    () =>
+      threadBus.subscribe((event) => {
+        if (event.type === 'thread') dispatch({ type: 'thread', event: event.event });
+      }),
+    [dispatch],
+  );
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const stickToBottom = useRef(true);
@@ -542,6 +584,7 @@ export function ChannelChat({
     }
   }
   return (
+    <div className="flex h-full min-h-0 min-w-0 flex-1">
     <section aria-label={`Canal ${name}`} className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
       <header className="border-b border-line px-5 py-4">
         <div className="flex items-center gap-2">
@@ -606,6 +649,8 @@ export function ChannelChat({
               onReact={(reaction) => void react(message.id, reaction)}
               onTogglePin={() => void togglePin(message)}
               onJump={jump}
+              canStartThread={canSend}
+              onOpenThread={() => (message.thread ? setThreadId(message.thread.id) : setThreadFrom(message))}
             />
           ))}
         </div>
@@ -667,6 +712,30 @@ export function ChannelChat({
           }}
         />
       )}
+      {threadFrom && (
+        <CreateThreadDialog
+          channelId={channelId}
+          message={threadFrom}
+          onClose={() => setThreadFrom(null)}
+          onCreated={(thread) => {
+            dispatch({ type: 'thread', event: { channelId, thread } });
+            setThreadFrom(null);
+            setThreadId(thread.id);
+          }}
+        />
+      )}
     </section>
+    {threadId && (
+      <ThreadPanel
+        key={threadId}
+        threadId={threadId}
+        channelId={channelId}
+        meId={meId}
+        slowModeSeconds={slowModeSeconds}
+        slowModeExempt={slowModeExempt}
+        onClose={() => setThreadId(null)}
+      />
+    )}
+    </div>
   );
 }

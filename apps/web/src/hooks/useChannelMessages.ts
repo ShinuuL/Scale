@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useReducer } from 'react';
-import type { ChannelMessageDeleteEvent, ChannelMessageEditEvent, ChannelPinEvent, ChannelReactionEvent } from '@scale/shared';
+import type { ChannelMessageDeleteEvent, ChannelMessageEditEvent, ChannelPinEvent, ChannelReactionEvent, ChannelThreadEvent } from '@scale/shared';
 import { CHANNEL_REACTIONS } from '@scale/shared';
 import { api, type ChannelMessage } from '@/lib/api';
 
@@ -27,7 +27,8 @@ export type ChannelMessagesAction =
   | { type: 'edit'; event: ChannelMessageEditEvent }
   | { type: 'delete'; event: ChannelMessageDeleteEvent }
   | { type: 'reaction'; event: ChannelReactionEvent }
-  | { type: 'pin'; event: ChannelPinEvent };
+  | { type: 'pin'; event: ChannelPinEvent }
+  | { type: 'thread'; event: ChannelThreadEvent };
 
 export function channelMessagesReducer(
   state: ChannelMessagesState,
@@ -44,7 +45,7 @@ export function channelMessagesReducer(
   const channelId =
     action.type === 'message'
       ? action.message.channelId
-      : action.type === 'edit' || action.type === 'delete' || action.type === 'reaction' || action.type === 'pin'
+      : action.type === 'edit' || action.type === 'delete' || action.type === 'reaction' || action.type === 'pin' || action.type === 'thread'
         ? action.event.channelId
         : action.channelId;
   if (channelId !== state.channelId) return state;
@@ -65,6 +66,8 @@ export function channelMessagesReducer(
       };
     }
     case 'message':
+      // Fase 4: mensagem de topico fica no painel do topico.
+      if (action.message.threadId) return state;
       return state.messages.some((message) => message.id === action.message.id)
         ? state
         : { ...state, messages: [...state.messages, action.message] };
@@ -102,6 +105,13 @@ export function channelMessagesReducer(
           message.id === action.event.messageId
             ? { ...message, pinnedAt: action.event.pinnedAt, pinnedById: action.event.pinnedById }
             : message,
+        ),
+      };
+    case 'thread':
+      return {
+        ...state,
+        messages: state.messages.map((message) =>
+          message.id === action.event.thread.rootMessageId ? { ...message, thread: action.event.thread } : message,
         ),
       };
   }
