@@ -106,6 +106,7 @@ function MessageItem({
   meId,
   canManage,
   color,
+  nickname,
   editing,
   editDraft,
   busy,
@@ -129,6 +130,8 @@ function MessageItem({
   meId: string;
   canManage: boolean;
   color?: string;
+  /** Apelido do autor na comunidade (Fase 4); o nome real vai no title. */
+  nickname?: string;
   editing: boolean;
   editDraft: string;
   busy: boolean;
@@ -143,7 +146,9 @@ function MessageItem({
     <article id={messageAnchorId(message.id)} className="group rounded-md py-3 transition-colors">
       {message.replyTo && <ReplyQuote replyTo={message.replyTo} onJump={onJump} />}
       <div className="flex flex-wrap items-baseline gap-2">
-        <strong className="text-sm text-ink-primary" style={color ? { color } : undefined}>{message.author.name}</strong>
+        <strong className="text-sm text-ink-primary" style={color ? { color } : undefined} title={nickname ? message.author.name : undefined}>
+          {nickname ?? message.author.name}
+        </strong>
         <time className="text-xs text-ink-muted" dateTime={message.createdAt}>
           {timeFormatter.format(new Date(message.createdAt))}
         </time>
@@ -349,6 +354,7 @@ export function ChannelChat({
   meId,
   canManage,
   authorColors,
+  authorNicknames,
   state,
   dispatch,
   onSearch,
@@ -368,6 +374,8 @@ export function ChannelChat({
   meId: string;
   canManage: boolean;
   authorColors?: ReadonlyMap<string, string>;
+  /** Apelidos por userId (Fase 4): exibidos no lugar do nome do autor. */
+  authorNicknames?: ReadonlyMap<string, string>;
   state: ChannelMessagesState;
   dispatch: Dispatch<ChannelMessagesAction>;
   /** Abre a busca de mensagens da comunidade (botao no cabecalho). */
@@ -587,6 +595,7 @@ export function ChannelChat({
               meId={meId}
               canManage={canManage}
               color={message.author.id ? authorColors?.get(message.author.id) : undefined}
+              nickname={message.author.id ? authorNicknames?.get(message.author.id) : undefined}
               editing={editing === message.id}
               editDraft={editDraft}
               busy={busy}

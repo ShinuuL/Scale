@@ -81,7 +81,13 @@ export function useChannelTyping(meId: string) {
     setEntries((current) => current.filter((entry) => !(entry.channelId === channelId && entry.userId === userId)));
   }, []);
   const reset = useCallback(() => setEntries([]), []);
-  const textFor = (channelId: string): string | null =>
-    formatTypingText(activeTypingNames(entries, channelId, meId, now));
+  /** `rename` troca o nome do evento (ex.: apelido na comunidade) pelo userId. */
+  const textFor = (channelId: string, rename?: (userId: string, name: string) => string): string | null =>
+    formatTypingText(
+      activeTypingNames(
+        rename ? entries.map((entry) => ({ ...entry, name: rename(entry.userId, entry.name) })) : entries,
+        channelId, meId, now,
+      ),
+    );
   return { onTyping, clearUser, reset, textFor };
 }

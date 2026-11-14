@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { CreateRoomInput, RoomResponse, RoomListItem, AuthResponse, LoginInput, RegisterInput, Metrics } from './validation';
 import {
   communityAuditEntrySchema,
+  communityNicknameSchema,
   communityBanSchema,
   memberTimeoutSchema,
   moderationReasonBodySchema,
@@ -48,7 +49,7 @@ const communitySchema = z.object({ id: z.string(), name: z.string(), ownerId: z.
 const categorySchema = z.object({ id: z.string(), name: z.string(), position: z.number() });
 export type CommunityCategory = z.infer<typeof categorySchema>;
 const channelSchema = z.object({ id: z.string(), name: z.string(), kind: channelKindSchema, position: z.number(), categoryId: z.string().nullish(), topic: z.string().nullish(), userLimit: z.number().int().nullish(), unread: z.number().int().min(0).optional(), announcement: z.boolean().optional(), slowModeSeconds: z.number().int().min(0).optional(), canSend: z.boolean().optional(), overrides: z.array(channelOverrideSchema).optional() });
-const memberSchema = z.object({ userId: z.string(), name: z.string(), username: z.string().nullable(), role: communityRoleSchema, customRoleId: z.string().nullable().default(null), timeoutUntil: z.string().nullable().optional() });
+const memberSchema = z.object({ userId: z.string(), name: z.string(), username: z.string().nullable(), role: communityRoleSchema, customRoleId: z.string().nullable().default(null), timeoutUntil: z.string().nullable().optional(), nickname: z.string().nullable().optional() });
 const customRoleSchema = z.object({ id: z.string(), name: z.string(), color: z.string(), permissions: communityPermissionsSchema });
 const noPermissions = { manageChannels: false, manageInvites: false, manageMessages: false, kickMembers: false };
 export const channelMessageSchema = z.object({ id: z.string(), channelId: z.string(), author: z.object({ id: z.string().nullable(), name: z.string(), username: z.string().nullable() }), content: z.string(), createdAt: z.string(), editedAt: z.string().nullable(), deletedAt: z.string().nullable(), files: z.array(z.object({ id: z.string(), filename: z.string(), mime: z.string(), size: z.number() })).default([]), replyTo: channelReplySchema.nullable().default(null), reactions: z.array(channelReactionSummarySchema).default([]), pinnedAt: z.string().nullable().default(null), pinnedById: z.string().nullable().default(null), system: z.boolean().optional() });
@@ -632,6 +633,8 @@ class ApiClient {
   async setMemberCustomRole(id: string, userId: string, customRoleId: string | null): Promise<void> { okSchema.parse(await this.request(`/api/communities/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}/custom-role`, { method: 'PUT', body: JSON.stringify(memberCustomRoleSchema.parse({ customRoleId })) })); }
   // ─── Moderacao de comunidade (Fase 3) ──
   async timeoutCommunityMember(id: string, userId: string, duration: TimeoutDuration, reason?: string): Promise<void> { await this.request(`/api/communities/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}/timeout`, { method: 'PUT', body: JSON.stringify(memberTimeoutSchema.parse({ duration, reason })) }); }
+  /** Fase 4: apelido na comunidade (proprio ou, com kickMembers e hierarquia, de outro). null limpa. */
+  async setCommunityNickname(id: string, userId: string, nickname: string | null): Promise<string | null> { return z.object({ nickname: z.string().nullable() }).parse(await this.request(`/api/communities/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}/nickname`, { method: 'PUT', body: JSON.stringify(communityNicknameSchema.parse({ nickname })) })).nickname; }
   async clearCommunityTimeout(id: string, userId: string): Promise<void> { okSchema.parse(await this.request(`/api/communities/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}/timeout`, { method: 'DELETE', body: '{}' })); }
   async kickCommunityMember(id: string, userId: string, reason?: string): Promise<void> { okSchema.parse(await this.request(`/api/communities/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}/kick`, { method: 'POST', body: JSON.stringify(moderationReasonBodySchema.parse({ reason })) })); }
   async banCommunityMember(id: string, userId: string, reason?: string): Promise<void> { okSchema.parse(await this.request(`/api/communities/${encodeURIComponent(id)}/bans/${encodeURIComponent(userId)}`, { method: 'PUT', body: JSON.stringify(moderationReasonBodySchema.parse({ reason })) })); }

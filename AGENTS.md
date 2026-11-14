@@ -425,9 +425,18 @@ docker compose up --build -d
   `routes/communityModeration.ts`; colunas `timeoutUntil/timeoutReason` em
   `CommunityMember`, tabelas `CommunityBan` e `CommunityAuditLog`.
 - Auditoria de comunidade: castigo, ban, unban, expulsão, cargos, canais,
-  categorias, ordem e fixação; `GET /api/communities/:id/audit` (cursor, quem
+  categorias, ordem, fixação, apelido de outro, configurações do canal,
+  limite de voz e boas-vindas; `GET /api/communities/:id/audit` (cursor, quem
   tem alguma permissão de gestão) e aba "Auditoria" nas Configurações.
 - Voz e boas-vindas (Fase 3, `routes/communityWelcome.ts`): limite opcional de pessoas por canal de voz (`Room.userLimit` 2..8, nunca acima do teto do mesh; `PUT /api/channels/:id/user-limit`, `manageChannels`); o `join-room` recusa com `Voice channel is full` e a lista mostra "3/4" e "Cheio". Canal de boas-vindas (`PUT /api/communities/:id/welcome`, OWNER/ADMIN, canal de texto + modelo `{nome}` até 500): o aceite de convite posta mensagem `isSystem` (sem autor, ninguém edita; moderador apaga) e devolve `welcomeChannelId`, onde o novo membro abre.
+- Apelido por comunidade (Fase 4, `routes/communityNickname.ts`): coluna
+  opcional `CommunityMember.nickname` (zod 1..32, trim; vazio/null limpa).
+  `PUT /api/communities/:id/members/:userId/nickname`: o próprio membro muda o
+  seu; o de outro exige `kickMembers` + hierarquia (`canModerateMember`) e vai
+  para a auditoria. Balde `communityNickname`: 10 / 10 min por usuário. Emite
+  `community:changed`. A UI troca o nome pelo apelido na lista de membros, nos
+  autores do canal, no "digitando" e nos cartões de voz; o nome real fica no
+  `title` e no perfil. "Mudar apelido" no menu de contexto e no perfil.
 
 ## Requisitos de Infra
 

@@ -44,6 +44,8 @@ export interface Member {
   customRoleId?: string | null;
   /** Castigo vigente (Fase 3): fim em ISO, ou null. */
   timeoutUntil?: string | null;
+  /** Apelido nesta comunidade (Fase 4), ou null. */
+  nickname?: string | null;
 }
 
 /** Nome acessivel da contagem: "1 mensagem não lida", "3 mensagens não lidas", "mais de 99 ...". */
@@ -493,6 +495,8 @@ export function MemberList({
   isOnline,
   canModerate,
   onModerate,
+  canEditNickname,
+  onNickname,
 }: {
   members: Member[];
   friendStatus?: (member: Member) => FriendStatus;
@@ -507,6 +511,9 @@ export function MemberList({
   /** Moderacao (Fase 3): quem posso castigar/expulsar/banir (hierarquia). */
   canModerate?: (member: Member) => boolean;
   onModerate?: (member: Member, action: ModerationAction | 'untimeout') => void;
+  /** Apelido (Fase 4): o proprio membro, ou quem modera o alvo. */
+  canEditNickname?: (member: Member) => boolean;
+  onNickname?: (member: Member) => void;
 }) {
   const roles: CommunityRole[] = ['OWNER', 'ADMIN', 'MEMBER'];
   const [busy, setBusy] = useState<string | null>(null);
@@ -525,6 +532,7 @@ export function MemberList({
       setProfile(member);
     } else if (key === 'message') onMessage?.(member);
     else if (key === 'friend') add(member);
+    else if (key === 'nickname') onNickname?.(member);
     else if (key === 'timeout' || key === 'untimeout' || key === 'kick' || key === 'ban') onModerate?.(member, key);
     else if (key === 'copy' && member.username)
       void navigator.clipboard?.writeText(`@${member.username}`).catch(() => {});
@@ -538,6 +546,8 @@ export function MemberList({
     const incoming = status === 'incoming';
     const timedOut = Boolean(member.timeoutUntil && Date.parse(member.timeoutUntil) > Date.now());
     const moderatable = Boolean(onModerate && canModerate?.(member));
+    const nicknameEditable = Boolean(onNickname && canEditNickname?.(member));
+    const shown = member.nickname || member.name;
     return (
       <div
         key={member.userId}
@@ -548,7 +558,7 @@ export function MemberList({
           onOpenChange={(open) => setMenuFor(open ? member.userId : null)}
         >
           <AriaButton
-            aria-label={`Opções de ${member.name}${presence ? `, ${presence}` : ''}${timedOut ? ', de castigo' : ''}`}
+            aria-label={`Opções de ${shown}${presence ? `, ${presence}` : ''}${timedOut ? ', de castigo' : ''}`}
             onContextMenu={(event: React.MouseEvent) => {
               event.preventDefault();
               setMenuFor(member.userId);
@@ -560,7 +570,7 @@ export function MemberList({
                 aria-hidden="true"
                 className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-hover text-xs font-semibold text-ink-primary"
               >
-                {member.name.slice(0, 1).toLocaleUpperCase('pt-BR')}
+                {shown.slice(0, 1).toLocaleUpperCase('pt-BR')}
               </span>
               {presence && (
                 <span
@@ -571,8 +581,11 @@ export function MemberList({
                 />
               )}
             </span>
-            <span className="min-w-0 flex-1 truncate text-sm text-ink-primary">
-              {member.name}
+            <span
+              className="min-w-0 flex-1 truncate text-sm text-ink-primary"
+              title={member.nickname ? member.name : undefined}
+            >
+              {shown}
               {status === 'self' && friendStatus && (
                 <span className="ml-1 text-ink-muted">(você)</span>
               )}
@@ -592,7 +605,7 @@ export function MemberList({
             className="z-50 min-w-52 rounded-xl border border-line bg-surface-secondary p-1 shadow-xl data-[entering]:animate-menu-in"
           >
             <Menu
-              aria-label={`Opções de ${member.name}`}
+              aria-label={`Opções de ${shown}`}
               className="outline-none"
               onAction={(key) => runAction(member, String(key))}
             >
@@ -620,6 +633,12 @@ export function MemberList({
                 <MenuItem id="copy" textValue="Copiar @nome" className={item}>
                   <Icon name="document" />
                   Copiar @{member.username}
+                </MenuItem>
+              )}
+              {nicknameEditable && (
+                <MenuItem id="nickname" textValue="Mudar apelido" className={item}>
+                  <Icon name="document" />
+                  Mudar apelido
                 </MenuItem>
               )}
               {moderatable && (
@@ -711,7 +730,8 @@ export function MemberList({
               {profile.name.slice(0, 1).toLocaleUpperCase('pt-BR')}
             </span>
             <div>
-              <p className="text-lg font-semibold text-ink-primary">{profile.name}</p>
+              <p className="text-lg font-semibold text-ink-primary">{profile.nickname || profile.name}</p>
+              {profile.nickname && <p className="text-sm text-ink-secondary">{profile.name}</p>}
               <p className="text-sm text-ink-muted">
                 {profile.username ? `@${profile.username}` : 'Sem @nome definido'}
               </p>
@@ -723,6 +743,17 @@ export function MemberList({
               {profileStatus === 'incoming' && ' · Quer ser seu amigo'}
             </p>
             <div className="mt-2 flex flex-wrap justify-center gap-2">
+              {onNickname && canEditNickname?.(profile) && (
+                <AriaButton
+                  onPress={() => {
+                    setProfile(null);
+                    onNickname(profile);
+                  }}
+                  className="btn-secondary rounded-lg px-4 py-2 text-sm font-medium"
+                >
+                  Mudar apelido
+                </AriaButton>
+              )}
               {profileStatus === 'friend' && onMessage && (
                 <AriaButton
                   onPress={() => {

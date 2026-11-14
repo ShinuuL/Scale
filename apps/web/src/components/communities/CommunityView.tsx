@@ -23,6 +23,7 @@ import { MessageSearchDialog } from './MessageSearchDialog';
 import { useChannelTyping } from '@/hooks/useChannelTyping';
 import { ConfirmDialog } from './ConfirmDialog';
 import { ModerationDialog, moderationError, type ModerationAction } from './ModerationDialogs';
+import { NicknameDialog, nicknameMap, withVoiceNicknames } from './NicknameDialog';
 import { moderationNotice, outranks } from '@scale/shared';
 import {
   CommunitySettingsDialog,
@@ -92,6 +93,7 @@ export function CommunityView({
   const [friends, setFriends] = useState<FriendsList | null>(null);
   const [notice, setNotice] = useState('');
   const [moderation, setModeration] = useState<{ member: Member; action: ModerationAction } | null>(null);
+  const [nicknameFor, setNicknameFor] = useState<Member | null>(null);
   useEffect(() => setOrder(readOrder()), []);
   const loadFriends = useCallback(
     () =>
@@ -146,6 +148,12 @@ export function CommunityView({
         const me = detail.members.find((m) => m.userId === meId);
         return Boolean(me && detail.myPermissions.kickMembers && member.userId !== meId && outranks(me, member));
       }}
+      canEditNickname={(member) => {
+        if (member.userId === meId) return true;
+        const me = detail.members.find((m) => m.userId === meId);
+        return Boolean(me && detail.myPermissions.kickMembers && outranks(me, member));
+      }}
+      onNickname={setNicknameFor}
       onModerate={(member, action) => {
         if (action !== 'untimeout') { setModeration({ member, action }); return; }
         void api.clearCommunityTimeout(detail.community.id, member.userId).then(refresh, (err: unknown) => setNotice(moderationError(err)));
@@ -340,6 +348,7 @@ export function CommunityView({
   const perms = detail?.myPermissions;
   // Configuracoes abrem para quem tem QUALQUER poder de gestao (cargo base ou personalizado).
   const canManage = detail?.myRole === 'OWNER' || Boolean(perms && Object.values(perms).some(Boolean));
+  const nicknames = nicknameMap(detail?.members ?? []);
   const authorColors = new Map((detail?.members ?? []).flatMap((member) => {
     const color = detail?.roles.find((role) => role.id === member.customRoleId)?.color;
     return color ? [[member.userId, color] as const] : [];
@@ -366,7 +375,7 @@ export function CommunityView({
       bannerUrl={communityImageUrl(detail.community.id, 'banner', detail.community.bannerUpdatedAt)}
       onLayout={perms?.manageChannels ? saveLayout : undefined}
       selected={selected?.id}
-      voiceStates={voice}
+      voiceStates={withVoiceNicknames(voice, nicknames)}
       speakingUserIds={speakingIds}
       onSelect={(channel) => {
         setDialog(null);
@@ -474,6 +483,7 @@ export function CommunityView({
             meId={meId}
             canManage={Boolean(perms?.manageMessages)}
             authorColors={authorColors}
+            authorNicknames={nicknames}
             state={messages}
             dispatch={dispatch}
             onSearch={() => setSearchOpen(true)}
@@ -481,7 +491,7 @@ export function CommunityView({
             onFocused={clearFocus}
             topic={selected.topic ?? null}
             onSaveTopic={perms?.manageChannels ? (value) => api.updateChannelTopic(selected.id, value).then(() => refresh()) : undefined}
-            typingText={typing.textFor(selected.id)}
+            typingText={typing.textFor(selected.id, (userId, name) => nicknames.get(userId) ?? name)}
             onTyping={(value) => emitTyping(selected.id, value)}
             canSend={selected.canSend}
             announcement={selected.announcement}
@@ -542,6 +552,17 @@ export function CommunityView({
             if (moderation.action === 'timeout') await api.timeoutCommunityMember(community.id, userId, duration, reason);
             else if (moderation.action === 'kick') await api.kickCommunityMember(community.id, userId, reason);
             else await api.banCommunityMember(community.id, userId, reason);
+            refresh();
+          }}
+        />
+      )}
+      {nicknameFor && detail && (
+        <NicknameDialog
+          member={nicknameFor}
+          self={nicknameFor.userId === meId}
+          onClose={() => setNicknameFor(null)}
+          onSave={async (nickname) => {
+            await api.setCommunityNickname(detail.community.id, nicknameFor.userId, nickname);
             refresh();
           }}
         />
