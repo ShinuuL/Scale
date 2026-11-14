@@ -223,3 +223,54 @@ test('comunidade fase 3: boas-vindas, avisos, modo lento, castigo, ban e auditor
   await owner.context().close();
   await member.context().close();
 });
+
+test('comunidade fase 4: eventos, topicos e apelido', async ({ browser }) => {
+  const suffix = Math.random().toString(36).slice(2, 7);
+  const owner = await newUser(browser, `f4dono_${suffix}`);
+  const member = await newUser(browser, `f4membro_${suffix}`);
+  const created = await owner.request.post('/api/communities', { data: { name: `Fase4 ${suffix}` } });
+  const { community } = (await created.json()) as { community: { id: string } };
+  const invite = await owner.request.post(`/api/communities/${community.id}/invites`, { data: {} });
+  const { invite: inv } = (await invite.json()) as { invite: { code: string } };
+  expect((await member.request.post('/api/invites/accept', { data: { code: inv.code } })).ok()).toBeTruthy();
+  const detail = (await (await owner.request.get(`/api/communities/${community.id}`)).json()) as { channels: { id: string; kind: string }[] };
+  const geral = detail.channels.find((c) => c.kind === 'TEXT')!;
+
+  // Evento: dono cria, membro marca interesse pela UI.
+  const startsAt = new Date(Date.now() + 2 * 3600_000).toISOString();
+  const ev = await owner.request.post(`/api/communities/${community.id}/events`, { data: { title: `Reuniao ${suffix}`, startsAt } });
+  expect(ev.status()).toBe(201);
+  expect((await member.request.post(`/api/communities/${community.id}/events`, { data: { title: 'x', startsAt } })).status()).toBe(403);
+  await member.setViewportSize({ width: 1440, height: 900 });
+  await member.goto(`/communities?c=${community.id}`);
+  await member.getByRole('button', { name: /Eventos/ }).first().click();
+  const item = member.getByRole('listitem', { name: `Reuniao ${suffix}` });
+  await expect(item).toBeVisible();
+  await item.getByRole('button', { name: /Tenho interesse/ }).click();
+  await expect(item.getByRole('button', { name: /Tenho interesse/ })).toHaveAttribute('aria-pressed', 'true');
+  await member.keyboard.press('Escape');
+
+  // Topico: mensagem raiz, topico, resposta fora do canal principal.
+  const root = await owner.request.post(`/api/channels/${geral.id}/messages`, { data: { content: `raiz ${suffix}` } });
+  const { message } = (await root.json()) as { message: { id: string } };
+  const th = await owner.request.post(`/api/channels/${geral.id}/messages/${message.id}/thread`, { data: { name: 'Planejamento' } });
+  expect(th.status()).toBe(201);
+  const { thread } = (await th.json()) as { thread: { id: string } };
+  expect((await member.request.post(`/api/threads/${thread.id}/messages`, { data: { content: `no topico ${suffix}` } })).ok()).toBeTruthy();
+  const main = (await (await owner.request.get(`/api/channels/${geral.id}/messages`)).json()) as { messages: { content: string }[] };
+  expect(main.messages.some((m) => m.content === `no topico ${suffix}`)).toBeFalsy();
+  await expect(member.getByRole('button', { name: 'Abrir tópico Planejamento, 1 resposta' })).toBeVisible();
+  await member.getByRole('button', { name: 'Abrir tópico Planejamento, 1 resposta' }).click();
+  await expect(member.getByRole('complementary', { name: 'Tópico Planejamento' }).getByText(`no topico ${suffix}`)).toBeVisible();
+
+  // Apelido: membro define o proprio; dono ve na lista.
+  const meRes = (await (await member.request.get('/api/auth/me')).json()) as { user?: { id: string }; id?: string };
+  const memberId = meRes.user?.id ?? meRes.id!;
+  expect((await member.request.put(`/api/communities/${community.id}/members/${memberId}/nickname`, { data: { nickname: `Apelido${suffix}` } })).ok()).toBeTruthy();
+  await owner.setViewportSize({ width: 1440, height: 900 });
+  await owner.goto(`/communities?c=${community.id}`);
+  await expect(owner.getByRole('complementary', { name: 'Membros' }).getByText(`Apelido${suffix}`)).toBeVisible();
+
+  await owner.context().close();
+  await member.context().close();
+});
