@@ -1,29 +1,53 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { io } from 'socket.io-client';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { io, type Socket } from 'socket.io-client';
 import { z } from 'zod';
 import {
   communitySubscriptionAckSchema,
   communityVoiceStateSchema,
+  communityPresenceSchema,
+  communityVoiceSpeakingSchema,
+  type CommunityPresence,
+  type CommunityVoiceSpeaking,
   channelMessageEditEventSchema,
   channelMessageDeleteEventSchema,
+  channelTypingEventSchema,
+  type ChannelTypingEvent,
+  channelReactionEventSchema,
+  channelPinEventSchema,
+  type ChannelReactionEvent,
+  type ChannelPinEvent,
   type CommunityVoiceState,
   type ChannelMessageEditEvent,
   type ChannelMessageDeleteEvent,
+  communityModerationEventSchema,
+  channelThreadEventSchema,
+  type CommunityModerationEvent,
 } from '@scale/shared';
 import { channelMessageSchema, type ChannelMessage } from '@/lib/api';
 import { getWsUrl } from '@/hooks/useSocket';
+import { threadBus } from '@/lib/threadEvents';
 
 export interface CommunityEventHandlers {
   onMessage?: (message: ChannelMessage) => void;
   onMessageEdit?: (event: ChannelMessageEditEvent) => void;
   onMessageDelete?: (event: ChannelMessageDeleteEvent) => void;
+  onReaction?: (event: ChannelReactionEvent) => void;
+  onPin?: (event: ChannelPinEvent) => void;
   onChanged?: () => void;
   onDeleted?: () => void;
   onRemoved?: () => void;
+  /** Fase 3: castigo/ban/expulsao recebidos por MIM nesta comunidade. */
+  onModeration?: (event: CommunityModerationEvent) => void;
   onVoiceStates?: (states: CommunityVoiceState[]) => void;
   onVoiceState?: (state: CommunityVoiceState) => void;
+  /** Estado inicial de presenca (a cada inscricao): quem da comunidade esta online. */
+  onOnlineUsers?: (userIds: string[]) => void;
+  onPresence?: (event: CommunityPresence) => void;
+  onVoiceSpeaking?: (event: CommunityVoiceSpeaking) => void;
+  /** Outro membro comecou/parou de digitar num canal de texto. */
+  onTyping?: (event: ChannelTypingEvent) => void;
   onError?: (error: string) => void;
 }
 
@@ -31,10 +55,11 @@ export interface CommunityEventHandlers {
 export function useCommunityEvents(
   communityId: string | null,
   handlers: CommunityEventHandlers,
-): { connected: boolean } {
+): { connected: boolean; emitTyping: (channelId: string, typing: boolean) => void } {
   const [connected, setConnected] = useState(false);
   const handlersRef = useRef(handlers);
   handlersRef.current = handlers;
+  const socketRef = useRef<Socket | null>(null);
   useEffect(() => {
     if (!communityId) return;
     let active = true;
@@ -44,6 +69,7 @@ export function useCommunityEvents(
       reconnection: true,
       timeout: 20000,
     });
+    socketRef.current = socket;
     const matches = (raw: unknown): boolean =>
       z.object({ communityId: z.string() }).safeParse(raw).data?.communityId === communityId;
     socket.on('connect', () => {
@@ -60,6 +86,7 @@ export function useCommunityEvents(
           return;
         }
         handlersRef.current.onVoiceStates?.(result.data.voiceStates);
+        handlersRef.current.onOnlineUsers?.(result.data.onlineUserIds);
         handlersRef.current.onChanged?.();
       });
     });
@@ -73,28 +100,69 @@ export function useCommunityEvents(
     socket.on('community:removed', (raw: unknown) => {
       if (matches(raw)) handlersRef.current.onRemoved?.();
     });
+    socket.on('community:moderation', (raw: unknown) => {
+      const parsed = communityModerationEventSchema.safeParse(raw);
+      if (parsed.success && parsed.data.communityId === communityId) handlersRef.current.onModeration?.(parsed.data);
+    });
     socket.on('community:voice-state', (raw: unknown) => {
       const parsed = communityVoiceStateSchema.safeParse(raw);
       if (parsed.success) handlersRef.current.onVoiceState?.(parsed.data);
     });
+    socket.on('community:presence', (raw: unknown) => {
+      const parsed = communityPresenceSchema.safeParse(raw);
+      if (parsed.success && parsed.data.communityId === communityId) handlersRef.current.onPresence?.(parsed.data);
+    });
+    socket.on('community:voice-speaking', (raw: unknown) => {
+      const parsed = communityVoiceSpeakingSchema.safeParse(raw);
+      if (parsed.success) handlersRef.current.onVoiceSpeaking?.(parsed.data);
+    });
     socket.on('channel:message', (raw: unknown) => {
       const parsed = channelMessageSchema.safeParse(raw);
-      if (parsed.success) handlersRef.current.onMessage?.(parsed.data);
+      if (!parsed.success) return;
+      // Fase 4: mensagem de topico nao entra no canal principal.
+      if (parsed.data.threadId) threadBus.emit({ type: 'message', message: parsed.data });
+      else handlersRef.current.onMessage?.(parsed.data);
     });
     socket.on('channel:message-edit', (raw: unknown) => {
       const parsed = channelMessageEditEventSchema.safeParse(raw);
-      if (parsed.success) handlersRef.current.onMessageEdit?.(parsed.data);
+      if (!parsed.success) return;
+      handlersRef.current.onMessageEdit?.(parsed.data);
+      threadBus.emit({ type: 'edit', event: parsed.data });
     });
     socket.on('channel:message-delete', (raw: unknown) => {
       const parsed = channelMessageDeleteEventSchema.safeParse(raw);
-      if (parsed.success) handlersRef.current.onMessageDelete?.(parsed.data);
+      if (!parsed.success) return;
+      handlersRef.current.onMessageDelete?.(parsed.data);
+      threadBus.emit({ type: 'delete', event: parsed.data });
+    });
+    socket.on('channel:thread', (raw: unknown) => {
+      const parsed = channelThreadEventSchema.safeParse(raw);
+      if (parsed.success) threadBus.emit({ type: 'thread', event: parsed.data });
+    });
+    socket.on('channel:typing', (raw: unknown) => {
+      const parsed = channelTypingEventSchema.safeParse(raw);
+      if (parsed.success && parsed.data.communityId === communityId) handlersRef.current.onTyping?.(parsed.data);
+    });
+    socket.on('channel:reaction', (raw: unknown) => {
+      const parsed = channelReactionEventSchema.safeParse(raw);
+      if (parsed.success) handlersRef.current.onReaction?.(parsed.data);
+    });
+    socket.on('channel:message-pin', (raw: unknown) => {
+      const parsed = channelPinEventSchema.safeParse(raw);
+      if (parsed.success) handlersRef.current.onPin?.(parsed.data);
     });
     return () => {
       active = false;
+      socketRef.current = null;
       if (socket.connected) socket.emit('community:unsubscribe', { communityId });
       socket.disconnect();
       setConnected(false);
     };
   }, [communityId]);
-  return { connected };
+  // Sinal efemero: sem conexao, simplesmente nao vai.
+  const emitTyping = useCallback((channelId: string, typing: boolean) => {
+    const socket = socketRef.current;
+    if (socket?.connected) socket.emit('channel:typing', { channelId, typing });
+  }, []);
+  return { connected, emitTyping };
 }

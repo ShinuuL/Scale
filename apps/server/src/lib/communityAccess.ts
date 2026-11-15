@@ -1,18 +1,33 @@
-import type { CommunityPermissions, CommunityRole } from '@scale/shared';
+import type { ChannelReactionSummary, ChannelReply, ChannelThreadSummary, CommunityPermissions, CommunityRole } from '@scale/shared';
 import { prisma } from './prisma.js';
 import { toPublicFile } from './publicDto.js';
 
 interface ChannelMessageRow {
   id: string; roomId: string; content: string; createdAt: Date; editedAt: Date | null; deletedAt: Date | null;
+  pinnedAt?: Date | null; pinnedById?: string | null; isSystem?: boolean; threadId?: string | null;
   files?: Array<{ id: string; filename: string; mime: string; size: number; deletedAt: Date | null }>;
 }
 
 /** DTO unico de mensagem de canal (rota de texto, upload e socket). Apagada = sem arquivos. */
-export function toChannelMessage(row: ChannelMessageRow, author: { id: string | null; name: string; username: string | null }) {
+export function toChannelMessage(
+  row: ChannelMessageRow,
+  author: { id: string | null; name: string; username: string | null },
+  extras: { replyTo?: ChannelReply | null; reactions?: ChannelReactionSummary[]; thread?: ChannelThreadSummary | null } = {},
+) {
   return {
     id: row.id, channelId: row.roomId, author, content: row.content,
     createdAt: row.createdAt.toISOString(), editedAt: row.editedAt?.toISOString() ?? null, deletedAt: row.deletedAt?.toISOString() ?? null,
     files: row.deletedAt ? [] : (row.files ?? []).filter((f) => f.deletedAt == null).map(toPublicFile),
+    replyTo: extras.replyTo ?? null,
+    reactions: row.deletedAt ? [] : extras.reactions ?? [],
+    pinnedAt: row.pinnedAt?.toISOString() ?? null,
+    pinnedById: row.pinnedById ?? null,
+    /** Mensagem de sistema (boas-vindas): sem autor editavel. */
+    system: row.isSystem ?? false,
+    /** Fase 4: mensagem dentro de um topico (null = canal principal). */
+    threadId: row.threadId ?? null,
+    /** Fase 4: topico aberto a partir desta mensagem. */
+    thread: extras.thread ?? null,
   };
 }
 
@@ -39,7 +54,7 @@ export function canModerate(role: CommunityRole): boolean {
   return roleAtLeast(role, 'ADMIN');
 }
 
-export interface Membership { id: string; role: CommunityRole; customRoleId: string | null; customRole: CommunityPermissions | null }
+export interface Membership { id: string; role: CommunityRole; customRoleId: string | null; customRole: CommunityPermissions | null; timeoutUntil?: Date | null }
 
 /**
  * Permissoes efetivas: OWNER/ADMIN tem todas; o cargo personalizado so SOMA.
@@ -60,7 +75,7 @@ export function permissionsOf(member: Pick<Membership, 'role' | 'customRole'>): 
 export async function findMembership(communityId: string, userId: string): Promise<Membership | null> {
   return prisma.communityMember.findUnique({
     where: { communityId_userId: { communityId, userId } },
-    select: { id: true, role: true, customRoleId: true, customRole: { select: { manageChannels: true, manageInvites: true, manageMessages: true, kickMembers: true } } },
+    select: { id: true, role: true, customRoleId: true, timeoutUntil: true, customRole: { select: { manageChannels: true, manageInvites: true, manageMessages: true, kickMembers: true } } },
   });
 }
 

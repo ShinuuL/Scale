@@ -8,9 +8,15 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { api, type CommunityCustomRole, type CommunityDetail, type CommunityInvite } from '@/lib/api';
-import { MAX_COMMUNITY_ICON_BYTES, type CommunityPermissions } from '@scale/shared';
+import type { CommunityPermissions } from '@scale/shared';
+import { CHANNEL_TOPIC_MAX, type ChannelSettings } from '@scale/shared';
+import { ChannelPermissionsForm } from './ChannelPermissionsForm';
 import { ConfirmDialog } from './ConfirmDialog';
 import type { Channel, Member } from './CommunityParts';
+import { CategoriesSection, CommunityImagesSection } from './CommunityAppearance';
+import { buildSections, setChannelCategory } from './channelLayout';
+import { AuditPanel, BansPanel, SettingsTabs, type SettingsTab } from './ModerationDialogs';
+import { VoiceLimitSelect, WelcomeSection } from './CommunityWelcome';
 
 const selectClass =
   'w-full rounded-lg border border-line bg-surface-secondary p-2 text-base sm:text-sm text-ink-primary';
@@ -207,17 +213,53 @@ function ChannelSettingsRow({
   channel,
   onRename,
   onDelete,
+  categories = [],
+  onCategory,
+  onTopic,
+  roles = [],
+  onSettings,
+  extra,
 }: {
+  /** Controles extras na linha (ex.: limite do canal de voz). */
+  extra?: ReactNode;
   channel: Channel;
+  roles?: CommunityCustomRole[];
+  /** Fase 3: permissoes, aviso e modo lento do canal. */
+  onSettings?: (settings: ChannelSettings) => Promise<boolean>;
   onRename: (name: string) => Promise<boolean>;
+  /** So canal de texto: grava o topico (vazio limpa). */
+  onTopic?: (topic: string) => Promise<boolean>;
   onDelete: () => void;
+  categories?: Array<{ id: string; name: string }>;
+  onCategory?: (categoryId: string | null) => void;
 }) {
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(channel.name);
+  const [editingTopic, setEditingTopic] = useState(false);
+  const [topic, setTopic] = useState(channel.topic ?? '');
+  const [editingPerms, setEditingPerms] = useState(false);
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
         <span className="min-w-0 flex-1 truncate text-sm text-ink-primary">{channel.name}</span>
+        {onCategory && categories.length > 0 && (
+          <label className="text-sm text-ink-primary">
+            <span className="sr-only">Categoria do canal {channel.name}</span>
+            <select
+              className={selectClass}
+              value={channel.categoryId ?? ''}
+              onChange={(event) => onCategory(event.target.value || null)}
+            >
+              <option value="">Sem categoria</option>
+              {categories.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {extra}
         <Button
           variant="ghost"
           size="sm"
@@ -229,6 +271,24 @@ function ChannelSettingsRow({
         >
           Renomear
         </Button>
+        {onTopic && (
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label={`Tópico do canal ${channel.name}`}
+            onClick={() => {
+              setTopic(channel.topic ?? '');
+              setEditingTopic(true);
+            }}
+          >
+            Tópico
+          </Button>
+        )}
+        {onSettings && (
+          <Button variant="ghost" size="sm" aria-label={`Permissões do canal ${channel.name}`} onClick={() => setEditingPerms(true)}>
+            Permissões
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="sm"
@@ -259,6 +319,33 @@ function ChannelSettingsRow({
             Salvar
           </Button>
           <Button type="button" variant="ghost" size="sm" onClick={() => setRenaming(false)}>
+            Cancelar
+          </Button>
+        </form>
+      )}
+      {editingPerms && onSettings && (
+        <ChannelPermissionsForm channel={channel} roles={roles} onSave={onSettings} onCancel={() => setEditingPerms(false)} />
+      )}
+      {editingTopic && onTopic && (
+        <form
+          className="flex items-end gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void onTopic(topic.trim()).then((ok) => {
+              if (ok) setEditingTopic(false);
+            });
+          }}
+        >
+          <Input
+            label={`Tópico do canal ${channel.name}`}
+            value={topic}
+            onChange={(event) => setTopic(event.target.value)}
+            maxLength={CHANNEL_TOPIC_MAX}
+          />
+          <Button type="submit" size="sm">
+            Salvar tópico
+          </Button>
+          <Button type="button" variant="ghost" size="sm" onClick={() => setEditingTopic(false)}>
             Cancelar
           </Button>
         </form>
@@ -327,49 +414,6 @@ function RoleRow({ role, onSave, onDelete }: { role: CommunityCustomRole; onSave
   );
 }
 
-/** Icone da comunidade: so o dono troca (PNG, JPEG ou WebP, ate 8 MB). */
-function CommunityIconField({ community, run }: { community: CommunityDetail['community']; run: (action: () => Promise<unknown>) => Promise<boolean> }) {
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [busy, setBusy] = useState(false);
-  const [hint, setHint] = useState('');
-  const pick = async (file: File | undefined) => {
-    if (!file) return;
-    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > MAX_COMMUNITY_ICON_BYTES) {
-      setHint('Use PNG, JPEG ou WebP de até 8 MB.');
-      return;
-    }
-    setHint('');
-    setBusy(true);
-    await run(() => api.uploadCommunityIcon(community.id, file));
-    setBusy(false);
-  };
-  return (
-    <section className="space-y-2">
-      <h3 className="font-semibold text-ink-primary">Ícone</h3>
-      <div className="flex items-center gap-3">
-        <span className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-surface-hover text-sm font-bold text-ink-muted">
-          {community.iconVersion ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={api.communityIconUrl(community.id, community.iconVersion)} alt={`Ícone de ${community.name}`} className="h-full w-full object-cover" />
-          ) : (
-            community.name.slice(0, 2).toLocaleUpperCase('pt-BR')
-          )}
-        </span>
-        <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(event) => { void pick(event.target.files?.[0]); event.target.value = ''; }} />
-        <Button size="sm" variant="secondary" disabled={busy} onClick={() => fileRef.current?.click()}>
-          {community.iconVersion ? 'Trocar ícone' : 'Enviar ícone'}
-        </Button>
-        {community.iconVersion && (
-          <Button size="sm" variant="ghost" disabled={busy} onClick={() => void run(() => api.deleteCommunityIcon(community.id))}>
-            Remover
-          </Button>
-        )}
-      </div>
-      <p className={`text-xs ${hint ? 'text-red-300' : 'text-ink-muted'}`}>{hint || 'PNG, JPEG ou WebP, até 8 MB. Aparece na lista de comunidades.'}</p>
-    </section>
-  );
-}
-
 function MemberRow({
   member,
   owner,
@@ -434,6 +478,7 @@ export function CommunitySettingsDialog({
   onGone: () => void;
 }) {
   const { community, channels, members, myRole, myPermissions, roles } = detail;
+  const categories = detail.categories ?? [];
   const owner = myRole === 'OWNER';
   const [name, setName] = useState(community.name);
   const [newChannelName, setNewChannelName] = useState('');
@@ -443,6 +488,7 @@ export function CommunitySettingsDialog({
   const [invitesLoading, setInvitesLoading] = useState(true);
   const [invitesFailed, setInvitesFailed] = useState(false);
   const [confirm, setConfirm] = useState<Confirmation | null>(null);
+  const [tab, setTab] = useState<SettingsTab>('general');
   const run = async (action: () => Promise<unknown>) => {
     setError('');
     try {
@@ -486,8 +532,17 @@ export function CommunitySettingsDialog({
       active = false;
     };
   }, [community.id, myPermissions.manageInvites]);
+  const tabs = <SettingsTabs value={tab} onChange={setTab} showBans={myPermissions.kickMembers} />;
+  if (tab !== 'general')
+    return (
+      <Frame title={`Configurações de ${community.name}`} onClose={onClose}>
+        {tabs}
+        {tab === 'bans' ? <BansPanel communityId={community.id} /> : <AuditPanel communityId={community.id} />}
+      </Frame>
+    );
   return (
     <Frame title={`Configurações de ${community.name}`} onClose={onClose}>
+      {tabs}
       {error && <Banner variant="error">{error}</Banner>}
       {myRole === 'OWNER' && (
         <form
@@ -509,14 +564,25 @@ export function CommunitySettingsDialog({
           </Button>
         </form>
       )}
-      {owner && <CommunityIconField community={community} run={run} />}
+      {(myRole === 'OWNER' || myRole === 'ADMIN') && (
+        <CommunityImagesSection community={community} onChanged={onChanged} />
+      )}
       {myPermissions.manageChannels && <section className="space-y-2">
         <h3 className="font-semibold text-ink-primary">Canais</h3>
         {channels.map((channel) => (
           <ChannelSettingsRow
             key={channel.id}
             channel={channel}
+            categories={categories}
+            onCategory={(categoryId) => {
+              const layout = setChannelCategory(buildSections(channels, categories), channel.id, categoryId);
+              if (layout) void run(() => api.saveCommunityLayout(community.id, layout));
+            }}
             onRename={(value) => run(() => api.updateChannel(channel.id, value))}
+            onTopic={channel.kind === 'TEXT' ? (value) => run(() => api.updateChannelTopic(channel.id, value)) : undefined}
+            roles={roles}
+            onSettings={(settings) => run(() => api.saveChannelSettings(channel.id, settings))}
+            extra={channel.kind === 'VOICE' ? <VoiceLimitSelect channel={channel} run={run} /> : undefined}
             onDelete={() =>
               setConfirm({
                 title: `Apagar canal ${channel.name}?`,
@@ -562,6 +628,27 @@ export function CommunitySettingsDialog({
           </Button>
         </form>
       </section>}
+      {(myRole === 'OWNER' || myRole === 'ADMIN') && (
+        <WelcomeSection communityId={community.id} channels={channels} welcome={community.welcome} run={run} />
+      )}
+      {myPermissions.manageChannels && (
+        <CategoriesSection
+          communityId={community.id}
+          categories={categories}
+          run={run}
+          onDelete={(category) =>
+            setConfirm({
+              title: `Apagar categoria ${category.name}?`,
+              description: 'Os canais desta categoria continuam, sem categoria.',
+              label: 'Apagar categoria',
+              action: async () => {
+                await api.deleteCategory(category.id);
+                onChanged();
+              },
+            })
+          }
+        />
+      )}
       {owner && (
         <section className="space-y-2">
           <h3 className="font-semibold text-ink-primary">Cargos</h3>

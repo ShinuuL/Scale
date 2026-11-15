@@ -8,10 +8,12 @@ import { useCallKeepAlive } from '@/hooks/useCallKeepAlive';
 import { useDisconnectNotice } from '@/hooks/useDisconnectNotice';
 import { useRoomDeleted } from '@/hooks/useRoomDeleted';
 import { useSpeaking } from '@/hooks/useSpeaking';
+import { useVoiceFlags } from '@/hooks/useVoiceFlags';
 import { useChat } from '@/hooks/useChat';
 import { usePeerAvatars } from '@/hooks/usePeerAvatars';
 import { useScreenModeration } from '@/hooks/useScreenModeration';
 import type { ModerationConfig } from '@scale/shared';
+import { VOICE_CHANNEL_FULL_ERROR } from '@scale/shared';
 import { ScreenShareGateDialog } from '@/components/room/ScreenShareGateDialog';
 import { ReportDialog } from '@/components/room/ReportDialog';
 import { ChatPanel } from '@/components/ChatPanel';
@@ -315,6 +317,12 @@ export function RoomSession({
     { id: MUTED_PROBE_ID, stream: mutedProbe },
     ...Array.from(webrtc.peers.values()).map((p) => ({ id: p.peerId, stream: p.stream })),
   ]);
+  // Indicadores do canal de voz da comunidade (deafen, tela, falando).
+  useVoiceFlags(socket.socket, roomId, joined, {
+    deafened: webrtc.isDeafened,
+    screenSharing: webrtc.isScreenSharing,
+    speaking: speaking.has(LOCAL_ID),
+  });
 
   // Detect insecure context (HTTP on non-localhost) — blocks getUserMedia
   useEffect(() => {
@@ -450,8 +458,8 @@ export function RoomSession({
             }
           })
           .catch((err: unknown) => {
-            const message =
-              err instanceof Error && err.message ? err.message : 'Falha ao entrar na sala';
+            const raw = err instanceof Error && err.message ? err.message : 'Falha ao entrar na sala';
+            const message = raw === VOICE_CHANNEL_FULL_ERROR ? 'Canal de voz cheio' : raw;
             if (mode === 'first') {
               setError(message);
               return;

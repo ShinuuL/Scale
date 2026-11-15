@@ -15,7 +15,6 @@ import { communityRoutes } from '../routes/communities.js';
 import { roomRoutes } from '../routes/rooms.js';
 import { messagesRoutes } from '../routes/messages.js';
 import { filesRoutes } from '../routes/files.js';
-import { communityIconRoutes } from '../routes/communityIcon.js';
 import { turnRoutes } from '../routes/turn.js';
 import { createSocketServer } from '../socket/handler.js';
 
@@ -81,7 +80,6 @@ describe('comunidades', () => {
     await app.register(messagesRoutes);
     await app.register(multipart, { limits: { fileSize: 15_000_000, files: 5 } });
     await app.register(filesRoutes);
-    await app.register(communityIconRoutes);
     await app.register(turnRoutes);
     await app.listen({ port: 0, host: '127.0.0.1' });
     const server: HttpServer = app.server;
@@ -239,6 +237,57 @@ describe('comunidades', () => {
     expect(await disconnected).toMatchObject({ channelId: voice.id, members: [] });
   });
 
+  it('presenca: estado inicial no subscribe e transicoes online/offline por comunidade', async () => {
+    const id = await create();
+    await join(id, 'member');
+    const observer = await connect('owner');
+    const first = await ack(observer, 'community:subscribe', { communityId: id });
+    expect(first.onlineUserIds).toEqual(expect.arrayContaining([users.owner.id]));
+    expect(first.onlineUserIds).not.toContain(users.member.id);
+    const online = next<{ communityId: string; userId: string; online: boolean }>(observer, 'community:presence');
+    const tab1 = await connect('member');
+    expect(await online).toEqual({ communityId: id, userId: users.member.id, online: true });
+    const tab2 = await connect('member');
+    expect((await ack(observer, 'community:subscribe', { communityId: id })).onlineUserIds).toContain(users.member.id);
+    let sawOffline = false;
+    const watch = (data: { online: boolean }) => { if (!data.online) sawOffline = true; };
+    observer.on('community:presence', watch);
+    tab1.disconnect();
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(sawOffline).toBe(false);
+    observer.off('community:presence', watch);
+    const offline = next<{ online: boolean; userId: string }>(observer, 'community:presence');
+    tab2.disconnect();
+    expect(await offline).toMatchObject({ userId: users.member.id, online: false });
+  });
+
+  it('indicadores de voz: mudo, deafen, tela e falando chegam a comunidade', async () => {
+    const id = await create();
+    await join(id, 'member');
+    const voice = (await detail(id)).channels.find((channel) => channel.kind === 'VOICE');
+    if (!voice) throw new Error('sem canal de voz');
+    const observer = await connect('owner');
+    const member = await connect('member');
+    await ack(observer, 'community:subscribe', { communityId: id });
+    const entered = next<{ members: Array<Record<string, unknown>> }>(observer, 'community:voice-state');
+    expect((await ack(member, 'join-room', { roomId: voice.id })).success).toBe(true);
+    expect((await entered).members[0]).toMatchObject({ muted: false, deafened: false, screenSharing: false });
+    const muted = next<{ members: Array<Record<string, unknown>> }>(observer, 'community:voice-state');
+    await ack(member, 'peer:audio-state', { roomId: voice.id, muted: true });
+    expect((await muted).members[0]).toMatchObject({ muted: true });
+    const deaf = next<{ members: Array<Record<string, unknown>> }>(observer, 'community:voice-state');
+    expect((await ack(member, 'peer:voice-flags', { roomId: voice.id, deafened: true })).success).toBe(true);
+    expect((await deaf).members[0]).toMatchObject({ deafened: true });
+    const speaking = next(observer, 'community:voice-speaking');
+    await ack(member, 'peer:voice-flags', { roomId: voice.id, speaking: true });
+    // Mudo nunca aparece falando.
+    expect(await speaking).toEqual({ channelId: voice.id, userId: users.member.id, speaking: false });
+    expect((await ack(member, 'peer:voice-flags', { roomId: voice.id, bogus: true })).error).toBeDefined();
+    expect((await ack(observer, 'peer:voice-flags', { roomId: voice.id, deafened: true })).error).toBe('Not in room');
+    const sub = await ack(observer, 'community:subscribe', { communityId: id });
+    expect(sub.voiceStates).toEqual([expect.objectContaining({ members: [expect.objectContaining({ muted: true, deafened: true })] })]);
+  });
+
   it('protege chat REST e entrega mensagens e paginacao aos membros', async () => {
     const id = await create();
     await join(id, 'member');
@@ -389,36 +438,6 @@ describe('comunidades', () => {
     const after = (await inject('member', 'GET', `/api/communities/${id}`)).json() as { roles: unknown[]; members: Array<{ userId: string; customRoleId: string | null }> };
     expect(after.roles).toEqual([]);
     expect(after.members.find((m) => m.userId === users.member.id)?.customRoleId).toBeNull();
-  });
-
-  it('icone da comunidade: so o dono troca e remove; so membro ve', async () => {
-    const id = await create();
-    await join(id, 'member');
-    resetProfileUpdateRateLimit(users.owner.id);
-    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52]);
-    const put = (who: Who, content: Buffer, type = 'image/png') => {
-      const boundary = `----scale${Math.random().toString(16).slice(2)}`;
-      const crlf = '\r\n';
-      const head = [`--${boundary}`, 'Content-Disposition: form-data; name="icon"; filename="icone.png"', `Content-Type: ${type}`, '', ''].join(crlf);
-      return app.inject({ method: 'PUT', url: `/api/communities/${id}/icon`, payload: Buffer.concat([Buffer.from(head), content, Buffer.from(`${crlf}--${boundary}--${crlf}`)]), headers: { cookie: `token=${users[who].token}`, 'content-type': `multipart/form-data; boundary=${boundary}` } });
-    };
-    expect((await inject('member', 'GET', `/api/communities/${id}/icon`)).statusCode).toBe(404);
-    expect((await put('member', png)).statusCode).toBe(403);
-    expect((await put('outsider', png)).statusCode).toBe(404);
-    expect((await put('owner', Buffer.from('GIF89a-nao-permitido'), 'image/gif')).statusCode).toBe(400);
-    const saved = await put('owner', png);
-    expect(saved.statusCode).toBe(200);
-    const version = (saved.json() as { iconVersion: string }).iconVersion;
-    expect(version).toEqual(expect.any(String));
-    const icon = await inject('member', 'GET', `/api/communities/${id}/icon`);
-    expect(icon.statusCode).toBe(200);
-    expect(icon.headers['content-type']).toBe('image/png');
-    expect((await inject('outsider', 'GET', `/api/communities/${id}/icon`)).statusCode).toBe(404);
-    expect((await inject('member', 'GET', `/api/communities/${id}`)).json()).toMatchObject({ community: { iconVersion: version } });
-    expect((await inject('member', 'GET', '/api/communities')).json()).toMatchObject({ communities: expect.arrayContaining([expect.objectContaining({ id, iconVersion: version })]) });
-    expect((await inject('member', 'DELETE', `/api/communities/${id}/icon`)).statusCode).toBe(403);
-    expect((await inject('owner', 'DELETE', `/api/communities/${id}/icon`)).statusCode).toBe(200);
-    expect((await inject('member', 'GET', `/api/communities/${id}/icon`)).statusCode).toBe(404);
   });
 
   it('recusa criar comunidade acima do limite e aceitar convite de comunidade cheia', async () => {

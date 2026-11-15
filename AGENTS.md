@@ -357,9 +357,9 @@ docker compose up --build -d
   (até 5 por mensagem, quota da sala). No canal de texto ser **membro** é a prova
   de participação (não há `join-room`); só `image/*` é aceito. A mensagem sai
   como `channel:message` para a comunidade, com `files` no DTO.
-- Ícone de comunidade: `PUT|DELETE /api/communities/:id/icon` (só OWNER;
-  PNG/JPEG/WebP por magic bytes, até 8 MB, em `uploads/community-icons`) e
-  `GET` (só membro; fora = 404). DTOs levam `iconVersion` (usado como `?v=`).
+- Ícone de comunidade: servido pela rota de ícone e banner (`communityExtras.ts`,
+  `uploads/community-media`, DTO `iconUpdatedAt`). Ícones antigos gravados em
+  `uploads/community-icons` continuam válidos para leitura e remoção.
 - Aviso de atualização: o build grava `out/version.json` e embute o mesmo id em
   `NEXT_PUBLIC_BUILD_ID` (`next.config.js`). `UpdatePrompt` confere a cada 5 min
   e ao voltar para a aba; versão diferente = aviso "Recarregar" (nunca recarrega
@@ -390,6 +390,28 @@ docker compose up --build -d
     `friends:changed` e `dm:message`. DTO público sem e-mail.
   - Foto de amigo: `GET /api/users/:userId/avatar` (amigo ou si mesmo; sem
     amizade = 404 igual a "sem foto")
+- Comunidades, presença e indicadores de voz: `community:presence`
+  (online = algum socket logado; estado inicial em `onlineUserIds` do ack de
+  `community:subscribe`), lista "Online — N"/"Offline — N"; membros da voz com
+  `muted`/`deafened`/`screenSharing` e `community:voice-speaking` (cliente manda
+  `peer:voice-flags`, "falando" só em transições, no máximo 1 a cada 400 ms)
+- Não lidas em comunidades: tabela `ChannelReadState`, contagem por canal (teto 100, "99+") em `GET /api/communities[/:id]`, `POST /api/channels/:id/read` e `/api/communities/:id/read`; outras comunidades via evento leve `community:activity` em `user:<id>` + recarga ao focar
+- Comunidade: ícone/banner (`PUT|GET|DELETE /api/communities/:id/{icon|banner}`, OWNER/ADMIN
+  enviam, membros leem, mesmo desenho do avatar) e categorias de canais recolhíveis com ordem
+  persistida (`/categories`, `/community-categories/:id`, `PUT /layout`; `manageChannels`)
+- Busca de mensagens na comunidade: `GET /api/communities/:id/search` (só membro; `q` 2..100, filtros canal/autor/datas, cursor, 25 por página, sem apagadas; sem caixa/acento via normalização em JS, varredura limitada a 2000 linhas por página; balde `messageSearch` 30/min por usuário). Resultado abre o canal e rola até a mensagem só se já estiver carregada.
+- Canais de texto da comunidade: "digitando" efêmero (`channel:typing`, só membro inscrito, sem gravar, expira em ~6 s) e tópico do canal (`topic` anulável, até 200, `manageChannels`)
+- Canais de comunidade (Fase 3): `PUT /api/channels/:id/settings` (manageChannels)
+  grava `{ announcement, slowModeSeconds, overrides }`. Sobrescrita por cargo
+  (`everyone` ou id de cargo; ver/enviar = permitir, negar ou herdar; o cargo
+  vence o "todos") na tabela `ChannelPermissionOverride`. Dono, ADMIN e
+  manageChannels sempre passam. Canal invisível = 404 em lista, histórico,
+  envio, leitura, reação, fixar, busca, arquivos, digitando e voz; eventos de
+  canal restrito saem só por `user:<id>` de quem vê (`emitToChannel`).
+  Canal de avisos: só quem gerencia posta, os demais leem e reagem. Modo lento
+  (0 a 6 h, valores fixos em `SLOW_MODE_PRESETS`): por usuário, base a última
+  mensagem dele no canal; 429 com `retryAfterSeconds` e `Retry-After`; quem
+  gerencia fica isento; o compositor mostra a contagem regressiva
 - Foto na chamada (cartões do canal de voz): a própria via `/api/me/avatar`; a
   dos outros via `GET /api/rooms/:roomId/peers/:peerId/avatar` — exige room
   ticket (ou dono) e só serve peer logado que está NA sala agora. O `userId`
@@ -407,6 +429,32 @@ docker compose up --build -d
 - LGPD: página `/privacy` (encarregado via `PRIVACY_CONTACT_EMAIL`),
   `GET /api/me/privacy/export`, `docs/lgpd-moderacao.md` (inventário, LIA,
   ROPA, checklist) e `docs/moderacao.md` (operação e custos).
+- Canais de texto (Fase 2): responder com citação (`replyToId`), reações de conjunto fixo (tabela `ChatMessageReaction`, ícones SVG, balde `channelReaction` 20/10 s) e fixar mensagem (`manageMessages`, máx. 50/canal); rotas em `routes/channelMessageExtras.ts`, eventos `channel:reaction` e `channel:message-pin`.
+- Moderação de comunidade (Fase 3): castigo (60 s a 7 dias, motivo até 300;
+  não envia, não edita, não reage, não sobe imagem e não entra/fala na voz —
+  REST e socket), expulsão e banimento com motivo (ban impede o convite;
+  desbanir nas Configurações > Banidos). Hierarquia: `kickMembers` e nível
+  maior que o alvo (OWNER > ADMIN > cargo personalizado > MEMBER; dono nunca é
+  alvo). Ações no menu de contexto do membro, com `AppModal`. Alvo recebe
+  `community:moderation` em `user:<id>`; castigo, ban e expulsão o tiram da
+  voz. Balde `communityModeration`: 30 / 10 min por usuário. Rotas em
+  `routes/communityModeration.ts`; colunas `timeoutUntil/timeoutReason` em
+  `CommunityMember`, tabelas `CommunityBan` e `CommunityAuditLog`.
+- Auditoria de comunidade: castigo, ban, unban, expulsão, cargos, canais,
+  categorias, ordem, fixação, apelido de outro, configurações do canal,
+  limite de voz e boas-vindas; `GET /api/communities/:id/audit` (cursor, quem
+  tem alguma permissão de gestão) e aba "Auditoria" nas Configurações.
+- Voz e boas-vindas (Fase 3, `routes/communityWelcome.ts`): limite opcional de pessoas por canal de voz (`Room.userLimit` 2..8, nunca acima do teto do mesh; `PUT /api/channels/:id/user-limit`, `manageChannels`); o `join-room` recusa com `Voice channel is full` e a lista mostra "3/4" e "Cheio". Canal de boas-vindas (`PUT /api/communities/:id/welcome`, OWNER/ADMIN, canal de texto + modelo `{nome}` até 500): o aceite de convite posta mensagem `isSystem` (sem autor, ninguém edita; moderador apaga) e devolve `welcomeChannelId`, onde o novo membro abre.
+- Eventos agendados (Fase 4, `routes/communityEvents.ts`, tabelas `CommunityEvent` e `CommunityEventInterest`): título 1..100, descrição até 1000, início, fim e canal de voz opcionais (canal VOICE que o criador vê; canal oculto ao leitor sai como "sem canal"). `GET|POST /api/communities/:id/events` (lista só os não terminados, máx. 50 futuros), `PATCH|DELETE /api/community-events/:id` (dono, ADMIN ou `manageChannels`; criar/editar/cancelar vão para a auditoria) e `PUT /api/community-events/:id/interest` ("Tenho interesse", qualquer membro). Toda escrita emite `community:changed`. Balde `communityEvent`: 30 / min por usuário. UI: botão Eventos no cabeçalho com selo das próximas 24 h e `AppModal` com lista e formulário (`datetime-local`). Sem agendador nem notificação.
+- Tópicos (Fase 4, `routes/channelThreads.ts`): "Abrir tópico" numa mensagem de canal de texto (nome 1..80; um por mensagem) cria `ChannelThread`; as respostas têm `ChatMessage.threadId` e ficam fora do canal principal. A origem mostra "N respostas · Abrir tópico" e o tópico abre num painel lateral (`ThreadPanel.tsx`) com histórico paginado e compositor próprio. Rotas: `POST /api/channels/:id/messages/:messageId/thread`, `GET /api/threads/:id`, `GET|POST /api/threads/:id/messages`, `PATCH /api/threads/:id` (`{ archived }`, `manageMessages`; arquivado não aceita envio = 409). Mesmas regras do canal pai (ver, enviar, aviso, modo lento, castigo). Tempo real por `emitToChannel`: `channel:message` com `threadId` e `channel:thread` (resumo). Sem reações nem citação dentro do tópico.
+- Apelido por comunidade (Fase 4, `routes/communityNickname.ts`): coluna
+  opcional `CommunityMember.nickname` (zod 1..32, trim; vazio/null limpa).
+  `PUT /api/communities/:id/members/:userId/nickname`: o próprio membro muda o
+  seu; o de outro exige `kickMembers` + hierarquia (`canModerateMember`) e vai
+  para a auditoria. Balde `communityNickname`: 10 / 10 min por usuário. Emite
+  `community:changed`. A UI troca o nome pelo apelido na lista de membros, nos
+  autores do canal, no "digitando" e nos cartões de voz; o nome real fica no
+  `title` e no perfil. "Mudar apelido" no menu de contexto e no perfil.
 
 ## Requisitos de Infra
 

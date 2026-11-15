@@ -516,3 +516,79 @@ export function isCommunityInviteRateLimited(ip: string): RateLimitResult {
 export function resetCommunityInviteRateLimit(ip: string): void {
   reset(communityInviteStore, ip);
 }
+
+// Busca de mensagens nas comunidades: 30 / min por USUARIO (cada busca varre
+// ate alguns milhares de linhas no SQLite).
+const MESSAGE_SEARCH_WINDOW_MS = 60_000;
+const MESSAGE_SEARCH_MAX = 30;
+const messageSearchStore = createBucket('messageSearch');
+
+export function isMessageSearchRateLimited(userId: string): RateLimitResult {
+  return take(messageSearchStore, userId, MESSAGE_SEARCH_WINDOW_MS, MESSAGE_SEARCH_MAX);
+}
+
+export function resetMessageSearchRateLimit(userId: string): void {
+  reset(messageSearchStore, userId);
+}
+
+// --- Reacoes/fixar em canal de comunidade (20 / 10 s por usuario) ---
+// Toggle grava/apaga uma linha e emite um evento para a comunidade inteira.
+
+const CHANNEL_REACTION_WINDOW_MS = 10_000;
+const CHANNEL_REACTION_MAX = 20;
+const channelReactionStore = createBucket('channelReaction');
+
+export function isChannelReactionRateLimited(key: string): boolean {
+  const now = Date.now();
+  const entry = channelReactionStore.get(key);
+  if (!entry || now > entry.resetAt) {
+    channelReactionStore.set(key, { count: 1, resetAt: now + CHANNEL_REACTION_WINDOW_MS });
+    return false;
+  }
+  entry.count++;
+  return entry.count > CHANNEL_REACTION_MAX;
+}
+
+export function resetChannelReactionRateLimit(key: string): void {
+  channelReactionStore.delete(key);
+}
+
+// Moderacao de comunidade (castigo, ban, expulsao, desbanir): 30 / 10 min por usuario.
+const COMMUNITY_MODERATION_WINDOW_MS = 10 * 60_000;
+const COMMUNITY_MODERATION_MAX = 30;
+const communityModerationStore = createBucket('communityModeration');
+
+export function isCommunityModerationRateLimited(userId: string): RateLimitResult {
+  return take(communityModerationStore, userId, COMMUNITY_MODERATION_WINDOW_MS, COMMUNITY_MODERATION_MAX);
+}
+
+export function resetCommunityModerationRateLimit(userId: string): void {
+  reset(communityModerationStore, userId);
+}
+
+// Eventos da comunidade (Fase 4): criar/editar/cancelar/interesse, 30 / min
+// por USUARIO. A rota exige login e cada escrita emite `community:changed`.
+const COMMUNITY_EVENT_WINDOW_MS = 60_000;
+const COMMUNITY_EVENT_MAX = 30;
+const communityEventStore = createBucket('communityEvent');
+
+export function isCommunityEventRateLimited(userId: string): RateLimitResult {
+  return take(communityEventStore, userId, COMMUNITY_EVENT_WINDOW_MS, COMMUNITY_EVENT_MAX);
+}
+
+export function resetCommunityEventRateLimit(userId: string): void {
+  reset(communityEventStore, userId);
+}
+
+// Apelido por comunidade (Fase 4): 10 / 10 min por usuario.
+const COMMUNITY_NICKNAME_WINDOW_MS = 10 * 60_000;
+const COMMUNITY_NICKNAME_MAX = 10;
+const communityNicknameStore = createBucket('communityNickname');
+
+export function isCommunityNicknameRateLimited(userId: string): RateLimitResult {
+  return take(communityNicknameStore, userId, COMMUNITY_NICKNAME_WINDOW_MS, COMMUNITY_NICKNAME_MAX);
+}
+
+export function resetCommunityNicknameRateLimit(userId: string): void {
+  reset(communityNicknameStore, userId);
+}

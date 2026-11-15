@@ -36,6 +36,8 @@ model User {
   ownedRooms  Room[]
   moderationEvents ModerationEvent[]
   roomMembers RoomMember[]
+  channelReadStates ChannelReadState[]
+  messageReactions ChatMessageReaction[]
 
   username               Username?
   githubAccount          GithubAccount?
@@ -133,16 +135,40 @@ model Community {
   name      String
   ownerId   String
   createdAt DateTime @default(now())
-  /// Icone (uploads/community-icons). Colunas anulaveis: db push aplica sem perda.
-  iconPath      String?
-  iconMime      String?
-  iconUpdatedAt DateTime?
+  /// Icone e banner (uploads/community-media). Colunas novas anulaveis: db push aplica sem perda.
+  iconPath        String?
+  iconMime        String?
+  iconUpdatedAt   DateTime?
+  bannerPath      String?
+  bannerMime      String?
+  bannerUpdatedAt DateTime?
+  /// Boas-vindas (Fase 3): canal de texto e modelo com {nome}. Anulaveis: db push sem perda.
+  welcomeChannelId String?
+  welcomeMessage   String?
 
   owner   User              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   members     CommunityMember[]
+  categories  CommunityCategory[]
   invites     CommunityInvite[]
   rooms       Room[]
   customRoles CommunityCustomRole[]
+  bans        CommunityBan[]
+  auditLogs   CommunityAuditLog[]
+  events      CommunityEvent[]
+}
+
+/// Categoria de canais (opcional por canal). Tabela nova: db push cria sem perda.
+model CommunityCategory {
+  id          String   @id @default(uuid())
+  communityId String
+  name        String
+  position    Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  rooms     Room[]
+
+  @@index([communityId])
 }
 
 /// Cargo personalizado (nome, cor, permissoes). Soma-se ao cargo base; nunca tira poder.
@@ -171,6 +197,11 @@ model CommunityMember {
   joinedAt    DateTime      @default(now())
   /// Cargo personalizado (opcional). Coluna nova anulavel: db push aplica sem perda.
   customRoleId String?
+  /// Castigo (Fase 3): ate quando nao envia, nao reage e nao entra na voz. Colunas anulaveis.
+  timeoutUntil  DateTime?
+  timeoutReason String?
+  /// Apelido na comunidade (Fase 4), 1..32. Coluna anulavel: db push aplica sem perda.
+  nickname      String?
 
   customRole CommunityCustomRole? @relation(fields: [customRoleId], references: [id], onDelete: SetNull)
 
@@ -213,12 +244,26 @@ model Room {
   communityId      String?
   channelKind      String?
   position         Int       @default(0)
+  /// Categoria do canal (anulavel; apagar a categoria solta o canal).
+  categoryId       String?
+  /// Topico do canal de texto (ate 200; anulavel).
+  topic            String?
+  /// Fase 3: canal de avisos (so quem gerencia posta; os demais leem e reagem).
+  announcement     Boolean   @default(false)
+  /// Fase 3: modo lento em segundos (0 = desligado; ate 6 h).
+  slowModeSeconds  Int       @default(0)
+  /// Limite de pessoas do canal de voz (Fase 3, 2..8; null = teto do mesh).
+  userLimit        Int?
 
   community     Community?    @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  category      CommunityCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   owner         User?         @relation(fields: [ownerId], references: [id], onDelete: SetNull)
   roomMembers   RoomMember[]
+  readStates    ChannelReadState[]
   chatMessages  ChatMessage[]
   chatFiles     ChatFile[]
+  permissionOverrides ChannelPermissionOverride[]
+  threads       ChannelThread[]
 
   @@index([communityId])
   @@index([isPersistent, status])
@@ -237,13 +282,56 @@ model ChatMessage {
   editedAt    DateTime?
   deletedAt   DateTime?
   createdAt   DateTime  @default(now())
+  /// Resposta (Fase 2, canais de comunidade): id da mensagem citada. Sem FK: a citada pode sumir.
+  replyToId   String?
+  /// Fixada no canal (Fase 2). Colunas anulaveis: db push aplica sem perda.
+  pinnedAt    DateTime?
+  pinnedById  String?
+  /// Mensagem de sistema (Fase 3, boas-vindas): sem autor, ninguem edita.
+  isSystem    Boolean   @default(false)
+  /// Topico (Fase 4): mensagem dentro de um ChannelThread; null = canal principal. Sem FK (coluna anulavel).
+  threadId    String?
 
-  room  Room       @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  files ChatFile[]
+  room      Room                  @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  files     ChatFile[]
+  reactions ChatMessageReaction[]
 
   @@index([roomId, createdAt])
   @@index([roomId, deletedAt])
   @@index([authorId])
+  @@index([threadId, createdAt])
+}
+
+/// Topico (Fase 4): conversa aberta a partir de uma mensagem de canal de texto.
+/// Mesmas permissoes do canal pai; arquivado nao aceita envio.
+model ChannelThread {
+  id            String    @id @default(uuid())
+  roomId        String
+  rootMessageId String    @unique
+  name          String
+  createdById   String
+  archivedAt    DateTime?
+  archivedById  String?
+  createdAt     DateTime  @default(now())
+
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@index([roomId])
+}
+
+/// Reacao (Fase 2): conjunto fixo de icones; um usuario reage uma vez por tipo.
+model ChatMessageReaction {
+  id        String   @id @default(uuid())
+  messageId String
+  userId    String
+  reaction  String
+  createdAt DateTime @default(now())
+
+  message ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, reaction])
+  @@index([messageId])
 }
 
 model ChatFile {
@@ -354,4 +442,98 @@ model AdminRoleAudit {
   createdAt  DateTime @default(now())
 
   @@index([createdAt])
+}
+
+/// Ultima leitura de um canal de texto de comunidade por usuario (mensagens nao lidas).
+/// Tabela nova: o @@unique composto entra sem perda no `prisma db push`.
+model ChannelReadState {
+  id         String   @id @default(uuid())
+  userId     String
+  channelId  String
+  lastReadAt DateTime
+
+  user    User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel Room @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, channelId])
+  @@index([channelId])
+}
+
+/// Fase 3: sobrescrita de permissao por canal. target = 'everyone' (todos os
+/// membros) ou o id de um cargo personalizado. null = herda.
+model ChannelPermissionOverride {
+  id           String   @id @default(uuid())
+  roomId       String
+  target       String
+  viewChannel  Boolean?
+  sendMessages Boolean?
+  updatedAt    DateTime @updatedAt
+
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, target])
+}
+
+/// Banimento (Fase 3): impede reentrar por convite. Tabela nova: db push cria sem perda.
+model CommunityBan {
+  id          String   @id @default(uuid())
+  communityId String
+  userId      String
+  userName    String
+  bannedById  String
+  reason      String?
+  createdAt   DateTime @default(now())
+
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+
+  @@unique([communityId, userId])
+}
+
+/// Registro de auditoria (Fase 3): acoes administrativas. Nomes sao copia do momento.
+model CommunityAuditLog {
+  id          String   @id @default(uuid())
+  communityId String
+  actorId     String
+  actorName   String
+  action      String
+  targetId    String?
+  targetName  String?
+  reason      String?
+  detail      String?
+  createdAt   DateTime @default(now())
+
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+
+  @@index([communityId, createdAt])
+}
+
+/// Evento agendado (Fase 4). Tabela nova: db push cria sem perda. Criador e
+/// canal sem relacao (nao mexe em User/Room): canal apagado vira "sem canal".
+model CommunityEvent {
+  id          String    @id @default(uuid())
+  communityId String
+  creatorId   String
+  creatorName String
+  title       String
+  description String?
+  startsAt    DateTime
+  endsAt      DateTime?
+  channelId   String?
+  createdAt   DateTime  @default(now())
+
+  community Community               @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  interests CommunityEventInterest[]
+
+  @@index([communityId, startsAt])
+}
+
+/// "Tenho interesse" (Fase 4): um por usuario e evento.
+model CommunityEventInterest {
+  eventId   String
+  userId    String
+  createdAt DateTime @default(now())
+
+  event CommunityEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@id([eventId, userId])
 }

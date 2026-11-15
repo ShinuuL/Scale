@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useRef, useState, type Dispatch, type FormEvent } from 'react';
-import { CHAT_EDIT_WINDOW_MS, CHAT_MESSAGE_MAX } from '@scale/shared';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type FormEvent } from 'react';
+import { CHAT_EDIT_WINDOW_MS, CHAT_MESSAGE_MAX, formatCountdown, formatThreadReplies } from '@scale/shared';
 import { api, type ChannelMessage } from '@/lib/api';
 import type { ChannelMessagesAction, ChannelMessagesState } from '@/hooks/useChannelMessages';
 import { Banner } from '@/components/ui/Banner';
@@ -9,6 +9,13 @@ import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Icon } from '@/components/ui/Icon';
 import { ConfirmDialog } from './ConfirmDialog';
+import { ChannelTopic } from './ChannelTopic';
+import { createTypingSender } from '@/hooks/useChannelTyping';
+import { PinnedPanel, ReactionBar, ReplyQuote, jumpToMessage, messageAnchorId } from './MessageExtras';
+import { useCooldown } from './slowMode';
+import { CreateThreadDialog, ThreadPanel, threadFooterLabel } from './ThreadPanel';
+import { threadBus } from '@/lib/threadEvents';
+import type { ChannelReaction } from '@scale/shared';
 
 const MAX_IMAGES = 5;
 const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
@@ -66,11 +73,42 @@ function MessageEditForm({
   );
 }
 
+/**
+ * Mensagem de sistema (boas-vindas): estilo proprio, sem autor editavel e sem
+ * editar/apagar do autor. Quem modera ainda pode apagar.
+ */
+function SystemMessageItem({ message, canManage, onDelete }: { message: ChannelMessage; canManage: boolean; onDelete: () => void }) {
+  return (
+    <article
+      id={messageAnchorId(message.id)}
+      data-testid="system-message"
+      aria-label="Mensagem do sistema"
+      className="my-2 flex items-start gap-2 rounded-md border border-line bg-surface-secondary px-3 py-2"
+    >
+      <Icon name="userPlus" size={16} className="mt-0.5 shrink-0 text-brand-300" />
+      <div className="min-w-0 flex-1">
+        <p className={`whitespace-pre-wrap break-words text-sm text-ink-secondary ${message.deletedAt ? 'italic' : ''}`}>
+          {message.deletedAt ? '[mensagem apagada]' : message.content}
+        </p>
+        <time className="text-xs text-ink-muted" dateTime={message.createdAt}>
+          {timeFormatter.format(new Date(message.createdAt))}
+        </time>
+      </div>
+      {canManage && !message.deletedAt && (
+        <Button variant="ghost" size="sm" className="min-h-8" aria-label="Apagar mensagem do sistema" onClick={onDelete}>
+          Apagar
+        </Button>
+      )}
+    </article>
+  );
+}
+
 function MessageItem({
   message,
   meId,
   canManage,
   color,
+  nickname,
   editing,
   editDraft,
   busy,
@@ -79,11 +117,29 @@ function MessageItem({
   onSave,
   onCancel,
   onDelete,
+  canPin,
+  onReply,
+  onReact,
+  onTogglePin,
+  onJump,
+  canStartThread = false,
+  onOpenThread,
 }: {
+  /** Fase 4: pode abrir topico a partir desta mensagem (envio liberado no canal). */
+  canStartThread?: boolean;
+  /** Abre o topico existente ou o dialogo de criar. */
+  onOpenThread?: () => void;
+  canPin: boolean;
+  onReply: () => void;
+  onReact: (reaction: ChannelReaction) => void;
+  onTogglePin: () => void;
+  onJump: (id: string) => void;
   message: ChannelMessage;
   meId: string;
   canManage: boolean;
   color?: string;
+  /** Apelido do autor na comunidade (Fase 4); o nome real vai no title. */
+  nickname?: string;
   editing: boolean;
   editDraft: string;
   busy: boolean;
@@ -93,15 +149,25 @@ function MessageItem({
   onCancel: () => void;
   onDelete: () => void;
 }) {
+  if (message.system) return <SystemMessageItem message={message} canManage={canManage} onDelete={onDelete} />;
   return (
-    <article className="group py-3">
+    <article id={messageAnchorId(message.id)} className="group rounded-md py-3 transition-colors">
+      {message.replyTo && <ReplyQuote replyTo={message.replyTo} onJump={onJump} />}
       <div className="flex flex-wrap items-baseline gap-2">
-        <strong className="text-sm text-ink-primary" style={color ? { color } : undefined}>{message.author.name}</strong>
+        <strong className="text-sm text-ink-primary" style={color ? { color } : undefined} title={nickname ? message.author.name : undefined}>
+          {nickname ?? message.author.name}
+        </strong>
         <time className="text-xs text-ink-muted" dateTime={message.createdAt}>
           {timeFormatter.format(new Date(message.createdAt))}
         </time>
         {message.editedAt && !message.deletedAt && (
           <span className="text-xs text-ink-muted">editada</span>
+        )}
+        {message.pinnedAt && !message.deletedAt && (
+          <span className="flex items-center gap-1 text-xs text-ink-muted">
+            <Icon name="pin" size={12} />
+            fixada
+          </span>
         )}
       </div>
       {editing && !message.deletedAt ? (
@@ -132,8 +198,52 @@ function MessageItem({
           )}
         </div>
       )}
+      {!message.deletedAt && <ReactionBar message={message} meId={meId} onToggle={onReact} />}
+      {message.thread && onOpenThread && (
+        <button
+          type="button"
+          className="mt-1 flex items-center gap-1 rounded-md text-xs font-medium text-brand-300 hover:underline"
+          aria-label={`Abrir tópico ${message.thread.name}, ${formatThreadReplies(message.thread.replyCount)}${message.thread.archivedAt ? ', arquivado' : ''}`}
+          onClick={onOpenThread}
+        >
+          <Icon name="chat" size={14} aria-hidden />
+          {threadFooterLabel(message.thread)}
+          {message.thread.archivedAt ? ' (arquivado)' : ''}
+        </button>
+      )}
       {!message.deletedAt && !editing && (
         <div className="flex gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="min-h-8"
+            aria-label={`Responder a ${message.author.name}`}
+            onClick={onReply}
+          >
+            Responder
+          </Button>
+          {canStartThread && !message.thread && onOpenThread && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="min-h-8"
+              aria-label={`Abrir tópico a partir da mensagem de ${message.author.name}`}
+              onClick={onOpenThread}
+            >
+              Abrir tópico
+            </Button>
+          )}
+          {canPin && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="min-h-8"
+              aria-label={`${message.pinnedAt ? 'Desafixar' : 'Fixar'} mensagem de ${message.author.name}`}
+              onClick={onTogglePin}
+            >
+              {message.pinnedAt ? 'Desafixar' : 'Fixar'}
+            </Button>
+          )}
           {message.author.id === meId &&
             Date.now() - new Date(message.createdAt).getTime() < CHAT_EDIT_WINDOW_MS && (
               <Button
@@ -173,7 +283,12 @@ function Composer({
   inputRef,
   images,
   onImages,
+  cooldown = 0,
+  replyingTo,
+  onCancelReply,
 }: {
+  replyingTo: ChannelMessage | null;
+  onCancelReply: () => void;
   name: string;
   draft: string;
   onChange: (value: string) => void;
@@ -182,10 +297,23 @@ function Composer({
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
   images: File[];
   onImages: (files: File[]) => void;
+  /** Modo lento: segundos ate poder enviar (0 = liberado). */
+  cooldown?: number;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   return (
     <form onSubmit={onSubmit} className="border-t border-line p-4">
+      {replyingTo && (
+        <div className="mb-2 flex items-center justify-between gap-2 rounded-md bg-surface-secondary px-3 py-1 text-xs text-ink-secondary">
+          <span className="flex min-w-0 items-center gap-1 truncate">
+            <Icon name="reply" size={14} />
+            Respondendo a <strong>{replyingTo.author.name}</strong>
+          </span>
+          <button type="button" className="room-icon-button !h-6 !w-6" aria-label="Cancelar resposta" title="Cancelar resposta" onClick={onCancelReply}>
+            <Icon name="close" size={14} />
+          </button>
+        </div>
+      )}
       <label htmlFor="channel-message" className="sr-only">
         Mensagem
       </label>
@@ -236,8 +364,14 @@ function Composer({
           <span className="text-xs text-ink-muted">
             {draft.length}/{CHAT_MESSAGE_MAX}
           </span>
+          {cooldown > 0 && (
+            <span className="flex items-center gap-1 text-xs text-ink-secondary" role="status">
+              <Icon name="clock" size={14} />
+              Modo lento: aguarde {formatCountdown(cooldown)}
+            </span>
+          )}
         </div>
-        <Button type="submit" size="sm" disabled={busy || (!draft.trim() && images.length === 0)}>
+        <Button type="submit" size="sm" disabled={busy || cooldown > 0 || (!draft.trim() && images.length === 0)}>
           Enviar
         </Button>
       </div>
@@ -251,18 +385,58 @@ export function ChannelChat({
   meId,
   canManage,
   authorColors,
+  authorNicknames,
   state,
   dispatch,
+  onSearch,
+  focusMessageId,
+  onFocused,
+  topic = null,
+  onSaveTopic,
+  typingText = null,
+  onTyping,
+  canSend = true,
+  announcement = false,
+  slowModeSeconds = 0,
+  slowModeExempt = false,
 }: {
   channelId: string;
   name: string;
   meId: string;
   canManage: boolean;
   authorColors?: ReadonlyMap<string, string>;
+  /** Apelidos por userId (Fase 4): exibidos no lugar do nome do autor. */
+  authorNicknames?: ReadonlyMap<string, string>;
   state: ChannelMessagesState;
   dispatch: Dispatch<ChannelMessagesAction>;
+  /** Abre a busca de mensagens da comunidade (botao no cabecalho). */
+  onSearch?: () => void;
+  /** Mensagem vinda da busca: rola ate ela se estiver no historico carregado. */
+  focusMessageId?: string | null;
+  onFocused?: () => void;
+  /** Topico do canal; `onSaveTopic` so vem para quem gerencia canais. */
+  topic?: string | null;
+  onSaveTopic?: (topic: string) => Promise<void>;
+  /** Texto pronto do indicador ("X esta digitando") ou null. */
+  typingText?: string | null;
+  onTyping?: (typing: boolean) => void;
+  /** Fase 3: sem permissao de envio (ou canal de avisos) o compositor vira aviso. */
+  canSend?: boolean;
+  announcement?: boolean;
+  /** Modo lento do canal; quem gerencia fica isento. */
+  slowModeSeconds?: number;
+  slowModeExempt?: boolean;
 }) {
   const [draft, setDraft] = useState('');
+  const cooldown = useCooldown();
+  const onTypingRef = useRef(onTyping);
+  onTypingRef.current = onTyping;
+  const typingSender = useMemo(() => createTypingSender((typing) => onTypingRef.current?.(typing)), []);
+  useEffect(() => () => typingSender.stop(), [typingSender]);
+  const changeDraft = (value: string) => {
+    setDraft(value);
+    typingSender.input(value);
+  };
   const [images, setImages] = useState<File[]>([]);
   const pickImages = (files: File[]) => {
     const valid = files.filter((file) => file.type.startsWith('image/') && file.size <= MAX_IMAGE_BYTES);
@@ -277,6 +451,19 @@ export function ChannelChat({
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState<ChannelMessage | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<ChannelMessage | null>(null);
+  const [pinsOpen, setPinsOpen] = useState(false);
+  const [threadId, setThreadId] = useState<string | null>(null);
+  const [threadFrom, setThreadFrom] = useState<ChannelMessage | null>(null);
+  useEffect(() => setThreadId(null), [channelId]);
+  // Fase 4: contagem/arquivamento do topico atualiza a mensagem de origem.
+  useEffect(
+    () =>
+      threadBus.subscribe((event) => {
+        if (event.type === 'thread') dispatch({ type: 'thread', event: event.event });
+      }),
+    [dispatch],
+  );
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const stickToBottom = useRef(true);
@@ -289,6 +476,18 @@ export function ChannelChat({
     const el = listRef.current;
     if (el && stickToBottom.current) el.scrollTop = el.scrollHeight;
   }, [messages]);
+  // Resultado da busca: so rola se a mensagem ja estiver carregada; senao o canal apenas abre.
+  useEffect(() => {
+    if (!focusMessageId || state.loading || state.channelId !== channelId) return;
+    const el = document.getElementById(messageAnchorId(focusMessageId));
+    if (el) {
+      stickToBottom.current = false;
+      el.scrollIntoView?.({ block: 'center' });
+      el.classList.add('bg-surface-hover');
+      window.setTimeout(() => el.classList.remove('bg-surface-hover'), 2000);
+    }
+    onFocused?.();
+  }, [focusMessageId, state.loading, state.channelId, channelId, onFocused]);
   const cancelEdit = () => {
     const id = editing;
     setEditing(null);
@@ -296,20 +495,29 @@ export function ChannelChat({
   };
   async function send(event: FormEvent) {
     event.preventDefault();
-    if ((!draft.trim() && images.length === 0) || busy) return;
+    if ((!draft.trim() && images.length === 0) || busy || cooldown.remaining > 0) return;
     setBusy(true);
     setError('');
     try {
       const { message } = images.length > 0
         ? await api.uploadChannelImages(channelId, images, draft.trim())
-        : await api.sendChannelMessage(channelId, draft);
+        : replyingTo
+          ? await api.sendChannelMessage(channelId, draft, replyingTo.id)
+          : await api.sendChannelMessage(channelId, draft);
       stickToBottom.current = true;
       dispatch({ type: 'message', message });
+      typingSender.stop();
       setDraft('');
       setImages([]);
+      setReplyingTo(null);
+      if (!slowModeExempt) cooldown.start(slowModeSeconds);
     } catch (err) {
-      const status = (err as { status?: number }).status;
-      setError(status === 413 ? 'Imagem grande demais ou cota do canal cheia.' : status === 400 ? 'Formato de imagem não aceito.' : status === 429 ? 'Muitos envios. Aguarde um pouco.' : 'Não foi possível enviar a mensagem.');
+      const { status, retryAfterSeconds } = err as { status?: number; retryAfterSeconds?: number };
+      if (status === 429 && retryAfterSeconds) {
+        cooldown.start(retryAfterSeconds);
+        return;
+      }
+      setError(status === 403 ? 'Você não pode enviar mensagens neste canal.' : status === 413 ? 'Imagem grande demais ou cota do canal cheia.' : status === 400 ? 'Formato de imagem não aceito.' : status === 429 ? 'Muitos envios. Aguarde um pouco.' : 'Não foi possível enviar a mensagem.');
     } finally {
       setBusy(false);
       inputRef.current?.focus();
@@ -337,6 +545,24 @@ export function ChannelChat({
       setBusy(false);
     }
   }
+  async function react(messageId: string, reaction: ChannelReaction) {
+    try {
+      dispatch({ type: 'reaction', event: await api.toggleChannelReaction(channelId, messageId, reaction) });
+    } catch (err) {
+      setError((err as { status?: number }).status === 429 ? 'Muitas reações. Aguarde um pouco.' : 'Não foi possível reagir.');
+    }
+  }
+  async function togglePin(message: ChannelMessage) {
+    try {
+      dispatch({ type: 'pin', event: await api.setChannelPin(channelId, message.id, !message.pinnedAt) });
+    } catch (err) {
+      setError((err as { status?: number }).status === 409 ? 'Limite de mensagens fixadas neste canal.' : 'Não foi possível fixar a mensagem.');
+    }
+  }
+  const jump = (id: string) => {
+    if (!jumpToMessage(id)) setError('A mensagem original não está carregada. Use "Carregar anteriores".');
+  };
+  const pinVersion = messages.filter((message) => message.pinnedAt).length;
   async function older() {
     if (!state.cursor || olderBusy.current) return;
     olderBusy.current = true;
@@ -366,8 +592,22 @@ export function ChannelChat({
     }
   }
   return (
+    <div className="flex h-full min-h-0 min-w-0 flex-1">
     <section aria-label={`Canal ${name}`} className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
-      <h2 className="border-b border-line px-5 py-4 font-semibold text-ink-primary">{name}</h2>
+      <header className="border-b border-line px-5 py-4">
+        <div className="flex items-center gap-2">
+          <h2 className="min-w-0 flex-1 truncate font-semibold text-ink-primary">{name}</h2>
+          {onSearch && (
+            <Button variant="ghost" size="sm" onClick={onSearch} aria-label="Buscar mensagens">
+              <Icon name="search" aria-hidden />
+            </Button>
+          )}
+          <button type="button" className="room-icon-button" aria-label="Mensagens fixadas" title="Mensagens fixadas" onClick={() => setPinsOpen(true)}>
+            <Icon name="pin" size={18} />
+          </button>
+        </div>
+        <ChannelTopic topic={topic} canEdit={Boolean(onSaveTopic)} onSave={onSaveTopic} />
+      </header>
       <div
         ref={listRef}
         onScroll={(event) => {
@@ -398,6 +638,7 @@ export function ChannelChat({
               meId={meId}
               canManage={canManage}
               color={message.author.id ? authorColors?.get(message.author.id) : undefined}
+              nickname={message.author.id ? authorNicknames?.get(message.author.id) : undefined}
               editing={editing === message.id}
               editDraft={editDraft}
               busy={busy}
@@ -409,6 +650,16 @@ export function ChannelChat({
               onSave={() => void saveEdit()}
               onCancel={cancelEdit}
               onDelete={() => setDeleting(message)}
+              canPin={canManage}
+              onReply={() => {
+                setReplyingTo(message);
+                inputRef.current?.focus();
+              }}
+              onReact={(reaction) => void react(message.id, reaction)}
+              onTogglePin={() => void togglePin(message)}
+              onJump={jump}
+              canStartThread={canSend}
+              onOpenThread={() => (message.thread ? setThreadId(message.thread.id) : setThreadFrom(message))}
             />
           ))}
         </div>
@@ -418,16 +669,35 @@ export function ChannelChat({
           {error || state.error}
         </Banner>
       )}
+      <p aria-live="polite" className="min-h-5 px-5 text-xs text-ink-muted">
+        {typingText ?? ''}
+      </p>
+      {!canSend ? (
+        <p className="flex items-center gap-2 border-t border-line p-4 text-sm text-ink-muted" role="note">
+          <Icon name="lock" size={16} />
+          {announcement ? 'Canal de avisos: só quem gerencia a comunidade publica aqui. Você pode ler e reagir.' : 'Você não tem permissão para enviar mensagens neste canal.'}
+        </p>
+      ) : (
       <Composer
+        cooldown={cooldown.remaining}
         name={name}
         draft={draft}
-        onChange={setDraft}
+        onChange={changeDraft}
         onSubmit={send}
         busy={busy}
         inputRef={inputRef}
         images={images}
         onImages={pickImages}
+        replyingTo={replyingTo}
+        onCancelReply={() => {
+          setReplyingTo(null);
+          inputRef.current?.focus();
+        }}
       />
+      )}
+      {pinsOpen && (
+        <PinnedPanel channelId={channelId} version={pinVersion} onClose={() => setPinsOpen(false)} onJump={jump} />
+      )}
       {deleting && (
         <ConfirmDialog
           title="Apagar esta mensagem?"
@@ -451,6 +721,30 @@ export function ChannelChat({
           }}
         />
       )}
+      {threadFrom && (
+        <CreateThreadDialog
+          channelId={channelId}
+          message={threadFrom}
+          onClose={() => setThreadFrom(null)}
+          onCreated={(thread) => {
+            dispatch({ type: 'thread', event: { channelId, thread } });
+            setThreadFrom(null);
+            setThreadId(thread.id);
+          }}
+        />
+      )}
     </section>
+    {threadId && (
+      <ThreadPanel
+        key={threadId}
+        threadId={threadId}
+        channelId={channelId}
+        meId={meId}
+        slowModeSeconds={slowModeSeconds}
+        slowModeExempt={slowModeExempt}
+        onClose={() => setThreadId(null)}
+      />
+    )}
+    </div>
   );
 }

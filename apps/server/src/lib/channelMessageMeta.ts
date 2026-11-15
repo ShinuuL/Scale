@@ -1,0 +1,101 @@
+import { CHANNEL_REACTIONS, REPLY_EXCERPT_MAX, channelReactionSchema, type ChannelReactionSummary, type ChannelReply, type ChannelThreadSummary } from '@scale/shared';
+import { prisma } from './prisma.js';
+import { toChannelMessage } from './communityAccess.js';
+import { SYSTEM_AUTHOR } from './communityWelcome.js';
+
+/**
+ * Metadados da Fase 2 das mensagens de canal: citacao da resposta e reacoes.
+ * Carregados em lote (uma consulta por tipo) para a pagina de historico.
+ */
+
+/** Trecho curto: uma linha, ate REPLY_EXCERPT_MAX caracteres. */
+export function excerptOf(content: string): string {
+  const line = content.replace(/\s+/g, ' ').trim();
+  return line.length > REPLY_EXCERPT_MAX ? `${line.slice(0, REPLY_EXCERPT_MAX - 1)}…` : line;
+}
+
+/** Citacoes por id da mensagem citada. Citada sumida (ou de outro canal) = "apagada". */
+export async function loadReplies(roomId: string, replyIds: string[]): Promise<Map<string, ChannelReply>> {
+  const ids = [...new Set(replyIds)];
+  const result = new Map<string, ChannelReply>();
+  if (ids.length === 0) return result;
+  const rows = await prisma.chatMessage.findMany({ where: { id: { in: ids }, roomId }, select: { id: true, authorId: true, guestName: true, content: true, deletedAt: true } });
+  const users = await prisma.user.findMany({ where: { id: { in: rows.flatMap(r => (r.authorId ? [r.authorId] : [])) } }, select: { id: true, name: true } });
+  const names = new Map(users.map(u => [u.id, u.name]));
+  for (const row of rows) {
+    const deleted = row.deletedAt != null;
+    result.set(row.id, { id: row.id, authorName: (row.authorId ? names.get(row.authorId) : undefined) ?? row.guestName ?? 'Usuário', excerpt: deleted ? '' : excerptOf(row.content), deleted });
+  }
+  for (const id of ids) if (!result.has(id)) result.set(id, { id, authorName: '', excerpt: '', deleted: true });
+  return result;
+}
+
+/** Agrupa linhas de reacao na ordem fixa do conjunto. */
+export function summarizeReactions(rows: Array<{ reaction: string; userId: string }>): ChannelReactionSummary[] {
+  return CHANNEL_REACTIONS.flatMap(reaction => {
+    const userIds = rows.filter(r => r.reaction === reaction).map(r => r.userId);
+    return userIds.length ? [{ reaction, userIds }] : [];
+  });
+}
+
+/** Reacoes por mensagem (reacoes fora do conjunto atual sao ignoradas). */
+export async function loadReactions(messageIds: string[]): Promise<Map<string, ChannelReactionSummary[]>> {
+  const result = new Map<string, ChannelReactionSummary[]>();
+  if (messageIds.length === 0) return result;
+  const rows = await prisma.chatMessageReaction.findMany({ where: { messageId: { in: messageIds } }, orderBy: { createdAt: 'asc' }, select: { messageId: true, userId: true, reaction: true } });
+  const byMessage = new Map<string, Array<{ reaction: string; userId: string }>>();
+  for (const row of rows) {
+    if (!channelReactionSchema.safeParse(row.reaction).success) continue;
+    const list = byMessage.get(row.messageId) ?? [];
+    list.push(row);
+    byMessage.set(row.messageId, list);
+  }
+  for (const [id, list] of byMessage) result.set(id, summarizeReactions(list));
+  return result;
+}
+
+/** Linha do topico + contagem de respostas -> resumo publico. */
+export function toThreadSummary(row: { id: string; roomId: string; rootMessageId: string; name: string; archivedAt: Date | null; createdById: string }, stats: { count: number; last: Date | null }): ChannelThreadSummary {
+  return { id: row.id, channelId: row.roomId, rootMessageId: row.rootMessageId, name: row.name, replyCount: stats.count, lastReplyAt: stats.last?.toISOString() ?? null, archivedAt: row.archivedAt?.toISOString() ?? null, createdById: row.createdById };
+}
+
+/** Topicos (Fase 4) por id da mensagem de origem, com contagem de respostas nao apagadas. */
+export async function loadThreads(messageIds: string[]): Promise<Map<string, ChannelThreadSummary>> {
+  const result = new Map<string, ChannelThreadSummary>();
+  if (messageIds.length === 0) return result;
+  const threads = await prisma.channelThread.findMany({ where: { rootMessageId: { in: messageIds } } });
+  if (threads.length === 0) return result;
+  const stats = await prisma.chatMessage.groupBy({ by: ['threadId'], where: { threadId: { in: threads.map(t => t.id) }, deletedAt: null }, _count: { _all: true }, _max: { createdAt: true } });
+  const byThread = new Map(stats.map(s => [s.threadId, { count: s._count._all, last: s._max.createdAt }]));
+  for (const thread of threads) result.set(thread.rootMessageId, toThreadSummary(thread, byThread.get(thread.id) ?? { count: 0, last: null }));
+  return result;
+}
+
+/** Resumo de UM topico (apos criar, responder ou arquivar). */
+export async function threadSummaryOf(threadId: string): Promise<ChannelThreadSummary | null> {
+  const thread = await prisma.channelThread.findUnique({ where: { id: threadId } });
+  if (!thread) return null;
+  return (await loadThreads([thread.rootMessageId])).get(thread.rootMessageId) ?? null;
+}
+
+type MessageRow = Parameters<typeof toChannelMessage>[0] & { authorId: string | null; guestName: string | null; replyToId: string | null };
+
+/** DTOs completos (autor, citacao, reacoes) de uma lista de mensagens do mesmo canal. */
+export async function buildChannelMessages(roomId: string, rows: MessageRow[]): Promise<Array<ReturnType<typeof toChannelMessage>>> {
+  const [authors, replies, reactions, threads] = await Promise.all([
+    prisma.user.findMany({ where: { id: { in: rows.flatMap(row => (row.authorId ? [row.authorId] : [])) } }, include: { username: true } }),
+    loadReplies(roomId, rows.flatMap(row => (row.replyToId ? [row.replyToId] : []))),
+    loadReactions(rows.map(row => row.id)),
+    loadThreads(rows.map(row => row.id)),
+  ]);
+  const users = new Map(authors.map(user => [user.id, user]));
+  return rows.map(row => {
+    const user = row.authorId ? users.get(row.authorId) : undefined;
+    const author = row.isSystem ? SYSTEM_AUTHOR : { id: row.authorId, name: user?.name ?? row.guestName ?? 'Usuário', username: user?.username?.name ?? null };
+    return toChannelMessage(row, author, {
+      replyTo: row.replyToId ? replies.get(row.replyToId) ?? null : null,
+      reactions: reactions.get(row.id) ?? [],
+      thread: threads.get(row.id) ?? null,
+    });
+  });
+}

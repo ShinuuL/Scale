@@ -1,3 +1,4 @@
+import { timeoutOf } from '../lib/communityModeration.js';
 import type { Server as HttpServer, IncomingMessage } from 'http';
 import { Server, Socket } from 'socket.io';
 import bcrypt from 'bcryptjs';
@@ -19,6 +20,7 @@ import { GUEST_COOKIE_NAME, newGuestId, serializeGuestCookie, verifyGuestCookie 
 import { signRoomTicket, ticketSubject } from '../lib/roomTicket.js';
 import { buildIceServers } from '../lib/turnCredentials.js';
 import { incChatMessages, incChatEdits, incChatDeletes } from '../lib/metrics.js';
+import { emitToChannel, viewableChannel } from '../lib/channelPermissions.js';
 import {
   toPublicMessage,
   isMessageAuthor,
@@ -35,12 +37,16 @@ import {
   iceCandidateSchema,
   screenShareStateSchema,
   audioStateSchema,
+  voiceFlagsSchema,
   chatMessageSchema,
   chatEditSchema,
   chatDeleteSchema,
   MAX_PARTICIPANTS,
+  VOICE_CHANNEL_FULL_ERROR,
+  isVoiceChannelFull,
   CHAT_EDIT_WINDOW_MS,
   communitySubscriptionSchema,
+  channelTypingSendSchema,
   parseGuestName,
   moderationReportSchema,
   moderationStopShareSchema,
@@ -69,6 +75,9 @@ interface RoomPeer {
   guestId?: string;
   /** Microfone desligado ou indisponivel (informado pelo proprio cliente). */
   muted: boolean;
+  /** Deafen e partilha de tela (`peer:voice-flags`): so indicadores da comunidade. */
+  deafened: boolean;
+  screenSharing: boolean;
 }
 
 const roomCommunities = new Map<string, string>();
@@ -76,6 +85,22 @@ const roomPeers = new Map<string, Map<string, RoomPeer>>();
 /** guestId resolvido no handshake do engine, por request HTTP. */
 const handshakeGuestIds = new WeakMap<IncomingMessage, string>();
 const emptyTimers = new Map<string, NodeJS.Timeout>();
+/**
+ * Presenca: quantos sockets logados cada usuario tem (todas as abas). Online =
+ * pelo menos um. So as transicoes 0->1 e 1->0 viram `community:presence`.
+ */
+const onlineSockets = new Map<string, number>();
+
+export function isUserOnline(userId: string): boolean {
+  return (onlineSockets.get(userId) ?? 0) > 0;
+}
+
+async function broadcastPresence(io: Server, userId: string, online: boolean): Promise<void> {
+  const memberships = await prisma.communityMember.findMany({ where: { userId }, select: { communityId: true } });
+  for (const { communityId } of memberships) {
+    io.to(`community:${communityId}`).emit('community:presence', { communityId, userId, online });
+  }
+}
 
 // MAX_PARTICIPANTS vem de @scale/shared (teto da malha, mesmo valor do cliente).
 const EMPTY_ROOM_TTL_MS = 5 * 60 * 1000; // 5 minutos vazia → apaga (temporárias)
@@ -249,7 +274,22 @@ export function createSocketServer(httpServer: HttpServer): Server {
 
   io.on('connection', (socket) => {
     const user: SocketUser = socket.data.user;
-    if (user.userId) void socket.join(userRoom(user.userId));
+    if (user.userId) {
+      const presenceUserId = user.userId;
+      void socket.join(userRoom(presenceUserId));
+      const count = (onlineSockets.get(presenceUserId) ?? 0) + 1;
+      onlineSockets.set(presenceUserId, count);
+      if (count === 1) void broadcastPresence(io, presenceUserId, true).catch(() => undefined);
+      socket.on('disconnect', () => {
+        const left = (onlineSockets.get(presenceUserId) ?? 1) - 1;
+        if (left > 0) {
+          onlineSockets.set(presenceUserId, left);
+          return;
+        }
+        onlineSockets.delete(presenceUserId);
+        void broadcastPresence(io, presenceUserId, false).catch(() => undefined);
+      });
+    }
 
     /**
      * O REMETENTE precisa estar na sala que cita no payload: sem isto um socket
@@ -268,11 +308,34 @@ export function createSocketServer(httpServer: HttpServer): Server {
       const voiceStates = Array.from(roomCommunities.entries())
         .filter(([channelId, communityId]) => communityId === parsed.data.communityId && (roomPeers.get(channelId)?.size ?? 0) > 0)
         .map(([channelId]) => voiceState(channelId));
-      callback?.({ success: true, voiceStates });
+      const members = await prisma.communityMember.findMany({ where: { communityId: parsed.data.communityId }, select: { userId: true } });
+      const onlineUserIds = members.map((row) => row.userId).filter(isUserOnline);
+      callback?.({ success: true, voiceStates, onlineUserIds });
     });
     socket.on('community:unsubscribe', (data) => {
       const parsed = communitySubscriptionSchema.safeParse(data);
       if (parsed.success) void socket.leave(`community:${parsed.data.communityId}`);
+    });
+    // "digitando": efemero, nao grava nada. Exige membro inscrito na comunidade
+    // e canal de TEXTO dela; repassa aos outros sockets da comunidade.
+    socket.on('channel:typing', async (data) => {
+      if (isRateLimited(`socket:${socket.id}`) || !user.userId) return;
+      const parsed = channelTypingSendSchema.safeParse(data);
+      if (!parsed.success) return;
+      try {
+        const room = await prisma.room.findUnique({ where: { id: parsed.data.channelId }, select: { communityId: true, channelKind: true } });
+        if (!room?.communityId || room.channelKind !== 'TEXT') return;
+        const communityRoom = `community:${room.communityId}`;
+        if (!socket.rooms.has(communityRoom)) return;
+        // Fase 3: so quem pode enviar no canal digita; so quem ve recebe.
+        const found = await viewableChannel(parsed.data.channelId, user.userId);
+        if (!found || (parsed.data.typing && !found.access.send)) return;
+        await emitToChannel(io, room.communityId, parsed.data.channelId, 'channel:typing', {
+          communityId: room.communityId, channelId: parsed.data.channelId, userId: user.userId, name: user.name, typing: parsed.data.typing,
+        }, socket.id);
+      } catch {
+        // Sinal efemero: falha de banco so descarta o aviso.
+      }
     });
 
     socket.on('join-room', async (data, callback) => {
@@ -318,6 +381,10 @@ export function createSocketServer(httpServer: HttpServer): Server {
             callback?.({ error: 'Room not found' }); return;
           }
           if (room.channelKind !== 'VOICE') { callback?.({ error: 'Not a voice channel' }); return; }
+          // Fase 3: canal de voz invisivel para o membro = inexistente.
+          if (!(await viewableChannel(room.id, user.userId))) { callback?.({ error: 'Room not found' }); return; }
+          // Castigo (Fase 3): nao entra na voz enquanto durar.
+          if (await timeoutOf(room.communityId, user.userId)) { callback?.({ error: 'Timed out' }); return; }
         }
         const isProtected = !room.communityId && (room.passwordHash !== null || room.isPrivate);
         if (isProtected) {
@@ -352,6 +419,11 @@ export function createSocketServer(httpServer: HttpServer): Server {
 
         // Check participant limit
         const peers = roomPeers.get(roomId) ?? new Map();
+        // Canal de voz com limite (Fase 3): erro proprio, nunca acima do teto do mesh.
+        if (room.communityId && room.userLimit !== null && !peers.has(socket.id) && isVoiceChannelFull(peers.size, room.userLimit)) {
+          callback?.({ error: VOICE_CHANNEL_FULL_ERROR, userLimit: room.userLimit });
+          return;
+        }
         if (peers.size >= Math.min(room.maxParticipants, MAX_PARTICIPANTS)) {
           callback?.({ error: 'Room is full' });
           return;
@@ -391,6 +463,8 @@ export function createSocketServer(httpServer: HttpServer): Server {
           guestName: user.guestName,
           guestId: user.guestId,
           muted: parsed.data.muted ?? false,
+          deafened: false,
+          screenSharing: false,
         });
         roomPeers.set(roomId, peers);
         if (room.communityId) { roomCommunities.set(roomId, room.communityId); emitVoiceState(io, roomId); }
@@ -645,9 +719,52 @@ export function createSocketServer(httpServer: HttpServer): Server {
         return;
       }
       const peer = roomPeers.get(roomId)?.get(socket.id);
-      if (peer) peer.muted = muted;
+      if (peer && peer.muted !== muted) {
+        peer.muted = muted;
+        emitVoiceState(io, roomId);
+      }
 
       socket.to(roomId).emit('room:peer-audio-state', { peerId: socket.id, muted });
+      callback?.({ success: true });
+    });
+
+    // Deafen, tela e "falando" do proprio peer, para os indicadores do canal de
+    // voz da comunidade. Deafen/tela mudam o estado guardado (quem assina depois
+    // ve); "falando" e transitorio e sai num evento compacto. O cliente so manda
+    // transicoes, com intervalo minimo; o balde de 30/s por socket segura abuso.
+    socket.on('peer:voice-flags', (data, callback) => {
+      if (isRateLimited(`socket:${socket.id}`)) {
+        callback?.({ error: 'Rate limit exceeded. Max 30 messages/second.' });
+        return;
+      }
+      const parsed = voiceFlagsSchema.safeParse(data);
+      if (!parsed.success) {
+        callback?.({ error: 'Invalid payload' });
+        return;
+      }
+      const { roomId, deafened, screenSharing, speaking } = parsed.data;
+      const peer = roomPeers.get(roomId)?.get(socket.id);
+      if (!senderInRoom(roomId) || !peer) {
+        callback?.({ error: 'Not in room' });
+        return;
+      }
+      // Mesmo gate do signal:screen-share-state: sem liberacao, "Ao vivo" nao liga.
+      if (screenSharing === true && !(socket.data.screenShare ?? GUEST_SCREEN_SHARE_GATE).allowed) {
+        callback?.({ error: 'Partilha de tela nao liberada', code: 'SCREEN_SHARE_NOT_ALLOWED' });
+        return;
+      }
+      let changed = false;
+      if (deafened !== undefined && peer.deafened !== deafened) { peer.deafened = deafened; changed = true; }
+      if (screenSharing !== undefined && peer.screenSharing !== screenSharing) { peer.screenSharing = screenSharing; changed = true; }
+      if (changed) emitVoiceState(io, roomId);
+      const communityId = roomCommunities.get(roomId);
+      if (speaking !== undefined && communityId && peer.userId) {
+        io.to(`community:${communityId}`).emit('community:voice-speaking', {
+          channelId: roomId,
+          userId: peer.userId,
+          speaking: speaking && !peer.muted,
+        });
+      }
       callback?.({ success: true });
     });
 
@@ -688,6 +805,11 @@ export function createSocketServer(httpServer: HttpServer): Server {
       }
       if (room.expiresAt && new Date(room.expiresAt) < new Date()) {
         callback?.({ error: 'Room has expired' });
+        return;
+      }
+      const sender = socket.data.user as SocketUser | undefined;
+      if (room.communityId && sender?.userId && (await timeoutOf(room.communityId, sender.userId))) {
+        callback?.({ error: 'Timed out' });
         return;
       }
 
@@ -1104,7 +1226,7 @@ function chatWarning(roomId: string, category: ModerationWarningPayload['categor
 function voiceState(channelId: string) {
   const members = Array.from(roomPeers.get(channelId)?.values() ?? [])
     .filter((peer): peer is RoomPeer & { userId: string } => peer.userId !== null)
-    .map(({ userId, name }) => ({ userId, name }));
+    .map(({ userId, name, muted, deafened, screenSharing }) => ({ userId, name, muted, deafened, screenSharing }));
   return { channelId, members };
 }
 
@@ -1158,5 +1280,17 @@ export function emitChatMessage(io: Server, roomId: string, msg: ChatMessageSour
       'chat:message',
       toPublicMessage(msg, viewerOf(peer)),
     );
+  }
+}
+
+/** Tira o usuario do canal de voz da comunidade (castigo), sem tira-lo da comunidade. */
+export async function evictCommunityVoice(io: Server | undefined, communityId: string, userId: string): Promise<void> {
+  if (!io) return;
+  const sockets = await io.in(userRoom(userId)).fetchSockets();
+  for (const remote of sockets) {
+    const socket = io.sockets.sockets.get(remote.id);
+    const roomId = socket?.data.roomId as string | undefined;
+    if (!socket || !roomId || roomCommunities.get(roomId) !== communityId) continue;
+    handleLeaveRoom(io, socket, roomId); socket.data.roomId = undefined;
   }
 }

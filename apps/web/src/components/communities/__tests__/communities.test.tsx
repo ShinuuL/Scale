@@ -20,6 +20,10 @@ function message(
     createdAt: new Date(now - age).toISOString(),
     editedAt: null,
     files: [],
+    replyTo: null,
+    reactions: [],
+    pinnedAt: null,
+    pinnedById: null,
     deletedAt,
   };
 }
