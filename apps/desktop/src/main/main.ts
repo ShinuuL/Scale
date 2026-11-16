@@ -9,6 +9,7 @@ import { getAllowedOrigin, installGlobalHardening, installPermissionHandlers } f
 import { runSetup } from './setupWindow';
 import { loadConfig } from './store';
 import { installDesktopLifecycle } from './desktopLifecycle';
+import { checkForUpdatesNow, initAutoUpdates } from './updater';
 
 // Sandbox em todos os renderers, antes de qualquer janela.
 app.enableSandbox();
@@ -45,6 +46,7 @@ async function start(): Promise<void> {
   Menu.setApplicationMenu(
     buildMenu({
       changeServer: () => void changeServer(),
+      checkForUpdates: () => void checkForUpdatesNow(() => mainWindow),
       getWindow: () => mainWindow,
     }),
   );
@@ -66,6 +68,7 @@ async function start(): Promise<void> {
     showMainWindow = undefined;
   });
   loadServer(mainWindow, origin);
+  initAutoUpdates(() => mainWindow);
 }
 
 if (!app.requestSingleInstanceLock()) {

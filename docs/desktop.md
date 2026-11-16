@@ -1,6 +1,7 @@
 # Scale Desktop (Electron)
 
-Cliente desktop do Scale para Windows (x64). O app **não empacota o frontend**:
+Cliente desktop do Scale para Windows e Linux (x64). O app **não empacota o
+frontend**:
 ele abre a URL do servidor Scale numa janela endurecida. Assim o login (cookie
 HttpOnly `SameSite=Strict`), o CSP e as atualizações do front são os mesmos do
 navegador — atualizar o servidor atualiza o app, sem reinstalar.
@@ -14,8 +15,9 @@ Código: `apps/desktop` (workspace `scale-desktop`).
   `localhost` / `127.0.0.1` (desenvolvimento). Erros de certificado não são
   ignorados.
 - O servidor precisa responder `GET /api/health` com `{"status":"ok"}`.
-- Windows 10/11 x64. Microfone e captura de tela pedem a permissão normal do
-  Windows (Configurações > Privacidade).
+- Windows 10/11 x64, ou Linux x64 com GTK 3 (AppImage ou `.deb`). Microfone e
+  captura de tela pedem a permissão normal do sistema — no Windows,
+  Configurações > Privacidade; no Linux, o portal do desktop.
 
 ## Uso
 
@@ -87,16 +89,45 @@ npm run lint -w scale-desktop
   o app falha com `Cannot read properties of undefined (reading 'isPackaged')`.
   Remova-a antes: `env -u ELECTRON_RUN_AS_NODE npm run dev:desktop`.
 
-## Gerar instalador
+## Gerar instaladores
 
 ```bash
-npm run dist:desktop
+npm run dist:desktop         # Windows: release/desktop/Scale-Setup-x64.exe
+npm run dist:desktop:linux   # Linux:   release/desktop/Scale-x64.AppImage e Scale-x64.deb
 ```
 
-Saída: `release/desktop/Scale-Setup-<versão>-x64.exe` (NSIS, por usuário,
-permite escolher a pasta). O hook `scripts/after-pack.cjs` grava os fuses do
+Cada alvo só pode ser gerado no seu próprio sistema (o Linux também sai de um
+WSL/contêiner Ubuntu). O hook `scripts/after-pack.cjs` grava os fuses do
 Electron antes do instalador. Sem certificado de assinatura configurado o
 instalador sai **sem assinatura** (SmartScreen vai alertar).
+
+Os nomes dos artefatos **não têm versão** de propósito: a landing page linka
+`https://github.com/ShinuuL/Scale/releases/latest/download/<arquivo>`, que o
+GitHub redireciona sempre para a release mais recente — sem chamada de API,
+sem token, sem nada no backend (`apps/web/src/lib/downloads.ts`).
+
+## Publicar uma versão
+
+1. Suba a versão em `apps/desktop/package.json` (ex.: `0.2.0`) e faça o commit.
+2. `git tag v0.2.0 && git push origin v0.2.0`.
+3. O workflow `.github/workflows/release-desktop.yml` confere que a tag bate com
+   a versão do `package.json`, roda lint/testes e empacota Windows e Linux em
+   paralelo, enviando tudo para uma release **em rascunho**.
+4. Confira os artefatos e **publique a release** no GitHub. Só nesse momento os
+   apps instalados passam a enxergar a atualização.
+
+## Auto-update
+
+`src/main/updater.ts` (electron-updater) checa a release mais recente na
+abertura e a cada 6 horas, baixa em segundo plano e só avisa quando o pacote
+está pronto: diálogo com **Reiniciar agora** / **Depois**. Escolhendo "Depois",
+a atualização é aplicada quando o app for fechado. Falha de rede em checagem
+automática é silenciosa; o item **Ajuda > Verificar atualizações...** sempre
+responde algo.
+
+Onde funciona (`src/core/updatePolicy.ts`): Windows (NSIS) e Linux via
+**AppImage**. Instalação por `.deb` e execução fora do pacote (dev) não se
+atualizam sozinhas — nesses casos o menu oferece abrir a página de download.
 
 ## Segurança (resumo)
 
@@ -115,6 +146,6 @@ instalador sai **sem assinatura** (SmartScreen vai alertar).
 ## Pendências
 
 - Assinatura de código (certificado EV/OV) para o instalador e o executável.
-- Auto-update do app (o front já atualiza sozinho; só o shell Electron precisa).
-- Builds macOS e Linux (código é multiplataforma; falta alvo, ícone `.icns` e
-  assinatura/notarização no macOS).
+- Build macOS (código é multiplataforma; falta alvo, ícone `.icns`,
+  assinatura/notarização e runner macOS no workflow de release).
+- Auto-update da instalação `.deb` (hoje só AppImage e NSIS).

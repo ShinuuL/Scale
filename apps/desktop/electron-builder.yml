@@ -18,12 +18,57 @@ asar: true
 # Fuses aplicados apos empacotar (scripts/after-pack.cjs).
 afterPack: scripts/after-pack.cjs
 
+# Releases do GitHub: alimenta o app-update.yml embutido (electron-updater) e
+# o `--publish` do workflow de release. Os nomes dos artefatos sao fixos (sem
+# versao) para que a landing page possa linkar
+# `releases/latest/download/<arquivo>` sem consultar a API.
+publish:
+  - provider: github
+    owner: ShinuuL
+    repo: Scale
+    # Rascunho: os dois jobs (Windows e Linux) enchem a mesma release e so a
+    # publicacao manual libera o update para quem ja tem o app instalado.
+    releaseType: draft
+
 win:
   target:
     - target: nsis
       arch: [x64]
   icon: build/icon.png
-  artifactName: Scale-Setup-${version}-x64.${ext}
+  artifactName: Scale-Setup-x64.${ext}
+
+linux:
+  target:
+    # AppImage e o unico alvo Linux com auto-update; o .deb atualiza pelo apt
+    # ou baixando de novo.
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+  icon: build/icon.png
+  category: Network
+  synopsis: Cliente desktop do Scale
+  description: Cliente desktop (Electron) do Scale: abre o servidor Scale configurado numa janela endurecida.
+  desktop:
+    entry:
+      Name: Scale
+      Categories: Network;AudioVideo;
+  artifactName: Scale-x64.${ext}
+
+appImage:
+  artifactName: Scale-x64.${ext}
+
+deb:
+  artifactName: Scale-x64.${ext}
+  depends:
+    - libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0
+    - libsecret-1-0
 
 nsis:
   oneClick: false

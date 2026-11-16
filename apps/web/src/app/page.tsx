@@ -20,6 +20,7 @@ import { api, FETCH_RETRY_MAX_ATTEMPTS, type MeUser } from '@/lib/api';
 import type { RoomListItem } from '@/lib/validation';
 import { ROOM_NAME_MIN, ROOM_NAME_MAX } from '@/lib/validation';
 import { AppShell } from '@/components/layout/AppShell';
+import { DesktopDownload } from '@/components/pwa/DesktopDownload';
 import { roomPath } from '@/lib/roomLink';
 
 const STORAGE_KEY = 'scale.onboardingDone';
@@ -412,6 +413,10 @@ function HomePageInner() {
               <Icon name="link" />
               Entrar por código
             </a>
+            <a href="#baixar" className="context-link">
+              <Icon name="download" />
+              Baixar o aplicativo
+            </a>
           </nav>
           <div className="mt-8 border-t border-line pt-6">
             <h3 className="mb-3 text-xs font-semibold text-ink-muted">Para começar</h3>
@@ -565,6 +570,24 @@ function HomePageInner() {
                   Entrar <Icon name="arrowRight" />
                 </Button>
               </form>
+            </section>
+            <section
+              id="baixar"
+              className="mt-10 border-t border-line pt-6"
+              aria-labelledby="download-title"
+            >
+              <h3
+                id="download-title"
+                className="flex items-center gap-2 text-base font-semibold text-ink-primary"
+              >
+                <Icon name="download" />
+                Baixar o aplicativo
+              </h3>
+              <p className="mt-1 mb-4 text-sm text-ink-secondary">
+                O app de computador abre o Scale em uma janela própria, com atalho no sistema e
+                atualização automática.
+              </p>
+              <DesktopDownload />
             </section>
           </section>
           <section className="room-form" aria-labelledby="create-title">

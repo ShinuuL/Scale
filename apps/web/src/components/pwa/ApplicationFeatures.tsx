@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
 import { Icon } from '@/components/ui/Icon';
 import { Banner } from '@/components/ui/Banner';
+import { DesktopDownload } from '@/components/pwa/DesktopDownload';
 
 interface InstallPrompt extends Event {
   prompt: () => Promise<void>;
@@ -168,6 +169,10 @@ export function ApplicationFeatures() {
           {installPrompt && <button type="button" className={actionClass} onClick={() => void install()} disabled={busy}>Instalar Scale</button>}
           {notificationSupported && <button type="button" className={actionClass} onClick={() => void toggleNotifications()} disabled={busy} aria-pressed={notifications}>{notifications ? 'Desativar notificações' : 'Ativar notificações'}</button>}
           <p className="max-w-prose text-sm">Notificações opcionais, sem prévia de mensagens, enquanto o aplicativo estiver aberto. Para instalar, use também o menu do navegador.</p>
+        </div>
+        <div className="border-t border-line pt-3">
+          <h3 className="mb-2 text-xs font-semibold text-ink-muted">Aplicativo para computador</h3>
+          <DesktopDownload variant="panel" />
         </div>
         <p role="status" className="max-w-prose text-sm text-slate-200">{status}</p>
         {updateReady && <p role="status" className="max-w-prose py-2">{callActive ? 'Atualização pronta. Sua chamada continua; atualize depois de sair.' : 'Atualização pronta. Feche todas as janelas do Scale e abra novamente para aplicar.'}</p>}

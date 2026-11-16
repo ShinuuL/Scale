@@ -134,8 +134,11 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
 - Janela endurecida (sandbox, contextIsolation, sem Node na pagina, navegacao
   presa a origin, so microfone e captura de tela liberados) e fuses aplicados
 - Seletor proprio de tela/janela para o compartilhamento
-- Instalador: `npm run dist:desktop` gera `release/desktop/Scale-Setup-<versao>-x64.exe`
-  (sem assinatura de codigo por enquanto: o SmartScreen alerta)
+- Instaladores: `npm run dist:desktop` gera `release/desktop/Scale-Setup-x64.exe`
+  (Windows) e `npm run dist:desktop:linux` gera `Scale-x64.AppImage` e
+  `Scale-x64.deb` (sem assinatura de codigo por enquanto: o SmartScreen alerta)
+- Auto-update pelas releases do GitHub (Windows e AppImage); a landing page
+  detecta o sistema e linka o instalador certo
 - Guia: `docs/desktop.md`
 
 ### Backend (porta 4100 no host em dev; 4000 no container)

@@ -34,7 +34,7 @@ Sistema de videochamadas P2P (mesh) com escamas de dragão — sala de voz e tel
 ├── apps/
 │   ├── web/           # Next.js 15 App Router, export estatico (servido pelo Caddy)
 │   ├── server/        # Fastify 5 + Socket.io + Prisma
-│   └── desktop/       # Cliente Electron (Windows): abre a URL do servidor numa janela endurecida
+│   └── desktop/       # Cliente Electron (Windows/Linux): abre a URL do servidor numa janela endurecida
 ├── packages/
 │   └── shared/        # @scale/shared: schemas zod, tipos de eventos e limites
 ├── Caddyfile          # proxy: estaticos + /api + /socket.io + CSP

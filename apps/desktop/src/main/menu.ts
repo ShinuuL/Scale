@@ -4,6 +4,7 @@ import { getAllowedOrigin } from './security';
 
 export interface MenuActions {
   changeServer: () => void;
+  checkForUpdates: () => void;
   getWindow: () => BrowserWindow | undefined;
 }
 
@@ -33,6 +34,8 @@ export function buildMenu(actions: MenuActions): Menu {
     {
       label: 'Ajuda',
       submenu: [
+        { label: 'Verificar atualizações...', click: () => actions.checkForUpdates() },
+        { type: 'separator' },
         {
           label: 'Sobre o Scale',
           click: () => {

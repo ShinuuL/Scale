@@ -32,6 +32,7 @@ export type IconName =
   | 'clock'
   | 'close'
   | 'document'
+  | 'download'
   | 'eye'
   | 'hash'
   | 'plus'
@@ -121,6 +122,11 @@ export const ICONS: Record<IconName, IconShape[]> = {
     },
     { d: 'M12 16.8v3.7' },
     { d: 'M8.4 20.5h7.2' },
+  ],
+  download: [
+    { d: 'M12 3.6v10.6' },
+    { d: 'M7.6 9.8 12 14.2l4.4-4.4' },
+    { d: 'M4.4 16.2v2.2a2 2 0 0 0 2 2h11.2a2 2 0 0 0 2-2v-2.2' },
   ],
   eye: [
     { d: 'M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12Z' },
