@@ -67,7 +67,7 @@ export function InviteLinkCard({
             value={inviteUrl}
             onFocus={(e) => e.currentTarget.select()}
             aria-label="Link de convite"
-            className="input-base font-mono text-xs flex-1 min-w-0 select-all"
+            className="input-base font-mono text-base sm:text-xs flex-1 min-w-0 select-all"
           />
           <Button
             variant="secondary"

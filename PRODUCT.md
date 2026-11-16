@@ -16,3 +16,5 @@ Renovar a identidade preservando o PNG existente da marca, cuja direção é azu
 
 ## Restrições
 Preservar APIs, room tickets, permissões, dispositivos, configurações e preferências salvas. Sem bibliotecas novas de ícones; usar SVG interno. Sem novas dependências ou fontes remotas. Nenhum dado de atividade ou pessoa fictício na interface. Responsividade e teclado são requisitos da entrega.
+
+Exceção aprovada (12/11/2026): a landing (`apps/web/src/components/landing/`) tem identidade visual própria ("Escamas do dragão": azul-noite, gradiente cobalto→violeta, fonte Sora auto-hospedada via `@fontsource-variable/sora`) e animações com `motion` (motion/react). A demo da landing usa nomes de exemplo e fica `aria-hidden`. Essas exceções não valem para o app logado.

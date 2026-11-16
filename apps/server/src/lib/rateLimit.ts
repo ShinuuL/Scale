@@ -458,6 +458,50 @@ export function resetRoomAuthFailures(ip: string, roomId: string): void {
   reset(roomAuthStore, roomAuthKey(ip, roomId));
 }
 
+// Amostras de tela para moderacao: 6 / min por SUJEITO do room ticket
+// (`u:<userId>`; so logado compartilha tela). O cliente manda uma a cada
+// MODERATION_FRAME_INTERVAL_SEC (>= 10 s); o teto segura quem tenta usar a
+// rota como oraculo do classificador.
+const MODERATION_FRAME_WINDOW_MS = 60_000;
+const MODERATION_FRAME_MAX = 6;
+const moderationFrameStore = createBucket('moderationFrame');
+
+export function isModerationFrameRateLimited(subject: string): RateLimitResult {
+  return take(moderationFrameStore, subject, MODERATION_FRAME_WINDOW_MS, MODERATION_FRAME_MAX);
+}
+
+export function resetModerationFrameRateLimit(subject: string): void {
+  reset(moderationFrameStore, subject);
+}
+
+// Denuncias (`moderation:report`): 10 / 10 min por SOCKET. Cada uma grava um
+// ModerationEvent e avisa o dono da sala.
+const MODERATION_REPORT_WINDOW_MS = 10 * 60_000;
+const MODERATION_REPORT_MAX = 10;
+const moderationReportStore = createBucket('moderationReport');
+
+export function isModerationReportRateLimited(socketId: string): RateLimitResult {
+  return take(moderationReportStore, socketId, MODERATION_REPORT_WINDOW_MS, MODERATION_REPORT_MAX);
+}
+
+export function resetModerationReportRateLimit(socketId: string): void {
+  reset(moderationReportStore, socketId);
+}
+
+// Painel de administracao da moderacao: 30 / 10 min por USUARIO (admin). Cada
+// PUT grava settings + auditoria e o /test chama o provedor de IA.
+const ADMIN_SETTINGS_WINDOW_MS = 10 * 60_000;
+const ADMIN_SETTINGS_MAX = 30;
+const adminSettingsStore = createBucket('adminSettings');
+
+export function isAdminSettingsRateLimited(userId: string): RateLimitResult {
+  return take(adminSettingsStore, userId, ADMIN_SETTINGS_WINDOW_MS, ADMIN_SETTINGS_MAX);
+}
+
+export function resetAdminSettingsRateLimit(userId: string): void {
+  reset(adminSettingsStore, userId);
+}
+
 // Convidado de comunidade: 30 / 10 min por IP, na previa e no aceite do codigo.
 // Enumera o espaco de codigos (22 chars base64url) para descobrir comunidades
 // ou colar gente de graca em comunidades alheias.
@@ -471,4 +515,80 @@ export function isCommunityInviteRateLimited(ip: string): RateLimitResult {
 
 export function resetCommunityInviteRateLimit(ip: string): void {
   reset(communityInviteStore, ip);
+}
+
+// Busca de mensagens nas comunidades: 30 / min por USUARIO (cada busca varre
+// ate alguns milhares de linhas no SQLite).
+const MESSAGE_SEARCH_WINDOW_MS = 60_000;
+const MESSAGE_SEARCH_MAX = 30;
+const messageSearchStore = createBucket('messageSearch');
+
+export function isMessageSearchRateLimited(userId: string): RateLimitResult {
+  return take(messageSearchStore, userId, MESSAGE_SEARCH_WINDOW_MS, MESSAGE_SEARCH_MAX);
+}
+
+export function resetMessageSearchRateLimit(userId: string): void {
+  reset(messageSearchStore, userId);
+}
+
+// --- Reacoes/fixar em canal de comunidade (20 / 10 s por usuario) ---
+// Toggle grava/apaga uma linha e emite um evento para a comunidade inteira.
+
+const CHANNEL_REACTION_WINDOW_MS = 10_000;
+const CHANNEL_REACTION_MAX = 20;
+const channelReactionStore = createBucket('channelReaction');
+
+export function isChannelReactionRateLimited(key: string): boolean {
+  const now = Date.now();
+  const entry = channelReactionStore.get(key);
+  if (!entry || now > entry.resetAt) {
+    channelReactionStore.set(key, { count: 1, resetAt: now + CHANNEL_REACTION_WINDOW_MS });
+    return false;
+  }
+  entry.count++;
+  return entry.count > CHANNEL_REACTION_MAX;
+}
+
+export function resetChannelReactionRateLimit(key: string): void {
+  channelReactionStore.delete(key);
+}
+
+// Moderacao de comunidade (castigo, ban, expulsao, desbanir): 30 / 10 min por usuario.
+const COMMUNITY_MODERATION_WINDOW_MS = 10 * 60_000;
+const COMMUNITY_MODERATION_MAX = 30;
+const communityModerationStore = createBucket('communityModeration');
+
+export function isCommunityModerationRateLimited(userId: string): RateLimitResult {
+  return take(communityModerationStore, userId, COMMUNITY_MODERATION_WINDOW_MS, COMMUNITY_MODERATION_MAX);
+}
+
+export function resetCommunityModerationRateLimit(userId: string): void {
+  reset(communityModerationStore, userId);
+}
+
+// Eventos da comunidade (Fase 4): criar/editar/cancelar/interesse, 30 / min
+// por USUARIO. A rota exige login e cada escrita emite `community:changed`.
+const COMMUNITY_EVENT_WINDOW_MS = 60_000;
+const COMMUNITY_EVENT_MAX = 30;
+const communityEventStore = createBucket('communityEvent');
+
+export function isCommunityEventRateLimited(userId: string): RateLimitResult {
+  return take(communityEventStore, userId, COMMUNITY_EVENT_WINDOW_MS, COMMUNITY_EVENT_MAX);
+}
+
+export function resetCommunityEventRateLimit(userId: string): void {
+  reset(communityEventStore, userId);
+}
+
+// Apelido por comunidade (Fase 4): 10 / 10 min por usuario.
+const COMMUNITY_NICKNAME_WINDOW_MS = 10 * 60_000;
+const COMMUNITY_NICKNAME_MAX = 10;
+const communityNicknameStore = createBucket('communityNickname');
+
+export function isCommunityNicknameRateLimited(userId: string): RateLimitResult {
+  return take(communityNicknameStore, userId, COMMUNITY_NICKNAME_WINDOW_MS, COMMUNITY_NICKNAME_MAX);
+}
+
+export function resetCommunityNicknameRateLimit(userId: string): void {
+  reset(communityNicknameStore, userId);
 }

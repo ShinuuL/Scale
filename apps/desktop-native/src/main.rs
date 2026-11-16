@@ -4,6 +4,9 @@
 //! login por e-mail/senha. A rede roda em tarefas tokio; a UI (eframe) recebe
 //! os eventos por canal e nunca bloqueia.
 
+// Release no Windows: sem janela de console atrás do app.
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 mod api;
 mod app;
 mod config;
@@ -13,6 +16,7 @@ mod state;
 mod theme;
 mod token_store;
 mod ui;
+mod updater;
 mod util;
 
 use std::time::Duration;
@@ -31,7 +35,11 @@ fn main() -> eframe::Result<()> {
             .with_title("Scale")
             .with_app_id("br.com.codecoffee.scale")
             .with_inner_size([1120.0, 720.0])
-            .with_min_inner_size([900.0, 540.0]),
+            .with_min_inner_size([900.0, 540.0])
+            .with_icon(
+                eframe::icon_data::from_png_bytes(include_bytes!("../assets/icon-512.png"))
+                    .expect("icone embutido invalido"),
+            ),
         ..Default::default()
     };
 
@@ -45,6 +53,7 @@ fn main() -> eframe::Result<()> {
             if app.screen == Screen::Login && app.token.is_some() {
                 app.restore_session();
             }
+            app.check_for_update();
             Ok(Box::new(app))
         }),
     )
@@ -71,6 +80,8 @@ impl eframe::App for ScaleApp {
         if friends_dirty {
             self.load_friends();
         }
+
+        self.render_update_banner(ui);
 
         match self.screen {
             Screen::Conectar => self.render_connect(ui),

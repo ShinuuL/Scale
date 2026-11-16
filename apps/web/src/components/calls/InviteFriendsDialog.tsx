@@ -165,7 +165,7 @@ export function InviteFriendsDialog({ roomId, onClose }: InviteFriendsDialogProp
                       row.state === 'calling' || row.state === 'called' || row.state === 'accepted'
                     }
                     aria-label={`Chamar ${f.name} para a chamada`}
-                    className="flex h-9 items-center gap-1.5 rounded-lg bg-emerald-500/15 px-3 text-xs font-medium text-emerald-300 transition-colors hover:bg-emerald-500/25 disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-300"
+                    className="flex h-11 items-center gap-1.5 rounded-lg bg-emerald-500/15 sm:h-9 px-3 text-xs font-medium text-emerald-300 transition-colors hover:bg-emerald-500/25 disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-300"
                   >
                     <Icon
                       name={row.state === 'called' || row.state === 'accepted' ? 'check' : 'phone'}

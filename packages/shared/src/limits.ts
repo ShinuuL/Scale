@@ -33,6 +33,8 @@ export const CHAT_FILE_ACCEPT =
 
 /** Tamanho maximo da foto de perfil (bytes; 32 MB decimais). */
 export const MAX_AVATAR_SIZE_BYTES = 32_000_000;
+/** Icone de comunidade: PNG/JPEG/WebP ate 8 MB. */
+export const MAX_COMMUNITY_ICON_BYTES = 8_000_000;
 
 /** Formatos aceitos na foto de perfil (conferidos por magic bytes no servidor). */
 export const AVATAR_MIMES = ['image/png', 'image/jpeg', 'image/webp'] as const;
@@ -61,3 +63,6 @@ export const MAX_COMMUNITIES_OWNED = 10;
 export const MAX_CHANNELS_PER_COMMUNITY = 50;
 export const MAX_COMMUNITY_MEMBERS = 500;
 export const MAX_COMMUNITIES_JOINED = 100;
+
+/** Teto das contagens de nao lidas por canal (a UI mostra "99+" acima de 99). */
+export const UNREAD_COUNT_CAP = 100;

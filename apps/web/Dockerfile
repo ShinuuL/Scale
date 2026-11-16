@@ -15,6 +15,9 @@ RUN npm run build --workspace=@scale/shared
 COPY apps/web ./apps/web
 # next build + scripts/csp.mjs (gera apps/web/.caddy/csp.caddy com os sha256
 # dos scripts inline do export, importado pelo Caddyfile).
+# URL publica (https) do instalador nativo do Windows; vazio = so o PWA.
+ARG NEXT_PUBLIC_DESKTOP_DOWNLOAD_URL=
+ENV NEXT_PUBLIC_DESKTOP_DOWNLOAD_URL=$NEXT_PUBLIC_DESKTOP_DOWNLOAD_URL
 RUN npm run build --workspace=scale-frontend
 
 # ---- run stage: Caddy com os estaticos ----

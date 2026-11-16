@@ -22,6 +22,7 @@ import { ROOM_NAME_MIN, ROOM_NAME_MAX } from '@/lib/validation';
 import { AppShell } from '@/components/layout/AppShell';
 import { DesktopDownload } from '@/components/pwa/DesktopDownload';
 import { roomPath } from '@/lib/roomLink';
+import { LandingPage, hasChosenGuest, rememberGuestChoice } from '@/components/landing/LandingPage';
 
 const STORAGE_KEY = 'scale.onboardingDone';
 const RECENT_ROOMS_KEY = 'scale.recentRooms';
@@ -79,6 +80,15 @@ function addRecentRoom(roomId: string) {
   localStorage.setItem(RECENT_ROOMS_KEY, JSON.stringify(rooms.slice(0, 10)));
 }
 
+/** Tira a sala so do historico local; nunca toca na sala no servidor. */
+function forgetRecentRoom(roomId: string) {
+  try {
+    localStorage.setItem(RECENT_ROOMS_KEY, JSON.stringify(getRecentRooms().filter((id) => id !== roomId)));
+  } catch {
+    /* Storage indisponivel: some so desta visita. */
+  }
+}
+
 function SkeletonCard() {
   return (
     <div className="space-y-3">
@@ -126,6 +136,8 @@ function HomePageInner() {
   const [roomSearch, setRoomSearch] = useState('');
   const [joinCode, setJoinCode] = useState('');
   const [mounted, setMounted] = useState(false);
+  // Visitante sem sessao ve a landing ate escolher seguir como convidado (por aba).
+  const [guestBrowsing, setGuestBrowsing] = useState(false);
 
   // ─── Create room state ──────────────────────────────────────
   const [roomName, setRoomName] = useState('');
@@ -175,6 +187,7 @@ function HomePageInner() {
 
   useEffect(() => {
     setMounted(true);
+    setGuestBrowsing(hasChosenGuest());
     const done = localStorage.getItem(STORAGE_KEY) === 'true';
     setOnboardingDone(done);
 
@@ -331,11 +344,27 @@ function HomePageInner() {
 
   if (!mounted) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-[100dvh] flex items-center justify-center">
         <div className="text-brand-400 text-lg">
           <Logo variant="full" />
         </div>
       </div>
+    );
+  }
+
+  if (authState === 'guest' && !guestBrowsing) {
+    return (
+      <LandingPage
+        onContinueAsGuest={() => {
+          rememberGuestChoice();
+          setGuestBrowsing(true);
+        }}
+        onJoinRoom={(code) => {
+          localStorage.setItem(STORAGE_KEY, 'true');
+          addRecentRoom(code);
+          window.location.href = roomPath(code);
+        }}
+      />
     );
   }
 
@@ -533,7 +562,10 @@ function HomePageInner() {
                       <RoomCard
                         room={room}
                         onEnter={() => handleEnterRoom(room.id)}
-                        onDelete={() => setRoomToDelete(room)}
+                        onForget={() => {
+                          forgetRecentRoom(room.id);
+                          setRecentRooms((rooms) => rooms.filter((r) => r.id !== room.id));
+                        }}
                       />
                     </li>
                   ))}

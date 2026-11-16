@@ -20,11 +20,18 @@ const { PHASE_DEVELOPMENT_SERVER } = require('next/constants');
  */
 module.exports = (phase) => {
   if (phase !== PHASE_DEVELOPMENT_SERVER) {
+    // Versao do build: embutida no bundle E gravada em public/version.json (vai
+    // para out/). A pagina compara as duas e pede reload quando muda. O id vai
+    // para process.env na 1a carga: os workers do build herdam o MESMO valor.
+    if (!process.env.SCALE_BUILD_ID) {
+      process.env.SCALE_BUILD_ID = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+      fs.writeFileSync(path.join(__dirname, 'public', 'version.json'), JSON.stringify({ version: process.env.SCALE_BUILD_ID }));
+    }
     /** @type {import('next').NextConfig} */
     const exportConfig = {
       output: 'export',
       images: { unoptimized: true },
-      env: { NEXT_PUBLIC_DEV_WS_URL: '' },
+      env: { NEXT_PUBLIC_DEV_WS_URL: '', NEXT_PUBLIC_BUILD_ID: process.env.SCALE_BUILD_ID },
     };
     return exportConfig;
   }

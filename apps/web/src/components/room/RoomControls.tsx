@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { clsx } from 'clsx';
 import { Icon } from '@/components/ui/Icon';
@@ -49,6 +49,14 @@ export function RoomControls({
   onInviteFriend,
 }: RoomControlsProps) {
   const [copied, setCopied] = useState(false);
+  // Celular (iOS/Android) e HTTP sem localhost não compartilham tela. Calculado
+  // após o mount: o export estático não tem `navigator`.
+  const [canShareScreen, setCanShareScreen] = useState(false);
+  useEffect(() => {
+    setCanShareScreen(
+      window.isSecureContext && typeof navigator.mediaDevices?.getDisplayMedia === 'function',
+    );
+  }, []);
 
   const copyInvite = async () => {
     if (!inviteLink) return;
@@ -59,7 +67,7 @@ export function RoomControls({
 
   return (
     <div
-      className="flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 px-2 sm:px-4 py-3 border-t border-line bg-surface-secondary"
+      className="flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 px-2 sm:px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] border-t border-line bg-surface-secondary"
       role="toolbar"
       aria-label="Controles da sala"
     >
@@ -76,7 +84,9 @@ export function RoomControls({
         <Button
           className={clsx(
             'max-sm:px-3.5',
-            isSpeaking && !isMuted && 'ring-2 ring-brand-400 animate-speak-pulse motion-reduce:animate-none',
+            isSpeaking &&
+              !isMuted &&
+              'ring-2 ring-brand-400 animate-speak-pulse motion-reduce:animate-none',
           )}
           variant={isMuted ? 'danger' : 'secondary'}
           onClick={onToggleMute}
@@ -111,20 +121,22 @@ export function RoomControls({
       </Button>
 
       {/* Screen share */}
-      <Button
-        className="max-sm:px-3.5"
-        variant={isScreenSharing ? 'primary' : 'secondary'}
-        onClick={onToggleScreenShare}
-        disabled={controlsDisabled}
-        aria-label={isScreenSharing ? 'Parar compartilhar tela' : 'Compartilhar tela'}
-        aria-pressed={isScreenSharing}
-        title={isScreenSharing ? 'Parar compartilhar tela' : 'Compartilhar tela'}
-      >
-        <span aria-hidden="true">
-          <Icon name="monitor" />
-        </span>
-        <span className="hidden sm:inline">{isScreenSharing ? 'Parar tela' : 'Tela'}</span>
-      </Button>
+      {(canShareScreen || isScreenSharing) && (
+        <Button
+          className="max-sm:px-3.5"
+          variant={isScreenSharing ? 'primary' : 'secondary'}
+          onClick={onToggleScreenShare}
+          disabled={controlsDisabled}
+          aria-label={isScreenSharing ? 'Parar compartilhar tela' : 'Compartilhar tela'}
+          aria-pressed={isScreenSharing}
+          title={isScreenSharing ? 'Parar compartilhar tela' : 'Compartilhar tela'}
+        >
+          <span aria-hidden="true">
+            <Icon name="monitor" />
+          </span>
+          <span className="hidden sm:inline">{isScreenSharing ? 'Parar tela' : 'Tela'}</span>
+        </Button>
+      )}
 
       {/* Copy invite link */}
       {inviteLink && (
@@ -149,7 +161,9 @@ export function RoomControls({
           aria-label="Chamar amigo para a chamada"
           title="Chamar amigo para a chamada"
         >
-          <span aria-hidden="true"><Icon name="users" /></span>
+          <span aria-hidden="true">
+            <Icon name="users" />
+          </span>
           <span className="hidden sm:inline">Chamar</span>
         </Button>
       )}

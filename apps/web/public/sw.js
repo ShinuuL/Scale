@@ -1,7 +1,7 @@
 /* Public assets only. Never cache pages, API, room tickets or file downloads. */
-const CACHE = 'scale-public-v1';
+const CACHE = 'scale-public-v2';
 const OFFLINE = '/offline.html';
-const PUBLIC_FILES = [OFFLINE, '/offline.css', '/icon-192.png'];
+const PUBLIC_FILES = [OFFLINE, '/offline.css', '/icon-192.png', '/icon-maskable-192.png'];
 const MAX_ASSETS = 64;
 
 self.addEventListener('install', (event) => {

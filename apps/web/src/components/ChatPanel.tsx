@@ -257,7 +257,7 @@ export function ChatPanel({
           <button
             onClick={onClose}
             aria-label="Fechar chat"
-            className="ml-auto flex h-9 w-9 items-center justify-center rounded-full text-ink-secondary transition-colors hover:bg-surface-hover hover:text-ink-primary"
+            className="ml-auto flex h-11 w-11 sm:h-9 sm:w-9 items-center justify-center rounded-full text-ink-secondary transition-colors hover:bg-surface-hover hover:text-ink-primary"
           >
             <Icon name="close" />
           </button>
@@ -341,7 +341,7 @@ export function ChatPanel({
               <button
                 onClick={() => removeFile(index)}
                 aria-label={`Remover arquivo ${file.name}`}
-                className="text-ink-muted hover:text-white"
+                className="-my-2 flex h-11 w-11 items-center justify-center text-ink-muted hover:text-white sm:my-0 sm:h-auto sm:w-auto"
               >
                 <Icon name="close" size={14} />
               </button>
@@ -353,7 +353,7 @@ export function ChatPanel({
       {/* Autocomplete de menções */}
 
       {/* Input */}
-      <div className="p-3 flex-shrink-0">
+      <div className="p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] flex-shrink-0">
         <div className="relative flex flex-col rounded-2xl border border-line bg-surface-tertiary transition-colors focus-within:border-accent">
           {showMention && filtered.length > 0 && (
             <ul
@@ -401,7 +401,7 @@ export function ChatPanel({
             }
             rows={2}
             maxLength={600}
-            className="max-h-28 min-h-11 w-full resize-none bg-transparent px-4 pt-3 pb-1 text-sm text-ink-primary placeholder:text-ink-muted focus:outline-none"
+            className="max-h-28 min-h-11 w-full resize-none bg-transparent px-4 pt-3 pb-1 text-base sm:text-sm text-ink-primary placeholder:text-ink-muted focus:outline-none"
             disabled={uploading}
           />
           <div className="flex items-center justify-between gap-2 px-2 pb-2">
@@ -413,7 +413,7 @@ export function ChatPanel({
             </span>
             <div className="flex items-center gap-2">
               <Tooltip label="Anexar arquivo">
-                <label className="relative flex h-9 w-9 cursor-pointer items-center justify-center rounded-full text-ink-secondary transition-colors hover:bg-surface-hover hover:text-ink-primary focus-within:ring-2 focus-within:ring-accent">
+                <label className="relative flex h-11 w-11 sm:h-9 sm:w-9 cursor-pointer items-center justify-center rounded-full text-ink-secondary transition-colors hover:bg-surface-hover hover:text-ink-primary focus-within:ring-2 focus-within:ring-accent">
                   <Icon name="paperclip" size={18} />
                   <span className="sr-only">Anexar</span>
                   <input
@@ -438,7 +438,7 @@ export function ChatPanel({
                     if (canSend) send();
                   }}
                   aria-disabled={!canSend}
-                  className="flex h-9 w-9 items-center justify-center rounded-full bg-accent-solid text-white transition-[opacity,transform] hover:brightness-110 active:scale-95 aria-disabled:cursor-not-allowed aria-disabled:opacity-40 aria-disabled:hover:brightness-100 aria-disabled:active:scale-100"
+                  className="flex h-11 w-11 sm:h-9 sm:w-9 items-center justify-center rounded-full bg-accent-solid text-white transition-[opacity,transform] hover:brightness-110 active:scale-95 aria-disabled:cursor-not-allowed aria-disabled:opacity-40 aria-disabled:hover:brightness-100 aria-disabled:active:scale-100"
                   aria-busy={uploading}
                   aria-label="Enviar"
                 >

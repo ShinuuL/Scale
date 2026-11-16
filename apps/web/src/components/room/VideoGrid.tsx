@@ -77,6 +77,7 @@ function PeerAudio({ stream }: { stream: MediaStream | null }) {
     const cleanup = () => {
       window.removeEventListener('pointerdown', onFirstGesture, true);
       window.removeEventListener('keydown', onFirstGesture, true);
+      window.removeEventListener('touchstart', onFirstGesture, true);
     };
     const onFirstGesture = () => {
       tryPlay();
@@ -84,6 +85,7 @@ function PeerAudio({ stream }: { stream: MediaStream | null }) {
     };
     window.addEventListener('pointerdown', onFirstGesture, true);
     window.addEventListener('keydown', onFirstGesture, true);
+    window.addEventListener('touchstart', onFirstGesture, true);
     return cleanup;
   }, [stream]);
 

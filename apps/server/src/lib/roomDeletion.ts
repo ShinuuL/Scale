@@ -6,6 +6,7 @@ import type { Server } from 'socket.io';
 import { prisma } from './prisma.js';
 import { removeRoomUploads, UPLOADS_ROOT } from './uploads.js';
 import { evictRoom, getRoomPeersSnapshot } from '../socket/handler.js';
+import { sweepModerationEvents } from './moderation/index.js';
 
 /** Intervalo da varredura de salas temporárias vencidas. */
 export const ROOM_SWEEP_INTERVAL_MS = 5 * 60 * 1000;
@@ -117,6 +118,15 @@ export async function sweepExpiredRooms(opts: {
 
   if (result.deleted.length > 0) {
     opts.log?.info({ count: result.deleted.length }, 'room sweep: expired temporary rooms deleted');
+  }
+
+  // Retencao dos eventos de moderacao (LGPD, MODERATION_RETENTION_DAYS): pega
+  // carona no mesmo timer. Falha aqui nao pode travar a varredura de salas.
+  try {
+    const removed = await sweepModerationEvents({ now });
+    if (removed > 0) opts.log?.info({ count: removed }, 'moderation sweep: expired events deleted');
+  } catch (err) {
+    opts.log?.error({ err }, 'moderation sweep: failed');
   }
   return result;
 }

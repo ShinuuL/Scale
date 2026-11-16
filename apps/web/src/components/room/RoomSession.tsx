@@ -4,11 +4,18 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Link from 'next/link';
 import { useSocket } from '@/hooks/useSocket';
 import { useWebRTC } from '@/hooks/useWebRTC';
+import { useCallKeepAlive } from '@/hooks/useCallKeepAlive';
 import { useDisconnectNotice } from '@/hooks/useDisconnectNotice';
 import { useRoomDeleted } from '@/hooks/useRoomDeleted';
 import { useSpeaking } from '@/hooks/useSpeaking';
+import { useVoiceFlags } from '@/hooks/useVoiceFlags';
 import { useChat } from '@/hooks/useChat';
 import { usePeerAvatars } from '@/hooks/usePeerAvatars';
+import { useScreenModeration } from '@/hooks/useScreenModeration';
+import type { ModerationConfig } from '@scale/shared';
+import { VOICE_CHANNEL_FULL_ERROR } from '@scale/shared';
+import { ScreenShareGateDialog } from '@/components/room/ScreenShareGateDialog';
+import { ReportDialog } from '@/components/room/ReportDialog';
 import { ChatPanel } from '@/components/ChatPanel';
 import { VideoGrid, LOCAL_ID } from '@/components/room/VideoGrid';
 import { RoomControls } from '@/components/room/RoomControls';
@@ -26,7 +33,7 @@ import { useToast } from '@/components/ui/Toast';
 import { MiniCallBar } from '@/components/room/MiniCallBar';
 import { Icon } from '@/components/ui/Icon';
 import { ProfileMenu } from '@/components/ui/ProfileMenu';
-import { api, avatarUrl, type MeUser } from '@/lib/api';
+import { api, avatarUrl, applyMeAdmin, screenShareGateOf, type MeUser } from '@/lib/api';
 import { copyText } from '@/lib/clipboard';
 import { subscribeAudioDeviceChange } from '@/lib/audioDevices';
 import { roomUrl } from '@/lib/roomLink';
@@ -123,6 +130,29 @@ export function RoomSession({
   const [accountName, setAccountName] = useState<string | null>(null);
   const [accountEmail, setAccountEmail] = useState<string | null>(null);
   const [account, setAccount] = useState<MeUser | null>(null);
+  // Moderacao: config publica (amostragem de tela, idade minima, versao do
+  // termo), dialogo do gate de partilha e denuncia de participante.
+  const [moderationConfig, setModerationConfig] = useState<ModerationConfig | null>(null);
+  const [gateOpen, setGateOpen] = useState(false);
+  const [reportTarget, setReportTarget] = useState<{ peerId: string; name: string } | null>(null);
+  const screenShareGate = screenShareGateOf(account);
+  const screenShareGateRef = useRef(screenShareGate);
+  screenShareGateRef.current = screenShareGate;
+
+  useEffect(() => {
+    let alive = true;
+    api
+      .getModerationConfig()
+      .then((c) => alive && setModerationConfig(c))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // Admin mudou a configuracao (moderation:config): o intervalo de amostragem
+  // e o gate passam a usar o valor novo sem sair da sala.
+  useEffect(() => socket.onModerationConfig((c) => setModerationConfig(c)), [socket]);
 
   // Persist chatOpen em localStorage
   useEffect(() => {
@@ -154,6 +184,81 @@ export function RoomSession({
   }, []);
 
   const webrtc = useWebRTC(socket, roomId, chat.roomTicket);
+
+  // Peers atuais para callbacks de socket (fora do ciclo de render).
+  const webrtcPeersRef = useRef(webrtc.peers);
+  webrtcPeersRef.current = webrtc.peers;
+
+  // Amostragem de tela para o assistente (so enquanto EU compartilho e o
+  // servidor tem a analise de tela ligada).
+  useScreenModeration({
+    roomId,
+    stream: webrtc.localScreenStream,
+    enabled: moderationConfig?.screen === true,
+    intervalSec: moderationConfig?.frameIntervalSec ?? 20,
+    ticket: chat.roomTicket,
+  });
+
+  // Gate mudou no servidor (idade/consentimento salvos em qualquer aba).
+  useEffect(
+    () =>
+      socket.onMeScreenShare((gate) => {
+        setAccount((prev) => (prev ? { ...prev, screenShare: gate } : prev));
+      }),
+    [socket],
+  );
+
+  // Papel de admin concedido/removido por outro admin: o menu muda sem recarregar.
+  useEffect(
+    () =>
+      socket.onMeAdmin((event) => {
+        setAccount((prev) => (prev ? applyMeAdmin(prev, event) : prev));
+      }),
+    [socket],
+  );
+
+  // Partilha encerrada a forca: para a UI, avisa a causa.
+  const { screenShareStoppedBy, clearScreenShareStop } = webrtc;
+  useEffect(() => {
+    if (!screenShareStoppedBy) return;
+    toast(
+      screenShareStoppedBy === 'assistant'
+        ? 'Sua partilha de tela foi encerrada pelo assistente de moderação.'
+        : screenShareStoppedBy === 'owner'
+          ? 'Sua partilha de tela foi encerrada pelo dono da sala.'
+          : 'Partilha de tela não liberada. Veja Configurações > Privacidade.',
+      'error',
+    );
+    clearScreenShareStop();
+  }, [screenShareStoppedBy, clearScreenShareStop, toast]);
+
+  // Aviso de moderacao so para o autor (texto ou tela com severidade media).
+  useEffect(
+    () =>
+      socket.onModerationWarning((data) => {
+        if (data.roomId && data.roomId !== roomId) return;
+        toast(data.text, 'error');
+      }),
+    [socket, roomId, toast],
+  );
+
+  // Dono da sala: denuncia ou alerta do assistente sobre um peer.
+  const [notice, setNotice] = useState<{ peerId: string; name: string; kind: 'frame' | 'report' | 'text' } | null>(null);
+  useEffect(
+    () =>
+      socket.onModerationNotice((data) => {
+        if (data.roomId !== roomId) return;
+        const peerName = webrtcPeersRef.current.get(data.peerId)?.name ?? 'participante';
+        setNotice({ peerId: data.peerId, name: peerName, kind: data.kind });
+        toast(
+          data.kind === 'report'
+            ? `Denúncia sobre ${peerName}`
+            : `Alerta do assistente sobre ${peerName}`,
+          'info',
+        );
+      }),
+    [socket, roomId, toast],
+  );
 
   useEffect(() => {
     const publish = (active: boolean) => {
@@ -212,6 +317,12 @@ export function RoomSession({
     { id: MUTED_PROBE_ID, stream: mutedProbe },
     ...Array.from(webrtc.peers.values()).map((p) => ({ id: p.peerId, stream: p.stream })),
   ]);
+  // Indicadores do canal de voz da comunidade (deafen, tela, falando).
+  useVoiceFlags(socket.socket, roomId, joined, {
+    deafened: webrtc.isDeafened,
+    screenSharing: webrtc.isScreenSharing,
+    speaking: speaking.has(LOCAL_ID),
+  });
 
   // Detect insecure context (HTTP on non-localhost) — blocks getUserMedia
   useEffect(() => {
@@ -347,8 +458,8 @@ export function RoomSession({
             }
           })
           .catch((err: unknown) => {
-            const message =
-              err instanceof Error && err.message ? err.message : 'Falha ao entrar na sala';
+            const raw = err instanceof Error && err.message ? err.message : 'Falha ao entrar na sala';
+            const message = raw === VOICE_CHANNEL_FULL_ERROR ? 'Canal de voz cheio' : raw;
             if (mode === 'first') {
               setError(message);
               return;
@@ -367,7 +478,16 @@ export function RoomSession({
           });
       });
     },
-    [socket, roomId, initMedia, connectToPeers, isMutedNow, inviteToken, requiresPassword, roomPassword],
+    [
+      socket,
+      roomId,
+      initMedia,
+      connectToPeers,
+      isMutedNow,
+      inviteToken,
+      requiresPassword,
+      roomPassword,
+    ],
   );
 
   useEffect(() => {
@@ -430,6 +550,16 @@ export function RoomSession({
     [socket, roomId, webrtc, allowNavigation],
   );
 
+  // Celular: tela acesa, controles na tela de bloqueio e áudio retomado.
+  useCallKeepAlive({
+    active: joined,
+    roomName: room?.room.name ?? 'Sala',
+    onHangup: () => handleLeave(),
+    onToggleMicrophone: () => {
+      window.dispatchEvent(new Event('scale:toggle-mute'));
+    },
+  });
+
   // Logoff (menu de perfil): encerra a chamada sem o aviso de "sair da página";
   // quem disparou recarrega a página em seguida.
   useEffect(() => {
@@ -475,7 +605,8 @@ export function RoomSession({
 
   // Entrada em segundo plano (canal de voz da comunidade): nada de tela cheia
   // por cima de outra página. Se precisar de interação, pede a tela da chamada.
-  const hiddenBlocked = !visible && !joined && !loading && (!!error || isExpired || requiresPassword);
+  const hiddenBlocked =
+    !visible && !joined && !loading && (!!error || isExpired || requiresPassword);
   useEffect(() => {
     if (hiddenBlocked) onNeedsScreen?.();
   }, [hiddenBlocked, onNeedsScreen]);
@@ -484,7 +615,7 @@ export function RoomSession({
   // ─── Error / Loading states ──────────────────────────────────
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="min-h-[100dvh] flex items-center justify-center p-4">
         <div className="w-full max-w-md space-y-4">
           <Skeleton className="h-12 !rounded-2xl" />
           <Skeleton className="h-64 !rounded-2xl" />
@@ -496,7 +627,7 @@ export function RoomSession({
 
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="min-h-[100dvh] flex items-center justify-center p-4">
         <div className="text-center space-y-4 max-w-md">
           <div className="text-5xl">
             {error.includes('expirou') ? (
@@ -516,7 +647,7 @@ export function RoomSession({
 
   if (isExpired || isFull) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="min-h-[100dvh] flex items-center justify-center p-4">
         <div className="text-center space-y-4 max-w-md">
           <div className="text-5xl">
             {isExpired ? <Icon name="clock" size={48} /> : <Icon name="users" size={48} />}
@@ -541,7 +672,7 @@ export function RoomSession({
   // dispara o join effect acima e nunca vai para localStorage.
   if (requiresPassword && !joined) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="min-h-[100dvh] flex items-center justify-center p-4">
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -567,7 +698,7 @@ export function RoomSession({
             aria-label="Senha da sala"
             minLength={8}
             required
-            className="w-full rounded bg-surface-tertiary p-2 text-sm text-ink-primary placeholder:text-ink-muted focus:outline-none focus:ring-1 focus:ring-accent"
+            className="w-full rounded bg-surface-tertiary p-2 text-base sm:text-sm text-ink-primary placeholder:text-ink-muted focus:outline-none focus:ring-1 focus:ring-accent"
           />
           <Button type="submit" size="md" disabled={roomPassword.trim().length < 8}>
             Entrar na sala
@@ -585,6 +716,33 @@ export function RoomSession({
   const isOwner = room?.room.ownerId != null && room?.room.ownerId === currentUserId;
   // Nomes para o autocomplete de menções: quem está na sala agora (guestNames)
   const currentPeers = [displayName, ...Array.from(webrtc.peers.values()).map((p) => p.name)];
+
+  // Partilha de tela com gate: parar nunca pergunta; iniciar passa pelo
+  // dialogo (idade + termo + confirmacao) e so entao pede a tela ao navegador.
+  const startOrStopScreenShare = async (confirmed: boolean) => {
+    const result = await webrtc.toggleScreenShare({
+      canShare: () => confirmed && screenShareGateRef.current.allowed,
+    });
+    if (result === 'gated') {
+      setGateOpen(true);
+      return;
+    }
+    if (result === null) {
+      toast('Compartilhamento não iniciado. Consulte o aviso da captura.', 'info');
+    } else {
+      toast(result ? 'Compartilhamento de tela iniciado' : 'Compartilhamento de tela encerrado', 'info');
+    }
+  };
+
+  const stopPeerShare = (peerId: string) => {
+    const peerName = webrtc.peers.get(peerId)?.name ?? 'participante';
+    socket
+      .emitModerationStopShare(roomId, peerId)
+      .then(() => toast(`Partilha de ${peerName} encerrada`, 'info'))
+      .catch((err: unknown) =>
+        toast(err instanceof Error && err.message ? err.message : 'Não foi possível encerrar a partilha.', 'error'),
+      );
+  };
 
   const leaveFromMiniBar = () => handleLeave(window.location.pathname + window.location.search);
 
@@ -604,6 +762,11 @@ export function RoomSession({
               maxParticipants={room?.room.maxParticipants ?? 8}
               speaking={speaking}
               onWatch={setFocusedShareId}
+              onReport={(peerId) => {
+                const peer = webrtc.peers.get(peerId);
+                if (peer) setReportTarget({ peerId, name: peer.name });
+              }}
+              onStopShare={isOwner ? stopPeerShare : undefined}
             />
           }
           accountSlot={
@@ -620,7 +783,7 @@ export function RoomSession({
           }
           actions={
             <div className="flex items-center gap-2">
-              {communityId && <Link href={`/communities?c=${encodeURIComponent(communityId)}`} className="btn-secondary text-sm px-3 py-2">Voltar à comunidade</Link>}
+              {communityId && <Link href={`/communities?c=${encodeURIComponent(communityId)}`} className="btn-secondary text-sm px-3 py-2" aria-label="Voltar à comunidade">Voltar</Link>}
               <Badge variant={socket.connected ? 'success' : 'error'}>
                 {socket.connected ? 'Conectado' : 'Reconectando'}
               </Badge>
@@ -640,6 +803,16 @@ export function RoomSession({
           }
         >
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            {joined && !socket.connected && (
+              <div
+                role="status"
+                aria-live="polite"
+                className="fixed inset-x-0 top-0 z-50 flex items-center justify-center gap-2 bg-amber-500 px-4 pb-1.5 pt-[calc(0.375rem+env(safe-area-inset-top))] text-sm font-medium text-black"
+              >
+                <Icon name="warning" size={16} />
+                Reconectando à sala...
+              </div>
+            )}
             <a href="#room-controls" className="skip-link">
               Ir para os controles da sala
             </a>
@@ -707,7 +880,7 @@ export function RoomSession({
                   speaking={speaking}
                   focusedShareId={focusedShareId}
                   onFocusShare={setFocusedShareId}
-                  onStopShare={() => void webrtc.toggleScreenShare()}
+                  onStopShare={() => void startOrStopScreenShare(false)}
                   avatars={callAvatars}
                 />
               </div>
@@ -757,19 +930,7 @@ export function RoomSession({
                     toast(result ? 'Áudio silenciado' : 'Áudio restaurado', 'info');
                   }
                 }}
-                onToggleScreenShare={async () => {
-                  const result = await webrtc.toggleScreenShare();
-                  if (result === null) {
-                    toast('Compartilhamento não iniciado. Consulte o aviso da captura.', 'info');
-                  } else {
-                    toast(
-                      result
-                        ? 'Compartilhamento de tela iniciado'
-                        : 'Compartilhamento de tela encerrado',
-                      'info',
-                    );
-                  }
-                }}
+                onToggleScreenShare={() => void startOrStopScreenShare(false)}
                 onLeave={() => {
                   if (requestNavigation('/')) handleLeave();
                 }}
@@ -785,6 +946,63 @@ export function RoomSession({
 
             {inviteFriendsOpen && (
               <InviteFriendsDialog roomId={roomId} onClose={() => setInviteFriendsOpen(false)} />
+            )}
+
+            {gateOpen && (
+              <ScreenShareGateDialog
+                gate={screenShareGate}
+                config={moderationConfig}
+                onClose={() => setGateOpen(false)}
+                onGateChange={(gate) => {
+                  screenShareGateRef.current = gate;
+                  setAccount((prev) => (prev ? { ...prev, screenShare: gate } : prev));
+                }}
+                onConfirm={() => {
+                  setGateOpen(false);
+                  void startOrStopScreenShare(true);
+                }}
+              />
+            )}
+
+            {reportTarget && (
+              <ReportDialog
+                roomId={roomId}
+                target={reportTarget}
+                onSubmit={(payload) => socket.emitModerationReport(payload)}
+                onClose={() => setReportTarget(null)}
+              />
+            )}
+
+            {notice && isOwner && (
+              <div className="mx-4 mb-3">
+                <Banner
+                  variant="warning"
+                  title={
+                    notice.kind === 'report'
+                      ? `Denúncia sobre ${notice.name}`
+                      : `Alerta do assistente sobre ${notice.name}`
+                  }
+                  description={
+                    notice.kind === 'frame'
+                      ? 'A amostra da tela compartilhada foi sinalizada.'
+                      : notice.kind === 'text'
+                        ? 'Uma mensagem foi sinalizada.'
+                        : 'Um participante fez uma denúncia.'
+                  }
+                  action={
+                    <>
+                      {webrtc.peers.get(notice.peerId)?.isScreenSharing && (
+                        <Button variant="danger" size="sm" onClick={() => { stopPeerShare(notice.peerId); setNotice(null); }}>
+                          Encerrar partilha dele
+                        </Button>
+                      )}
+                      <Button variant="ghost" size="sm" onClick={() => setNotice(null)} aria-label="Dispensar aviso">
+                        Dispensar
+                      </Button>
+                    </>
+                  }
+                />
+              </div>
             )}
 
             {confirmDelete && (

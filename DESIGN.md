@@ -131,3 +131,7 @@ Esta documentação foi conferida por leitura de componentes, CSS e configuraç�
 - Usar transições curtas que esclareçam estado, com reduced motion e hover apenas onde há hover.
 - Não copiar cores, fonte, rótulos ou recursos do Discord.
 - Não esconder scrollbars, simular servidores/canais, usar emojis de UI ou prometer chamada persistente entre rotas.
+
+## Landing
+
+A landing não segue este sistema: tem identidade própria aprovada em 12/11/2026 (paleta e tokens em `apps/web/src/components/landing/landing.css`, motion em `landing/motion.ts`, fonte Sora). Não "corrigir" a landing para os tokens do app. Ela respeita reduced motion e telas baixas via `primitives/useStaticScene.ts`.

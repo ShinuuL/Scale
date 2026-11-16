@@ -10,7 +10,7 @@ import {
   type FriendsList,
   type PublicUser,
 } from '@scale/shared';
-import { api, type MeUser } from '@/lib/api';
+import { api, applyMeAdmin, type MeUser } from '@/lib/api';
 import { useUserEvents } from '@/hooks/useUserEvents';
 import { roomPath } from '@/lib/roomLink';
 import { Button } from '@/components/ui/Button';
@@ -126,6 +126,21 @@ export default function FriendsPage() {
       .catch(() => setListState('error'));
   }, []);
 
+  // Deep link vindo de outra tela (ex.: menu de membro da comunidade): /friends?dm=<userId>.
+  useEffect(() => {
+    if (listState !== 'ready') return;
+    const url = new URL(window.location.href);
+    const dm = url.searchParams.get('dm');
+    if (!dm) return;
+    url.searchParams.delete('dm');
+    window.history.replaceState(null, '', `${url.pathname}${url.search}`);
+    if (list.friends.some((friend) => friend.id === dm)) {
+      setView('conversations');
+      setSelectedId(dm);
+      setUnread((prev) => ({ ...prev, [dm]: 0 }));
+    }
+  }, [listState, list]);
+
   const hasUsername = !!me?.username;
   useEffect(() => {
     if (authState === 'ready' && hasUsername) refresh();
@@ -133,6 +148,7 @@ export default function FriendsPage() {
 
   useUserEvents(authState === 'ready', {
     onFriendsChanged: refresh,
+    onMeAdmin: (event) => setMe((prev) => (prev ? applyMeAdmin(prev, event) : prev)),
     onDirectMessage: (m) => {
       if (!me) return;
       if (m.senderId !== me.id)

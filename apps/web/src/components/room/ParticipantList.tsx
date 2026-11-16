@@ -1,6 +1,7 @@
 'use client';
 
 import { clsx } from 'clsx';
+import { Button as AriaButton, Menu, MenuItem, MenuTrigger, Popover, type Key } from 'react-aria-components';
 import { Icon } from '@/components/ui/Icon';
 import { SpeakingBars } from '@/components/room/SpeakingBars';
 import type { PeerConnection } from '@/hooks/useWebRTC';
@@ -26,6 +27,58 @@ interface ParticipantListProps {
   speaking?: Set<string>;
   /** Clicar em "Ao vivo" leva a transmissão daquela pessoa para o palco. */
   onWatch?: (id: string) => void;
+  /** Abre a denúncia de um participante (nunca de si mesmo). */
+  onReport?: (peerId: string) => void;
+  /** Dono da sala: encerra a partilha de tela de quem está ao vivo. */
+  onStopShare?: (peerId: string) => void;
+}
+
+/** Menu de ações sobre OUTRO participante (react-aria): denunciar e, para o dono, encerrar a partilha. */
+function ParticipantMenu({
+  name,
+  onReport,
+  onStopShare,
+}: {
+  name: string;
+  onReport?: () => void;
+  onStopShare?: () => void;
+}) {
+  const onAction = (key: Key) => {
+    if (key === 'report') onReport?.();
+    if (key === 'stop-share') onStopShare?.();
+  };
+  const itemClass =
+    'flex min-h-[44px] w-full cursor-pointer items-center gap-3 rounded-lg px-2.5 text-left text-sm text-ink-primary outline-none transition-colors hover:bg-white/[0.06] focus:bg-white/[0.08] focus-visible:ring-2 focus-visible:ring-brand-400/60';
+  return (
+    <MenuTrigger>
+      <AriaButton
+        aria-label={`Opções de ${name}`}
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-ink-muted outline-none transition-colors hover:bg-surface-hover hover:text-ink-primary data-[focus-visible]:outline data-[focus-visible]:outline-2 data-[focus-visible]:outline-accent aria-expanded:bg-surface-hover"
+      >
+        <Icon name="more" size={16} />
+      </AriaButton>
+      <Popover
+        placement="bottom end"
+        offset={6}
+        className="z-50 w-56 rounded-xl border border-white/10 bg-forest-900 p-1.5 shadow-[0_12px_40px_rgb(0_0_0/0.3)] data-[entering]:animate-menu-in"
+      >
+        <Menu aria-label={`Ações sobre ${name}`} onAction={onAction} className="outline-none">
+          {onStopShare && (
+            <MenuItem id="stop-share" textValue="Encerrar partilha" className={itemClass}>
+              <Icon name="monitor" size={16} className="text-ink-muted" />
+              Encerrar partilha
+            </MenuItem>
+          )}
+          {onReport && (
+            <MenuItem id="report" textValue="Denunciar" className={clsx(itemClass, 'text-red-300 hover:bg-red-500/10 focus:bg-red-500/10')}>
+              <Icon name="flag" size={16} />
+              Denunciar
+            </MenuItem>
+          )}
+        </Menu>
+      </Popover>
+    </MenuTrigger>
+  );
 }
 
 /** Lateral do canal de voz: quem está no canal, quem fala, quem está ao vivo. */
@@ -38,6 +91,8 @@ export function ParticipantList({
   maxParticipants,
   speaking = new Set<string>(),
   onWatch,
+  onReport,
+  onStopShare,
 }: ParticipantListProps) {
   const participants: Participant[] = [
     {
@@ -131,6 +186,13 @@ export function ParticipantList({
                   size={16}
                   className="text-red-400"
                   title="Microfone desligado"
+                />
+              )}
+              {!p.isLocal && (onReport || (onStopShare && p.isLive)) && (
+                <ParticipantMenu
+                  name={p.name}
+                  onReport={onReport ? () => onReport(p.id) : undefined}
+                  onStopShare={onStopShare && p.isLive ? () => onStopShare(p.id) : undefined}
                 />
               )}
             </li>

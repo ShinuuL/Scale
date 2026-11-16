@@ -176,6 +176,12 @@ export function ProfileMenu({
               <Icon name="settings" size={16} className="text-ink-muted" />
               Configurações
             </MenuItem>
+            {isAuthenticated && user?.isAdmin === true && (
+              <MenuItem id="admin" href="/admin" textValue="Administração" className={itemClass}>
+                <Icon name="shield" size={16} className="text-ink-muted" />
+                Administração
+              </MenuItem>
+            )}
             {isAuthenticated && <Separator className={separatorClass} />}
             {isAuthenticated && (
               <MenuItem

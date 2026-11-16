@@ -123,6 +123,20 @@ impl MainState {
 
 /// Eventos produzidos pelas tarefas de rede (REST e socket), consumidos com
 /// `try_recv` no frame da UI — a UI nunca bloqueia.
+/// Etapas da atualização automática do desktop.
+#[derive(Debug, Clone, Default)]
+pub enum UpdateState {
+    #[default]
+    Nenhuma,
+    Baixando(String),
+    /// Pronta: instala quando `deadline` passar (ou ao clicar em "Reiniciar agora").
+    /// "Adiar" empurra o prazo em [`crate::app::POSTPONE`].
+    Pronta { update: crate::updater::Downloaded, deadline: std::time::Instant },
+    /// Não dá para instalar sozinho (ex.: .deb): só avisa e abre a página.
+    Manual(crate::updater::UpdateInfo),
+    Falhou(String),
+}
+
 pub enum UiEvent {
     HealthChecked(std::result::Result<(), String>),
     LoginOk { user: User, token: String },
@@ -162,5 +176,9 @@ pub enum UiEvent {
     SocketDisconnected,
     /// Resultado do refresh de sessão: novo JWT se o servidor regravou o cookie.
     SessionRefreshed(Option<String>),
+    /// Nova versão do desktop publicada nas GitHub Releases.
+    UpdateAvailable(crate::updater::UpdateInfo),
+    /// Instalador baixado e conferido (ou o erro).
+    UpdateDownloaded(std::result::Result<crate::updater::Downloaded, String>),
     Err(String),
 }

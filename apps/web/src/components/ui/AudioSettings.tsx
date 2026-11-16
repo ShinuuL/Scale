@@ -20,7 +20,7 @@ import {
   resolveDeviceId,
   saveDeviceId,
   subscribeDeviceList,
-  supportsSinkId,
+  canChooseOutput,
   type AudioDeviceList,
 } from '@/lib/audioDevices';
 
@@ -32,6 +32,9 @@ import {
 export function isBluetoothCallMic(label: string | undefined): boolean {
   return !!label && /hands[- ]?free|bluetooth/i.test(label);
 }
+
+/** Chave de UI do "Padrão do sistema" (o react-aria não aceita '' como seleção). */
+const DEFAULT_KEY = '__default';
 
 interface DeviceOption {
   deviceId: string;
@@ -55,9 +58,11 @@ function DeviceSelect({
 }) {
   return (
     <Select
-      selectedKey={value || null}
+      selectedKey={value || DEFAULT_KEY}
       onSelectionChange={(key) => {
-        if (key !== null) onChange(String(key));
+        if (key === null) return;
+        const id = String(key);
+        onChange(id === DEFAULT_KEY ? DEFAULT_DEVICE_ID : id);
       }}
       placeholder="Nenhum aparelho"
       className="space-y-1"
@@ -74,7 +79,7 @@ function DeviceSelect({
         <ListBox items={options} className="max-h-64 outline-none">
           {(item) => (
             <ListBoxItem
-              id={item.deviceId}
+              id={item.deviceId || DEFAULT_KEY}
               textValue={item.label}
               className="flex cursor-pointer items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-sm text-ink-primary outline-none data-[focused]:bg-white/[0.08] data-[selected]:font-medium"
             >
@@ -103,14 +108,19 @@ export function AudioSettings() {
   const [level, setLevel] = useState(0);
   const [testError, setTestError] = useState(false);
   const [asking, setAsking] = useState(false);
-  const sinkSupported = supportsSinkId();
 
   const refresh = useCallback(async () => {
     const list = await listAudioDevices();
     setDevices(list);
-    // Aparelho salvo que sumiu volta ao padrão (e a troca ao vivo acontece).
     const savedIn = getSavedDeviceId('input');
     const savedOut = getSavedDeviceId('output');
+    // Sem nomes (antes da permissão) os ids podem não bater: mantém a escolha.
+    if (!list.hasLabels) {
+      setInputId(savedIn);
+      setOutputId(savedOut);
+      return;
+    }
+    // Aparelho salvo que sumiu volta ao padrão (e a troca ao vivo acontece).
     const effIn = resolveDeviceId(savedIn, list.inputs);
     const effOut = resolveDeviceId(savedOut, list.outputs);
     if (effIn !== savedIn) saveDeviceId('input', effIn);
@@ -131,6 +141,9 @@ export function AudioSettings() {
     let cancelled = false;
     let stream: MediaStream | null = null;
     let ctx: AudioContext | null = null;
+    const resumeOnGesture = () => {
+      if (ctx && ctx.state === 'suspended') void ctx.resume();
+    };
 
     void (async () => {
       try {
@@ -143,9 +156,16 @@ export function AudioSettings() {
           return;
         }
         setTestError(false);
+        // Permissão concedida: agora a lista vem com nomes.
+        void refresh();
         const Ctor = window.AudioContext;
         if (!Ctor) return;
         ctx = new Ctor();
+        // Celular cria o contexto suspenso fora de gesto: retoma já e no toque.
+        void ctx.resume();
+        if (ctx.state === 'suspended') {
+          window.addEventListener('pointerdown', resumeOnGesture, true);
+        }
         const analyser = ctx.createAnalyser();
         analyser.fftSize = 512;
         ctx.createMediaStreamSource(stream).connect(analyser);
@@ -165,13 +185,14 @@ export function AudioSettings() {
 
     return () => {
       cancelled = true;
+      window.removeEventListener('pointerdown', resumeOnGesture, true);
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
       stream?.getTracks().forEach((t) => t.stop());
       if (ctx && ctx.state !== 'closed') void ctx.close();
       setLevel(0);
     };
-  }, [inputId]);
+  }, [inputId, refresh]);
 
   const askPermission = async () => {
     setAsking(true);
@@ -260,7 +281,7 @@ export function AudioSettings() {
         )}
       </div>
 
-      {sinkSupported ? (
+      {canChooseOutput(devices) ? (
         <DeviceSelect
           label="Saída de áudio"
           options={devices?.outputs ?? []}
@@ -268,9 +289,22 @@ export function AudioSettings() {
           onChange={onOutput}
         />
       ) : (
-        <p className="text-xs text-slate-400">
-          Seu navegador não permite escolher a saída de áudio
-        </p>
+        <div className="space-y-1">
+          <div className="text-sm text-slate-200" id="settings-output-label">
+            Saída de áudio
+          </div>
+          <div
+            role="textbox"
+            aria-readonly="true"
+            aria-labelledby="settings-output-label"
+            className="w-full rounded-lg border border-white/10 bg-forest-950 px-3 py-2 text-sm text-slate-300"
+          >
+            Padrão do sistema
+          </div>
+          <p className="text-xs text-slate-400">
+            No celular, o sistema alterna entre alto-falante e fone.
+          </p>
+        </div>
       )}
     </section>
   );

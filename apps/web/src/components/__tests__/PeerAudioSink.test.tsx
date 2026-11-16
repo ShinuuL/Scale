@@ -44,6 +44,21 @@ describe('PeerAudio e a saída de áudio', () => {
     expect(setSinkId).toHaveBeenLastCalledWith('out-2');
   });
 
+  it('saída padrão salva não chama setSinkId', () => {
+    const setSinkId = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(HTMLMediaElement.prototype, 'setSinkId', { value: setSinkId, configurable: true });
+    renderGrid();
+    expect(setSinkId).not.toHaveBeenCalled();
+  });
+
+  it('retoma o play() no primeiro toque (touchstart)', () => {
+    const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+    renderGrid();
+    const before = play.mock.calls.length;
+    window.dispatchEvent(new Event('touchstart'));
+    expect(play.mock.calls.length).toBeGreaterThan(before);
+  });
+
   it('sem setSinkId não quebra', () => {
     expect(() => renderGrid()).not.toThrow();
   });

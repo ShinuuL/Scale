@@ -8,9 +8,13 @@ import { prisma } from '../lib/prisma.js';
 import { sanitizeFilename, detectMagicBytes, prepareFilePath, readFileHead, getQuotaUsage, UPLOADS_ROOT } from '../lib/uploads.js';
 import { ALLOWED_MIME_RE, CHAT_MESSAGE_MAX, MAX_FILES_PER_MESSAGE, ROOM_FILE_QUOTA_BYTES, parseGuestName } from '@scale/shared';
 import { guardRoomParticipation } from '../lib/roomAccess.js';
+import { toChannelMessage } from '../lib/communityAccess.js';
+import { checkChannelPost, emitToChannel, viewableChannel } from '../lib/channelPermissions.js';
+import { timedOutBody, timeoutOf } from '../lib/communityModeration.js';
 import { addChatFilesBytes, incQuotaExceeded } from '../lib/metrics.js';
 import { toPublicFile } from '../lib/publicDto.js';
 import { emitChatMessage } from '../socket/handler.js';
+import { emitCommunityActivity } from '../lib/unread.js';
 import { isFileUploadRateLimited } from '../lib/rateLimit.js';
 import { getClientIp } from '../lib/clientIp.js';
 
@@ -51,6 +55,15 @@ export async function filesRoutes(fastify: FastifyInstance): Promise<void> {
     // 403 sem consumir o stream.
     const participant = await guardRoomParticipation(request, reply, room);
     if (!participant) return reply;
+    // Fase 3: canal de comunidade aplica permissao de envio, aviso e modo lento.
+    if (room.communityId && participant.userId) {
+      const found = await viewableChannel(room.id, participant.userId);
+      if (!found) return reply.code(404).send({ error: 'Room not found' });
+      const timedOut = await timeoutOf(room.communityId, participant.userId);
+      if (timedOut) return reply.code(403).send(timedOutBody(timedOut));
+      const post = await checkChannelPost(found.room, found.access, participant.userId);
+      if (!post.ok) { if (post.body.retryAfterSeconds) void reply.header('Retry-After', String(post.body.retryAfterSeconds)); return reply.code(post.status).send(post.body); }
+    }
     const release = tryResourceLock(`room:${roomId}`);
     if (!release) return reply.header('Retry-After', '1').code(429).send({ error: 'Upload or deletion in progress. Try again.' });
     try {
@@ -83,7 +96,8 @@ export async function filesRoutes(fastify: FastifyInstance): Promise<void> {
           }
 
           const mime = part.mimetype;
-          if (!ALLOWED_MIME_RE.test(mime)) {
+          // Canal de texto de comunidade: so imagens (o resto da allowlist e das salas).
+          if (!ALLOWED_MIME_RE.test(mime) || (room.communityId && !mime.startsWith('image/'))) {
             part.file.resume();
             return await reject(400, { error: 'Tipo não permitido', mime });
           }
@@ -162,6 +176,14 @@ export async function filesRoutes(fastify: FastifyInstance): Promise<void> {
       // broadcast como chat:message
       // DTO publico por destinatario: sem path/uploadedBy/authorId.
       const io = (fastify as unknown as { io?: import('socket.io').Server }).io;
+      if (room.communityId) {
+        // Canal de comunidade fala o protocolo channel:* (a pagina da comunidade nao entra na sala).
+        const author = userId ? await prisma.user.findUnique({ where: { id: userId }, include: { username: true } }) : null;
+        const channelMessage = toChannelMessage({ ...message, files: createdFiles }, { id: userId, name: author?.name ?? guestName, username: author?.username?.name ?? null });
+        await emitToChannel(io, room.communityId, room.id, 'channel:message', channelMessage);
+        await emitCommunityActivity(io, room.communityId, room.id, userId ?? null);
+        return reply.code(201).send({ files: createdFiles.map(toPublicFile), messageId: message.id, message: channelMessage });
+      }
       if (io) emitChatMessage(io, roomId, { ...message, files: createdFiles });
 
       return reply.code(201).send({ files: createdFiles.map(toPublicFile), messageId: message.id });

@@ -115,20 +115,20 @@ export function ChatMessageItem({
               onChange={(e) => setDraft(e.target.value)}
               maxLength={500}
               aria-label="Editar mensagem"
-              className="flex-1 min-h-[40px] rounded bg-surface-tertiary p-2 text-sm text-ink-primary resize-none focus:outline-none focus:ring-1 focus:ring-accent"
+              className="flex-1 min-h-[40px] rounded bg-surface-tertiary p-2 text-base sm:text-sm text-ink-primary resize-none focus:outline-none focus:ring-1 focus:ring-accent"
             />
             <button
               onClick={() => {
                 onEdit(message.id, draft);
                 setEditing(false);
               }}
-              className="text-xs px-2 py-1 bg-accent-solid rounded text-white hover:bg-accent-solid"
+              className="min-h-11 sm:min-h-0 text-xs px-3 sm:px-2 py-1 bg-accent-solid rounded text-white hover:bg-accent-solid"
             >
               Salvar
             </button>
             <button
               onClick={() => setEditing(false)}
-              className="text-xs px-2 py-1 bg-surface-tertiary rounded text-ink-secondary hover:bg-surface-hover"
+              className="min-h-11 sm:min-h-0 text-xs px-3 sm:px-2 py-1 bg-surface-tertiary rounded text-ink-secondary hover:bg-surface-hover"
             >
               Cancelar
             </button>
@@ -189,7 +189,7 @@ export function ChatMessageItem({
               setDraft(message.content);
               setEditing(true);
             }}
-            className="text-xs text-ink-muted hover:text-ink-primary"
+            className="min-h-11 px-1 text-xs text-ink-muted hover:text-ink-primary sm:min-h-0 sm:px-0"
           >
             Editar
           </button>
@@ -197,7 +197,7 @@ export function ChatMessageItem({
         {canDelete && (
           <button
             onClick={() => onDelete(message.id)}
-            className="text-xs text-red-300/80 hover:text-red-300"
+            className="min-h-11 px-1 text-xs text-red-300/80 hover:text-red-300 sm:min-h-0 sm:px-0"
           >
             Apagar
           </button>

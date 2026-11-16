@@ -1,5 +1,9 @@
 # Estado de implantação e pendências
 
+## 2026-11-12 — nova landing "Escamas do dragão"
+
+Branch `feat/nova-landing`, local. Landing refeita do zero com identidade própria (azul-noite, gradiente do logo, Sora) e cenas guiadas pela rolagem com `motion`. Código em `apps/web/src/components/landing/`. Vitest 272/272, build ok (rota `/` 67,6 kB, First Load 283 kB). Pendente: conferir em aparelho real (celular e Safari) e deploy.
+
 ## 2026-11-09 — comunidades (servidor + web) e desktop nativo Rust (R1)
 
 Estado local, sem commit e sem implantação. Branch `feat/scale-interface`.

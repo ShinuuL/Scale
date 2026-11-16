@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { getSavedDeviceId } from '@/lib/audioDevices';
 import { isBluetoothCallMic } from '@/components/ui/AudioSettings';
+import { RouterProvider } from 'react-aria-components';
 import { SettingsDialog } from '@/components/ui/SettingsDialog';
 
 beforeEach(() => {
@@ -63,8 +64,46 @@ describe('SettingsDialog: seção Áudio', () => {
   it('sem setSinkId esconde a saída e explica', async () => {
     render(<SettingsDialog user={null} onClose={() => {}} />);
     await screen.findByRole('button', { name: /Permitir acesso ao microfone/ });
-    expect(screen.queryByLabelText('Saída de áudio')).toBeNull();
-    expect(screen.getByText(/Seu navegador não permite escolher a saída de áudio/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Saída de áudio/ })).toBeNull();
+    expect(screen.getByRole('textbox', { name: 'Saída de áudio' })).toHaveTextContent('Padrão do sistema');
+    expect(screen.getByText(/o sistema alterna entre alto-falante e fone/)).toBeInTheDocument();
+  });
+
+  it('Android (só a saída padrão, com permissão) mostra a saída só leitura', async () => {
+    Object.defineProperty(HTMLMediaElement.prototype, 'setSinkId', { value: vi.fn(), configurable: true });
+    (navigator.mediaDevices.enumerateDevices as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { kind: 'audioinput', deviceId: 'mic-1', label: 'Microfone', groupId: '' },
+      { kind: 'audiooutput', deviceId: 'default', label: 'Padrão', groupId: '' },
+    ]);
+    render(<SettingsDialog user={null} onClose={() => {}} />);
+    expect(await screen.findByRole('textbox', { name: 'Saída de áudio' })).toHaveTextContent('Padrão do sistema');
+  });
+
+  it('padrão aparece como "Padrão do sistema", nunca "Nenhum aparelho"', async () => {
+    render(<SettingsDialog user={null} onClose={() => {}} />);
+    const mic = await screen.findByRole('button', { name: /Microfone/ });
+    await waitFor(() => expect(mic).toHaveTextContent('Padrão do sistema'));
+    expect(screen.queryByText('Nenhum aparelho')).toBeNull();
+  });
+
+  it('sem nomes (antes da permissão) mantém a escolha salva', async () => {
+    window.localStorage.setItem('scale.audio.input', 'mic-salvo');
+    render(<SettingsDialog user={null} onClose={() => {}} />);
+    await screen.findByRole('button', { name: /Permitir acesso ao microfone/ });
+    expect(getSavedDeviceId('input')).toBe('mic-salvo');
+  });
+
+  it('escolher "Padrão do sistema" salva string vazia', async () => {
+    (navigator.mediaDevices.enumerateDevices as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { kind: 'audioinput', deviceId: 'mic-1', label: 'Headset', groupId: '' },
+    ]);
+    window.localStorage.setItem('scale.audio.input', 'mic-1');
+    render(<SettingsDialog user={null} onClose={() => {}} />);
+    const mic = await screen.findByRole('button', { name: /Microfone/ });
+    await waitFor(() => expect(mic).toHaveTextContent('Headset'));
+    fireEvent.click(mic);
+    fireEvent.click(await screen.findByRole('option', { name: 'Padrão do sistema' }));
+    expect(getSavedDeviceId('input')).toBe('');
   });
 
   it('escolher o microfone na lista salva o aparelho', async () => {
@@ -73,9 +112,17 @@ describe('SettingsDialog: seção Áudio', () => {
       { kind: 'audioinput', deviceId: 'mic-2', label: 'Webcam', groupId: '' },
     ]);
     render(<SettingsDialog user={null} onClose={() => {}} />);
-    const mic = await screen.findByRole('button', { name: /Microfone/ });
-    fireEvent.click(mic);
-    fireEvent.click(await screen.findByRole('option', { name: 'Webcam' }));
+    await screen.findByRole('button', { name: /Microfone/ });
+    // A lista de aparelhos chega assincrona: em maquina lenta (CI) o clique
+    // pode abrir o seletor antes dela. Reabre ate a opcao aparecer.
+    const webcam = await waitFor(
+      () => {
+        if (!screen.queryByRole('listbox')) fireEvent.click(screen.getByRole('button', { name: /Microfone/ }));
+        return screen.getByRole('option', { name: 'Webcam' });
+      },
+      { timeout: 5000 },
+    );
+    fireEvent.click(webcam);
     expect(getSavedDeviceId('input')).toBe('mic-2');
     expect(screen.queryByRole('listbox')).toBeNull();
     // A lista fechou, o diálogo continua aberto.
@@ -106,5 +153,39 @@ describe('isBluetoothCallMic', () => {
     expect(isBluetoothCallMic('Microfone Bluetooth')).toBe(true);
     expect(isBluetoothCallMic('Microfone (Realtek High Definition Audio)')).toBe(false);
     expect(isBluetoothCallMic(undefined)).toBe(false);
+  });
+});
+
+describe('SettingsDialog: seção Administração', () => {
+  const base = { id: 'ana', name: 'Ana', email: 'ana@example.test', createdAt: '2026-11-06T10:00:00.000Z' };
+
+  it('aparece só para admin, com os três links, e fecha o diálogo ao navegar', async () => {
+    const onClose = vi.fn();
+    const navigate = vi.fn();
+    // Mesmo papel do AriaRouter: o link navega pelo roteador, sem recarregar.
+    const { unmount } = render(
+      <RouterProvider navigate={navigate}>
+        <SettingsDialog user={{ ...base, isAdmin: true }} onClose={onClose} />
+      </RouterProvider>,
+    );
+    const moderation = await screen.findByRole('link', { name: 'Moderação' });
+    expect(moderation).toHaveAttribute('href', '/admin/moderation');
+    expect(screen.getByRole('link', { name: 'Métricas' })).toHaveAttribute('href', '/metrics');
+    expect(screen.getByRole('link', { name: 'Administradores' })).toHaveAttribute('href', '/admin/users');
+    fireEvent.click(screen.getByRole('link', { name: 'Administradores' }));
+    expect(onClose).toHaveBeenCalled();
+    expect(navigate).toHaveBeenCalledWith('/admin/users', undefined);
+    unmount();
+  });
+
+  it('não aparece para conta comum nem convidado', async () => {
+    const { unmount } = render(<SettingsDialog user={{ ...base, isAdmin: false }} onClose={vi.fn()} />);
+    await screen.findByRole('dialog');
+    expect(screen.queryByRole('heading', { name: 'Administração' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Administradores' })).not.toBeInTheDocument();
+    unmount();
+    render(<SettingsDialog user={null} onClose={vi.fn()} />);
+    await screen.findByRole('dialog');
+    expect(screen.queryByRole('link', { name: 'Moderação' })).not.toBeInTheDocument();
   });
 });

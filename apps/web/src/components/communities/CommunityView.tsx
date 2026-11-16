@@ -4,24 +4,54 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Dialog, Heading, Modal, ModalOverlay } from 'react-aria-components';
 import type { CommunityVoiceState } from '@scale/shared';
 import { useRouter } from 'next/navigation';
-import { api, type CommunityDetail, type CommunityListItem } from '@/lib/api';
+import type { FriendsList } from '@scale/shared';
+import { api, communityImageUrl, type CommunityDetail, type CommunityListItem } from '@/lib/api';
+import type { CommunityLayout } from '@scale/shared';
+import { applyLayout } from './channelLayout';
 import { callScreenPath, startBackgroundCall, useActiveCall } from '@/lib/callControl';
 import { useCommunityEvents } from '@/hooks/useCommunityEvents';
+import { useUserEvents } from '@/hooks/useUserEvents';
 import { useChannelMessages } from '@/hooks/useChannelMessages';
 import { Banner } from '@/components/ui/Banner';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Tooltip } from '@/components/ui/Tooltip';
-import { ChannelList, CommunityRail, MemberList } from './CommunityParts';
+import { ChannelList, CommunityRail, MemberList, type FriendStatus, type Member } from './CommunityParts';
 import { ChannelChat } from './ChannelChat';
+import { MessageSearchDialog } from './MessageSearchDialog';
+import { CommunityEventsButton } from './CommunityEvents';
+import { useChannelTyping } from '@/hooks/useChannelTyping';
 import { ConfirmDialog } from './ConfirmDialog';
+import { ModerationDialog, moderationError, type ModerationAction } from './ModerationDialogs';
+import { NicknameDialog, nicknameMap, withVoiceNicknames } from './NicknameDialog';
+import { moderationNotice, outranks } from '@scale/shared';
 import {
   CommunitySettingsDialog,
   CreateCommunityDialog,
   InviteDialog,
   JoinCommunityDialog,
 } from './CommunityDialogs';
+
+const ORDER_KEY = 'scale:community-order';
+
+/** Ordem escolhida pelo usuario (so neste navegador); novas comunidades vao para o fim. */
+function readOrder(): string[] {
+  try {
+    const raw: unknown = JSON.parse(window.localStorage.getItem(ORDER_KEY) ?? '[]');
+    return Array.isArray(raw) ? raw.filter((id): id is string => typeof id === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function sortByOrder<T extends { id: string }>(items: T[], order: string[]): T[] {
+  const rank = new Map(order.map((id, index) => [id, index]));
+  return items
+    .map((item, index) => ({ item, index }))
+    .sort((a, b) => (rank.get(a.item.id) ?? order.length + a.index) - (rank.get(b.item.id) ?? order.length + b.index))
+    .map(({ item }) => item);
+}
 
 type DialogName =
   'create' | 'join' | 'invite' | 'settings' | 'leave' | 'channels' | 'members' | null;
@@ -42,8 +72,97 @@ export function CommunityView({
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [dialog, setDialog] = useState<DialogName>(null);
+  // Busca de mensagens (Fase 2): dialogo proprio + mensagem a destacar no canal aberto.
+  const [searchOpen, setSearchOpen] = useState(false);
+  // Eventos (Fase 4): incrementa a cada community:changed para recarregar a lista.
+  const [eventsKey, setEventsKey] = useState(0);
+  const [focusMessageId, setFocusMessageId] = useState<string | null>(null);
+  const clearFocus = useCallback(() => setFocusMessageId(null), []);
   const [voice, setVoice] = useState<CommunityVoiceState[]>([]);
+  // Presenca e "falando" (Fase 1): sets imutaveis, trocados a cada evento.
+  const [onlineIds, setOnlineIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [speakingIds, setSpeakingIds] = useState<ReadonlySet<string>>(() => new Set());
+  // Quem saiu da voz deixa de "falar" (o evento de fim pode nunca chegar).
+  useEffect(() => {
+    const present = new Set(voice.flatMap((state) => state.members.map((member) => member.userId)));
+    setSpeakingIds((previous) =>
+      [...previous].every((id) => present.has(id))
+        ? previous
+        : new Set([...previous].filter((id) => present.has(id))),
+    );
+  }, [voice]);
   const [refreshVersion, setRefreshVersion] = useState(0);
+  const [order, setOrder] = useState<string[]>([]);
+  const [friends, setFriends] = useState<FriendsList | null>(null);
+  const [notice, setNotice] = useState('');
+  const [moderation, setModeration] = useState<{ member: Member; action: ModerationAction } | null>(null);
+  const [nicknameFor, setNicknameFor] = useState<Member | null>(null);
+  useEffect(() => setOrder(readOrder()), []);
+  const loadFriends = useCallback(
+    () =>
+      api
+        .getFriends()
+        .then(setFriends)
+        .catch(() => setFriends(null)),
+    [],
+  );
+  useEffect(() => {
+    void loadFriends();
+  }, [loadFriends]);
+  const reorder = (ids: string[]) => {
+    setOrder(ids);
+    try {
+      window.localStorage.setItem(ORDER_KEY, JSON.stringify(ids));
+    } catch {
+      // Sem storage: a ordem vale ate recarregar.
+    }
+  };
+  const friendStatus = (member: Member): FriendStatus => {
+    if (member.userId === meId) return 'self';
+    if (!friends) return 'self';
+    if (friends.friends.some((user) => user.id === member.userId)) return 'friend';
+    if (friends.outgoing.some((request) => request.user.id === member.userId)) return 'outgoing';
+    if (friends.incoming.some((request) => request.user.id === member.userId)) return 'incoming';
+    return 'none';
+  };
+  const addFriend = async (member: Member) => {
+    if (!member.username) return;
+    try {
+      const result = await api.sendFriendRequest(member.username);
+      setNotice(
+        result.status === 'ACCEPTED'
+          ? `Você e ${member.name} agora são amigos.`
+          : `Pedido de amizade enviado para ${member.name}.`,
+      );
+    } catch {
+      setNotice(`Não foi possível adicionar ${member.name}. Tente novamente.`);
+    }
+    await loadFriends();
+  };
+  const memberList = detail && (
+    <MemberList
+      members={detail.members}
+      friendStatus={friendStatus}
+      onAddFriend={addFriend}
+      onMessage={(member) => router.push(`/friends?dm=${encodeURIComponent(member.userId)}`)}
+      roleName={(member) => detail.roles.find((role) => role.id === member.customRoleId)?.name}
+      isOnline={(member) => onlineIds.has(member.userId)}
+      canModerate={(member) => {
+        const me = detail.members.find((m) => m.userId === meId);
+        return Boolean(me && detail.myPermissions.kickMembers && member.userId !== meId && outranks(me, member));
+      }}
+      canEditNickname={(member) => {
+        if (member.userId === meId) return true;
+        const me = detail.members.find((m) => m.userId === meId);
+        return Boolean(me && detail.myPermissions.kickMembers && outranks(me, member));
+      }}
+      onNickname={setNicknameFor}
+      onModerate={(member, action) => {
+        if (action !== 'untimeout') { setModeration({ member, action }); return; }
+        void api.clearCommunityTimeout(detail.community.id, member.userId).then(refresh, (err: unknown) => setNotice(moderationError(err)));
+      }}
+    />
+  );
   const activeCall = useActiveCall();
   const currentId = useRef(communityId);
   currentId.current = communityId;
@@ -51,6 +170,60 @@ export function CommunityView({
     detail?.channels.find((channel) => channel.id === channelId && channel.kind === 'TEXT') ??
     detail?.channels.find((channel) => channel.kind === 'TEXT');
   const { state: messages, dispatch } = useChannelMessages(selected?.id ?? null, refreshVersion);
+  // Nao lidas. Comunidade aberta: contagem por canal no `detail`, atualizada
+  // pelos eventos `channel:message` do socket da comunidade. Outras comunidades:
+  // o socket so acompanha a aberta, entao o servidor manda `community:activity`
+  // (sem conteudo) na sala pessoal `user:<id>`; o total do rail tambem e
+  // recarregado ao focar a janela (cobre eventos perdidos em reconexao).
+  const selectedId = selected?.id;
+  const selectedRef = useRef(selectedId);
+  selectedRef.current = selectedId;
+  const readTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const setChannelUnread = useCallback((id: string, update: (count: number) => number) => {
+    setDetail((previous) =>
+      previous && {
+        ...previous,
+        channels: previous.channels.map((channel) =>
+          channel.id === id ? { ...channel, unread: update(channel.unread ?? 0) } : channel,
+        ),
+      },
+    );
+  }, []);
+  /** Zera na hora e avisa o servidor (agrupado: rajada de mensagens = um POST). */
+  const markChannelRead = useCallback(
+    (id: string) => {
+      setChannelUnread(id, () => 0);
+      const timers = readTimers.current;
+      if (timers.has(id)) return;
+      timers.set(
+        id,
+        setTimeout(() => {
+          timers.delete(id);
+          void api.markChannelRead(id).catch(() => undefined);
+        }, 400),
+      );
+    },
+    [setChannelUnread],
+  );
+  useEffect(() => {
+    const timers = readTimers.current;
+    return () => {
+      for (const timer of timers.values()) clearTimeout(timer);
+      timers.clear();
+    };
+  }, []);
+  const visible = () => typeof document === 'undefined' || document.visibilityState !== 'hidden';
+  useEffect(() => {
+    if (selectedId && visible()) markChannelRead(selectedId);
+  }, [selectedId, markChannelRead]);
+  useEffect(() => {
+    const onVisible = () => {
+      const id = selectedRef.current;
+      if (id && visible()) markChannelRead(id);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [markChannelRead]);
   const refreshList = useCallback(
     () =>
       api
@@ -68,7 +241,13 @@ export function CommunityView({
       .getCommunity(communityId)
       .then((result) => {
         if (currentId.current === communityId) {
-          setDetail(result);
+          // Canal aberto e visivel nunca mostra nao lidas (o POST de leitura pode estar a caminho).
+          const open = selectedRef.current;
+          setDetail(
+            open && visible()
+              ? { ...result, channels: result.channels.map((c) => (c.id === open ? { ...c, unread: 0 } : c)) }
+              : result,
+          );
           setError('');
         }
       })
@@ -84,8 +263,28 @@ export function CommunityView({
     void refreshList().finally(() => setLoading(false));
   }, [refreshList]);
   useEffect(() => {
+    const onFocus = () => void refreshList();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [refreshList]);
+  useUserEvents(true, {
+    onCommunityActivity: (event) => {
+      // A comunidade aberta conta pelo `channel:message` (evita contar duas vezes).
+      if (event.authorId === meId || event.communityId === currentId.current) return;
+      setCommunities((previous) =>
+        previous.map((community) =>
+          community.id === event.communityId
+            ? { ...community, unread: (community.unread ?? 0) + 1 }
+            : community,
+        ),
+      );
+    },
+  });
+  useEffect(() => {
     setDetail(null);
     setVoice([]);
+    setOnlineIds(new Set());
+    setSpeakingIds(new Set());
     setError('');
     refresh();
   }, [refresh]);
@@ -106,16 +305,34 @@ export function CommunityView({
     void refreshList();
     onNavigate();
   };
-  useCommunityEvents(communityId ?? null, {
-    onMessage: (message) => dispatch({ type: 'message', message }),
+  const typing = useChannelTyping(meId);
+  const resetTyping = typing.reset;
+  useEffect(() => resetTyping(), [communityId, resetTyping]);
+  const { emitTyping } = useCommunityEvents(communityId ?? null, {
+    onMessage: (message) => {
+      dispatch({ type: 'message', message });
+      if (message.author.id) typing.clearUser(message.channelId, message.author.id);
+      if (message.author.id === meId) return;
+      if (message.channelId === selectedRef.current && visible()) markChannelRead(message.channelId);
+      else setChannelUnread(message.channelId, (count) => Math.min(count + 1, 100));
+    },
     onMessageEdit: (event) => dispatch({ type: 'edit', event }),
     onMessageDelete: (event) => dispatch({ type: 'delete', event }),
+    onReaction: (event) => dispatch({ type: 'reaction', event }),
+    onPin: (event) => dispatch({ type: 'pin', event }),
     onChanged: () => {
       refresh();
+      setEventsKey((key) => key + 1);
       void refreshList();
     },
     onDeleted: gone,
     onRemoved: gone,
+    onModeration: (event) => {
+      setNotice(moderationNotice(event));
+      // Castigo, ban ou expulsao: o servidor ja me tirou da voz; encerra a chamada local.
+      const inHere = detail?.channels.some((channel) => channel.id === activeCall?.roomId);
+      if (event.action !== 'untimeout' && inHere) window.dispatchEvent(new Event('scale:end-call'));
+    },
     onVoiceStates: (states) => {
       setVoice(states);
       setRefreshVersion((version) => version + 1);
@@ -125,15 +342,45 @@ export function CommunityView({
         ...previous.filter((item) => item.channelId !== state.channelId),
         state,
       ]),
+    onOnlineUsers: (ids) => setOnlineIds(new Set(ids)),
+    onPresence: ({ userId, online }) => setOnlineIds((previous) => toggled(previous, userId, online)),
+    onVoiceSpeaking: ({ userId, speaking }) =>
+      setSpeakingIds((previous) => toggled(previous, userId, speaking)),
+    onTyping: typing.onTyping,
     onError: () => setError('Não foi possível acompanhar a comunidade em tempo real.'),
   });
-  const canManage = detail?.myRole === 'OWNER' || detail?.myRole === 'ADMIN';
+  const perms = detail?.myPermissions;
+  // Configuracoes abrem para quem tem QUALQUER poder de gestao (cargo base ou personalizado).
+  const canManage = detail?.myRole === 'OWNER' || Boolean(perms && Object.values(perms).some(Boolean));
+  const nicknames = nicknameMap(detail?.members ?? []);
+  const authorColors = new Map((detail?.members ?? []).flatMap((member) => {
+    const color = detail?.roles.find((role) => role.id === member.customRoleId)?.color;
+    return color ? [[member.userId, color] as const] : [];
+  }));
+  // Ordem/categorias: aplica na hora e grava; erro (ex.: 409 lista velha) recarrega.
+  const saveLayout = (layout: CommunityLayout) => {
+    if (!detail) return;
+    const id = detail.community.id;
+    setDetail((current) =>
+      current && current.community.id === id
+        ? { ...current, ...applyLayout(current.channels, current.categories ?? [], layout) }
+        : current,
+    );
+    api.saveCommunityLayout(id, layout).catch(() => {
+      setError('Não foi possível salvar a ordem dos canais.');
+      refresh();
+    });
+  };
   const channels = detail && (
     <ChannelList
       name={detail.community.name}
       channels={detail.channels}
+      categories={detail.categories}
+      bannerUrl={communityImageUrl(detail.community.id, 'banner', detail.community.bannerUpdatedAt)}
+      onLayout={perms?.manageChannels ? saveLayout : undefined}
       selected={selected?.id}
-      voiceStates={voice}
+      voiceStates={withVoiceNicknames(voice, nicknames)}
+      speakingUserIds={speakingIds}
       onSelect={(channel) => {
         setDialog(null);
         setError('');
@@ -150,17 +397,44 @@ export function CommunityView({
         setDialog(null);
         router.push(callScreenPath(channel.id, detail.community.id));
       }}
+      headerExtra={
+        <CommunityEventsButton
+          communityId={detail.community.id}
+          canManage={Boolean(perms?.manageChannels)}
+          voiceChannels={detail.channels.filter((c) => c.kind === 'VOICE')}
+          refreshKey={eventsKey}
+        />
+      }
       onInvite={() => setDialog('invite')}
       onSettings={() => setDialog('settings')}
       canManage={!!canManage}
       onLeave={detail.myRole !== 'OWNER' ? () => setDialog('leave') : undefined}
+      onMarkRead={() => {
+        setDetail((previous) =>
+          previous && { ...previous, channels: previous.channels.map((c) => ({ ...c, unread: 0 })) },
+        );
+        void api.markCommunityRead(detail.community.id).catch(() =>
+          setError('Não foi possível marcar a comunidade como lida.'),
+        );
+      }}
     />
   );
   return (
     <div className="flex h-full min-h-0 min-w-0">
       <CommunityRail
-        communities={communities}
+        communities={sortByOrder(
+          // Comunidade aberta: o total vem dos canais (ja atualizados em tempo real).
+          detail
+            ? communities.map((community) =>
+                community.id === detail.community.id
+                  ? { ...community, unread: detail.channels.reduce((sum, c) => sum + (c.unread ?? 0), 0) }
+                  : community,
+              )
+            : communities,
+          order,
+        )}
         selected={communityId}
+        onReorder={reorder}
         onSelect={(id) => onNavigate(id)}
         onCreate={() => setDialog('create')}
         onJoin={() => setDialog('join')}
@@ -187,15 +461,54 @@ export function CommunityView({
             {error}
           </Banner>
         )}
+        {notice && (
+          <Banner
+            variant="info"
+            className="m-4"
+            action={
+              <Button variant="ghost" size="sm" onClick={() => setNotice('')}>
+                Fechar
+              </Button>
+            }
+          >
+            {notice}
+          </Banner>
+        )}
+        {searchOpen && detail && (
+          <MessageSearchDialog
+            communityId={detail.community.id}
+            channels={detail.channels.filter((c) => c.kind === 'TEXT')}
+            members={detail.members}
+            onClose={() => setSearchOpen(false)}
+            onOpen={(hit) => {
+              setSearchOpen(false);
+              setFocusMessageId(hit.id);
+              onNavigate(detail.community.id, hit.channelId);
+            }}
+          />
+        )}
         {selected && detail ? (
           <ChannelChat
             key={selected.id}
             channelId={selected.id}
             name={selected.name}
             meId={meId}
-            canManage={!!canManage}
+            canManage={Boolean(perms?.manageMessages)}
+            authorColors={authorColors}
+            authorNicknames={nicknames}
             state={messages}
             dispatch={dispatch}
+            onSearch={() => setSearchOpen(true)}
+            focusMessageId={focusMessageId}
+            onFocused={clearFocus}
+            topic={selected.topic ?? null}
+            onSaveTopic={perms?.manageChannels ? (value) => api.updateChannelTopic(selected.id, value).then(() => refresh()) : undefined}
+            typingText={typing.textFor(selected.id, (userId, name) => nicknames.get(userId) ?? name)}
+            onTyping={(value) => emitTyping(selected.id, value)}
+            canSend={selected.canSend}
+            announcement={selected.announcement}
+            slowModeSeconds={selected.slowModeSeconds}
+            slowModeExempt={Boolean(perms?.manageChannels)}
           />
         ) : (
           <div className="m-auto p-6 text-center text-sm text-ink-muted">
@@ -228,9 +541,7 @@ export function CommunityView({
         )}
       </div>
       {detail && (
-        <div className="hidden h-full w-60 shrink-0 xl:block">
-          <MemberList members={detail.members} />
-        </div>
+        <div className="hidden h-full w-60 shrink-0 xl:block">{memberList}</div>
       )}
       {dialog === 'create' && (
         <CreateCommunityDialog
@@ -239,6 +550,32 @@ export function CommunityView({
             setDialog(null);
             void refreshList();
             onNavigate(id);
+          }}
+        />
+      )}
+      {moderation && detail && (
+        <ModerationDialog
+          action={moderation.action}
+          member={moderation.member}
+          onClose={() => setModeration(null)}
+          onConfirm={async ({ duration, reason }) => {
+            const { community } = detail;
+            const userId = moderation.member.userId;
+            if (moderation.action === 'timeout') await api.timeoutCommunityMember(community.id, userId, duration, reason);
+            else if (moderation.action === 'kick') await api.kickCommunityMember(community.id, userId, reason);
+            else await api.banCommunityMember(community.id, userId, reason);
+            refresh();
+          }}
+        />
+      )}
+      {nicknameFor && detail && (
+        <NicknameDialog
+          member={nicknameFor}
+          self={nicknameFor.userId === meId}
+          onClose={() => setNicknameFor(null)}
+          onSave={async (nickname) => {
+            await api.setCommunityNickname(detail.community.id, nicknameFor.userId, nickname);
+            refresh();
           }}
         />
       )}
@@ -251,7 +588,7 @@ export function CommunityView({
           detail={detail}
           meId={meId}
           onClose={() => setDialog(null)}
-          onChanged={refresh}
+          onChanged={() => { refresh(); void refreshList(); }}
           onGone={gone}
         />
       )}
@@ -294,7 +631,7 @@ export function CommunityView({
                 </Tooltip>
               </div>
               <div className="min-h-0 flex-1">
-                {dialog === 'channels' ? channels : <MemberList members={detail.members} />}
+                {dialog === 'channels' ? channels : memberList}
               </div>
             </Dialog>
           </Modal>
@@ -302,4 +639,13 @@ export function CommunityView({
       )}
     </div>
   );
+}
+
+/** Copia do set com `id` presente ou ausente (mesma referencia se nada muda). */
+function toggled(set: ReadonlySet<string>, id: string, present: boolean): ReadonlySet<string> {
+  if (set.has(id) === present) return set;
+  const next = new Set(set);
+  if (present) next.add(id);
+  else next.delete(id);
+  return next;
 }
