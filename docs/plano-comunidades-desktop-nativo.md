@@ -6,7 +6,9 @@ Data: 2026-11-09. Decisões do Arlindo:
 - Comunidades são uma **camada nova**: as salas soltas (temporária, link, convidado) continuam como estão.
 - Visual: **layout do Discord com a marca Scale** (trilho de comunidades, lista de canais,
   chat no centro, membros à direita), mantendo as cores azul-violeta e os ícones SVG próprios.
-- O Electron (`apps/desktop`) continua até o nativo ter voz validada no Windows e no Linux.
+- ~~O Electron (`apps/desktop`) continua até o nativo ter voz validada no Windows e no Linux.~~
+  **Revisto em 2026-11-16:** o Electron foi removido antes disso. O nativo passou a ser o
+  único desktop publicado, e quem precisa de voz usa o Scale pelo navegador até o R2.
 
 Isso muda o `PRODUCT.md`, que dizia para não inventar comunidades nem canais. A
 seção "Fatos e limites" passa a citar comunidades.

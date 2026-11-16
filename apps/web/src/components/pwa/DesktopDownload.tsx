@@ -7,13 +7,10 @@ import {
   RELEASES_URL,
   currentOperatingSystem,
   downloadOffer,
+  fetchDesktopAssets,
+  type DesktopAssets,
   type OperatingSystem,
 } from '@/lib/downloads';
-
-/** Dentro do proprio app desktop nao faz sentido oferecer o instalador. */
-function isDesktopApp(): boolean {
-  return typeof navigator !== 'undefined' && / Electron\//i.test(navigator.userAgent);
-}
 
 export interface DesktopDownloadProps {
   /**
@@ -21,30 +18,53 @@ export interface DesktopDownloadProps {
    * `panel` e a versão compacta usada dentro do painel de aplicativo.
    */
   variant?: 'section' | 'panel';
+  /**
+   * Quando `false`, nem detecta o sistema nem consulta a API de releases.
+   *
+   * O painel de aplicativo fica em TODA pagina dentro de um `<details>`
+   * fechado; buscar ali de olhos fechados faria toda visita (inclusive a sala
+   * em chamada) bater em `api.github.com` sem ninguem ter pedido download.
+   */
+  ativo?: boolean;
   className?: string;
 }
 
 /**
- * Botão de download do app desktop já apontando para o sistema do visitante.
+ * Botão de download do app desktop nativo já apontando para o sistema do
+ * visitante.
  *
- * A detecção só acontece depois da montagem: a página é exportada
- * estaticamente, então o HTML servido não pode depender do navegador.
+ * Tudo acontece depois da montagem: a página é exportada estaticamente, então
+ * o HTML servido não pode depender nem do navegador nem da API do GitHub.
  */
-export function DesktopDownload({ variant = 'section', className }: DesktopDownloadProps) {
+export function DesktopDownload({ variant = 'section', ativo = true, className }: DesktopDownloadProps) {
   const [os, setOs] = useState<OperatingSystem | null>(null);
-  const [inApp, setInApp] = useState(false);
+  const [assets, setAssets] = useState<DesktopAssets | null>(null);
+  const [carregando, setCarregando] = useState(true);
 
   useEffect(() => {
-    setInApp(isDesktopApp());
+    if (!ativo) return;
     setOs(currentOperatingSystem());
-  }, []);
+    const controller = new AbortController();
+    // A guarda e POR EFEITO, nao pelo signal: em dev o StrictMode roda o efeito
+    // duas vezes e a busca abortada da primeira volta `null` logo depois: sem
+    // `vigente`, esse `null` sobrescreveria o resultado bom da segunda.
+    let vigente = true;
+    void fetchDesktopAssets(controller.signal).then((found) => {
+      if (!vigente) return;
+      setAssets(found);
+      setCarregando(false);
+    });
+    return () => {
+      vigente = false;
+      controller.abort();
+    };
+  }, [ativo]);
 
-  if (inApp) return null;
   // Antes de montar (e durante o export estático) nada é renderizado, para não
   // oferecer o instalador errado por um instante.
-  if (!os) return null;
+  if (!os || carregando) return null;
 
-  const { primary, secondary, note } = downloadOffer(os);
+  const { primary, secondary, note } = downloadOffer(os, assets);
   const compact = variant === 'panel';
 
   return (
@@ -88,7 +108,7 @@ export function DesktopDownload({ variant = 'section', className }: DesktopDownl
         className="inline-flex items-center gap-1.5 text-xs text-ink-muted underline underline-offset-4 hover:text-ink-secondary"
       >
         <Icon name="github" size={14} />
-        Todas as versões e notas de atualização
+        {assets ? `Versão ${assets.version} · todas as versões` : 'Todas as versões e notas de atualização'}
       </a>
     </div>
   );

@@ -616,8 +616,8 @@ function HomePageInner() {
                 Baixar o aplicativo
               </h3>
               <p className="mt-1 mb-4 text-sm text-ink-secondary">
-                O app de computador abre o Scale em uma janela própria, com atalho no sistema e
-                atualização automática.
+                O app de computador é nativo: abre rápido, tem atalho no sistema e guarda o login
+                no cofre de senhas do seu computador.
               </p>
               <DesktopDownload />
             </section>

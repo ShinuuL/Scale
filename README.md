@@ -9,7 +9,7 @@
 | Camada | Tecnologia |
 |--------|------------|
 | Frontend | Next.js 15 (App Router), export estatico |
-| Desktop | Electron 44 (Windows; abre o servidor configurado) |
+| Desktop | Rust + egui (Windows/Linux; UI nativa) |
 | Backend | Fastify 5 |
 | WebSocket | Socket.io 4 |
 | ORM | Prisma 6 |
@@ -112,11 +112,10 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
 │   │   ├── src/       # lib/, plugins/, routes/, socket/
 │   │   ├── prisma/    # Prisma schema
 │   │   └── Dockerfile
-│   └── desktop/       # Electron: src/core (logica pura testada), main, preload,
-│   │                  # renderer (setup e seletor de tela), electron-builder.yml
+│   └── desktop-native/ # Cliente nativo Rust + egui: src/ (api, net, ui), Cargo.toml
 ├── packages/
 │   └── shared/        # @scale/shared: schemas zod, tipos de eventos, limites
-├── release/           # instaladores gerados (ignorado pelo git), ex. release/desktop/
+├── release/           # instaladores gerados (ignorado pelo git)
 ├── e2e/               # Playwright
 ├── docs/
 ├── docker-compose.yml
@@ -135,18 +134,20 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
   de transmissao de tela (Go Live) com foco, miniaturas e tela cheia
 - Temas Jade, Grafite e Safira (menu de perfil), lembrados no navegador
 
-### Desktop (Electron, `apps/desktop`)
+### Desktop (nativo em Rust, `apps/desktop-native`)
 
-- Abre a URL do servidor Scale configurada na primeira execucao (so `https://`,
-  ou `localhost` em dev); o login por cookie HttpOnly funciona igual ao navegador
-- Janela endurecida (sandbox, contextIsolation, sem Node na pagina, navegacao
-  presa a origin, so microfone e captura de tela liberados) e fuses aplicados
-- Seletor proprio de tela/janela para o compartilhamento
-- Instaladores: `npm run dist:desktop` gera `release/desktop/Scale-Setup-x64.exe`
-  (Windows) e `npm run dist:desktop:linux` gera `Scale-x64.AppImage` e
-  `Scale-x64.deb` (sem assinatura de codigo por enquanto: o SmartScreen alerta)
-- Auto-update pelas releases do GitHub (Windows e AppImage); a landing page
-  detecta o sistema e linka o instalador certo
+- UI nativa (Rust + egui), nao e navegador embutido: fala HTTP e WebSocket
+  direto com o servidor
+- Login por e-mail/senha com o JWT no keyring do sistema (fallback: arquivo
+  `0600` na pasta de configuracao)
+- R1: comunidades, canais de texto, convites e mensagens diretas.
+  **Voz e tela ainda nao** (R2+) — para chamada, use o navegador
+- Instaladores: `npm run dist:desktop` (cargo-packager) gera `.exe` no Windows e
+  AppImage + `.deb` no Linux (sem assinatura de codigo por enquanto: o
+  SmartScreen alerta)
+- Publicacao automatica no merge da `main` (`desktop-release.yml`): release
+  `desktop-v<version>` com `SHA256SUMS`; o app se atualiza sozinho conferindo o
+  SHA-256. A landing page detecta o sistema e linka o instalador certo
 - Guia: `docs/desktop.md`
 
 ### Backend (porta 4100 no host em dev; 4000 no container)
@@ -256,14 +257,17 @@ Dashboard em `/metrics` com cards (uptime, salas, peers) e auto-refresh a cada 1
 ### Vitest (unit/integration)
 
 `npm run test` na raiz compila o `@scale/shared` e roda todos os workspaces:
-**339 testes**.
+**847 testes**.
 
 | Workspace | Testes | Cobre |
 |---|---|---|
-| `scale-backend` (`apps/server`) | 148 (13 arquivos) | chat socket, REST paginado, uploads (magic bytes, quota, GC, sandbox), hardening (auth/CORS/Helmet/trust proxy), salas e senha, signaling, metricas; `securityAudit.test.ts` (um caso por item da auditoria) e `participation.test.ts` (room ticket e `guestId`) |
-| `scale-frontend` (`apps/web`) | 87 | chat e upload, `useSocket`, `useWebRTC` (audio nos dois sentidos, glare), palco Go Live, temas, menu de perfil, aviso de desconexao, `Icon` |
-| `scale-desktop` (`apps/desktop`) | 99 | URL do servidor, config, navegacao permitida/bloqueada, permissoes, IPC, protocolo local |
-| `@scale/shared` | 5 | schemas compartilhados |
+| `scale-backend` (`apps/server`) | 437 (47 arquivos) | chat socket, REST paginado, uploads (magic bytes, quota, GC, sandbox), hardening (auth/CORS/Helmet/trust proxy), salas e senha, signaling, metricas, comunidades e canais, moderacao e administracao; `securityAudit.test.ts` (um caso por item da auditoria) e `participation.test.ts` (room ticket e `guestId`) |
+| `scale-frontend` (`apps/web`) | 397 (59 arquivos) | chat e upload, `useSocket`, `useWebRTC` (audio nos dois sentidos, glare), palco Go Live, temas, menu de perfil, aviso de desconexao, `Icon`, download do desktop (`downloads.test.ts`) |
+| `@scale/shared` | 13 (4 arquivos) | schemas compartilhados |
+
+O desktop nativo nao e um workspace npm: roda com `cargo test` em
+`apps/desktop-native` (o workflow de release executa junto com
+`cargo clippy -- -D warnings`).
 
 Os testes do backend usam o SQLite local `apps/server/prisma/data.db`. Depois
 de mudar o schema, sincronize-o:
@@ -302,10 +306,9 @@ npm run build        # Build em todos os workspaces
 npm run test         # Vitest unit/integration
 npm run test:e2e     # Playwright
 
-# Desktop
-npm run dev:desktop  # Electron em dev (se ELECTRON_RUN_AS_NODE estiver definida:
-                     # env -u ELECTRON_RUN_AS_NODE npm run dev:desktop)
-npm run dist:desktop # Instalador Windows em release/desktop/
+# Desktop nativo (Rust; precisa da toolchain Rust instalada)
+npm run dev:desktop  # cargo run
+npm run dist:desktop # instaladores via cargo-packager (cargo install cargo-packager --locked)
 
 # Docker
 docker compose up --build              # Sobe tudo
@@ -322,7 +325,7 @@ cd apps/server && npx prisma studio       # Interface visual do DB
 
 - [Branding — Identidade Visual](docs/branding.md) - Conceito, paleta e tipografia do Scale
 - [Configuracao do tunel publico](docs/tunnel-setup.md) - Guia do tunel cloudflared (URL publica efemera)
-- [Cliente desktop](docs/desktop.md) - Electron: rodar, gerar instalador, trocar servidor, seguranca
+- [Cliente desktop](docs/desktop.md) - Nativo em Rust: rodar, gerar instaladores, publicar release, download no site
 - [Assistente de moderacao](docs/moderacao.md) - Arquitetura, provedores, custos, variaveis e troubleshooting
 - Painel de administracao da moderacao em `/admin/moderation` (so admin; ver [docs/moderacao.md](docs/moderacao.md))
 - [Administracao](docs/administracao.md) - Hub `/admin`, papeis raiz (.env) e concedido, gestao de administradores e auditoria

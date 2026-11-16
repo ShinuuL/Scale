@@ -34,7 +34,7 @@ Sistema de videochamadas P2P (mesh) com escamas de dragão — sala de voz e tel
 ├── apps/
 │   ├── web/           # Next.js 15 App Router, export estatico (servido pelo Caddy)
 │   ├── server/        # Fastify 5 + Socket.io + Prisma
-│   └── desktop/       # Cliente Electron (Windows/Linux): abre a URL do servidor numa janela endurecida
+│   └── desktop-native/ # Cliente nativo Rust + egui (Windows/Linux): UI propria, HTTP + WebSocket
 ├── packages/
 │   └── shared/        # @scale/shared: schemas zod, tipos de eventos e limites
 ├── Caddyfile          # proxy: estaticos + /api + /socket.io + CSP
@@ -76,30 +76,12 @@ Sistema de videochamadas P2P (mesh) com escamas de dragão — sala de voz e tel
   `desktop-v<version>` com instaladores e `SHA256SUMS` (`desktop-release.yml`).
 - O app se atualiza sozinho pelas releases, sempre conferindo o SHA-256.
   Detalhes em `apps/desktop-native/README.md`.
-
-## Desktop (Electron)
-
-`apps/desktop` (pacote `scale-desktop`) **nao empacota o frontend**: abre a origin
-do servidor configurado (cookie HttpOnly SameSite=Strict, mesmo CSP, front
-atualiza sem reinstalar). Guia: `docs/desktop.md`.
-
-- Janelas: `contextIsolation`, `sandbox`, `webSecurity` ligados; `nodeIntegration`,
-  `webviewTag`, `allowRunningInsecureContent` desligados; DevTools so com `--dev`
-  fora do pacote.
-- A pagina remota **nao tem preload**. So as telas locais (setup, seletor de tela),
-  servidas por `scale-app://local`, tem preload com `contextBridge` minimo; o main
-  revalida tudo com zod e confere o frame remetente.
-- Navegacao: so a origin configurada; outra origin `https:` abre no navegador do
-  sistema; o resto e bloqueado. `<webview>` sempre bloqueado.
-- Permissoes: `media` (apenas audio), `display-capture` e `speaker-selection`
-  da origin configurada; selecao de saida somente no frame principal.
-  `notifications` exige frame principal, confirmacao nativa explicita e
-  consentimento por origin valido somente na sessao atual.
-  Captura de tela passa pelo seletor proprio (`setDisplayMediaRequestHandler`).
-- Erros de TLS nunca sao ignorados (sem handler `certificate-error`).
-- Fuses: RunAsNode, NODE_OPTIONS, `--inspect` e privilegios extras de `file://`
-  desligados; integridade do asar e OnlyLoadAppFromAsar ligados.
-- Logica de seguranca pura em `apps/desktop/src/core/` com testes Vitest.
+- **Download no site:** `apps/web/src/lib/downloads.ts` resolve os instaladores
+  pela MESMA API de releases que o app usa para se atualizar (os nomes do
+  cargo-packager carregam a versao, entao nao ha link fixo possivel), filtrando
+  `desktop-v*` e achando cada arquivo pela extensao. Guia: `docs/desktop.md`.
+- O Electron (`apps/desktop`) foi REMOVIDO em novembro de 2026. Nao recrie:
+  o nativo e o unico desktop publicado.
 
 ## Gates Obrigatórios
 

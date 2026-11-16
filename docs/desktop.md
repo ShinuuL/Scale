@@ -1,151 +1,107 @@
-# Scale Desktop (Electron)
+# Scale Desktop (nativo, Rust)
 
-Cliente desktop do Scale para Windows e Linux (x64). O app **não empacota o
-frontend**:
-ele abre a URL do servidor Scale numa janela endurecida. Assim o login (cookie
-HttpOnly `SameSite=Strict`), o CSP e as atualizações do front são os mesmos do
-navegador — atualizar o servidor atualiza o app, sem reinstalar.
+Cliente desktop do Scale para Windows e Linux (x64). **UI nativa em Rust +
+[egui](https://github.com/emilk/egui)** — não é um navegador embutido: a tela é
+desenhada pelo próprio app e a conversa com o servidor é HTTP + WebSocket
+direto.
 
-Código: `apps/desktop` (workspace `scale-desktop`).
+Código: `apps/desktop-native` (crate `scale-desktop`). Detalhes de
+desenvolvimento no [README do crate](../apps/desktop-native/README.md).
+
+> **Histórico:** até novembro de 2026 existia um cliente Electron em
+> `apps/desktop` que apenas abria a URL do servidor numa janela endurecida. Ele
+> foi removido quando o nativo passou a ser o único desktop publicado. O
+> histórico continua no git (último commit com ele: `aa15b4c`).
+
+## O que já funciona (R1)
+
+- Login por e-mail/senha; o JWT vai para o **keyring do sistema** (fallback:
+  arquivo `0600` na pasta de configuração).
+- Comunidades, canais de texto em tempo real, convites e mensagens diretas.
+
+**Ainda não:** voz e compartilhamento de tela (R2+). Para chamada, use o Scale
+pelo navegador. A landing page diz isso junto do botão de download.
 
 ## Requisitos
 
-- **Servidor com HTTPS** e certificado válido (domínio próprio ou o túnel
-  `*.trycloudflare.com`, ver `docs/tunnel-setup.md`). `http://` só é aceito para
-  `localhost` / `127.0.0.1` (desenvolvimento). Erros de certificado não são
-  ignorados.
-- O servidor precisa responder `GET /api/health` com `{"status":"ok"}`.
-- Windows 10/11 x64, ou Linux x64 com GTK 3 (AppImage ou `.deb`). Microfone e
-  captura de tela pedem a permissão normal do sistema — no Windows,
-  Configurações > Privacidade; no Linux, o portal do desktop.
-
-## Uso
-
-1. Na primeira execução aparece a tela **Conectar ao servidor Scale**.
-2. Digite só o endereço base (ex.: `https://scale.exemplo.com.br`) — sem caminho,
-   parâmetros, usuário ou senha.
-3. **Testar e salvar** chama `/api/health`; se responder ok, o endereço é salvo e
-   o Scale abre.
-
-**Trocar servidor:** menu Arquivo > Trocar servidor (`Ctrl+Shift+S`). Se o servidor
-estiver fora do ar, a janela de erro também oferece Trocar servidor.
-
-Configuração salva em `%APPDATA%\Scale\config.json` (origin) e
-`window-state.json` (tamanho/posição). Arquivo inválido ou adulterado é
-descartado e a tela de configuração volta.
-
-Compartilhar tela abre o seletor do app (telas e janelas com miniatura; setas
-navegam, Enter compartilha, Esc cancela). A opção "Compartilhar áudio do sistema"
-aparece no Windows, desmarcada; ela só fica ativa quando a chamada pede áudio no
-`getDisplayMedia`. Permissões e suporte do sistema continuam necessários.
-
-**Fechar e sair:** com bandeja disponível, o botão de fechar oculta a janela e
-mantém a chamada. Clique no ícone da bandeja para abrir. Para encerrar chamadas
-e o processo, use **Sair do Scale e encerrar chamadas** na bandeja ou Arquivo >
-Sair. Sem bandeja disponível, fechar a janela encerra o aplicativo.
-
-**Microfone global:** o menu da bandeja oferece ativação opcional de
-`Ctrl+Shift+M`. O atalho alterna o microfone somente numa chamada ativa; não é
-push-to-talk. Se outro aplicativo ocupar o atalho, o Scale informa a falha e o
-mantém desligado. A preferência vale nesta execução. O main envia apenas um
-evento DOM literal à página principal da origin configurada: não há preload
-remoto, IPC remoto nem API privilegiada exposta à página.
-
-**Notificações:** em **Aplicativo e notificações**, ative os alertas opcionais.
-No desktop há confirmação nativa adicional, por servidor e somente nesta
-sessão. São alertas genéricos de menção e mensagem privada recebida, sem texto
-da conversa; aparecem quando a página está oculta. Não há push com app fechado.
-
-**Energia e recuperação:** a janela principal mantém os timers ao ficar oculta.
-Um bloqueio de suspensão automática do aplicativo existe durante reprodução de
-mídia observada pelo Electron; não detecta sozinho chamada com captura local
-sem reprodução, não impede suspensão manual/fechamento da tampa e não mantém a
-tela acesa. O bloqueio é liberado na pausa, navegação, suspensão, encerramento
-ou crash do renderer. A retomada envia evento à página para recuperar a
-conexão sem recarregar uma chamada; um crash pede confirmação para reabrir o
-servidor. Isso usa recursos do cliente, sem trabalho periódico novo na VPS.
-
-**Instalação web:** o frontend também tem manifest e instalação opcional pelo
-navegador. O service worker guarda somente assets públicos selecionados e
-uma página genérica de indisponibilidade; não guarda salas, tickets, mensagens,
-API nem downloads. Uma nova versão espera todas as janelas antigas fecharem,
-sem recarregar chamadas. A instalação depende de HTTPS/origin estável e do
-suporte do navegador; URLs efêmeras do túnel mudam sua identidade.
-
-## Desenvolvimento
+- Rust estável (1.85+)
+- Linux: `libxcb`, `libxkbcommon`, `fontconfig`, `freetype` e `pkg-config`
 
 ```bash
-npm install                 # na raiz
-npm run dev:desktop         # build + abre apontando para http://localhost:8090 (stack Docker)
-npm run build -w scale-desktop
-npm run test -w scale-desktop
-npm run lint -w scale-desktop
+# Ubuntu/Debian
+sudo apt install libxcb1-dev libxcb-render0-dev libxcb-shape0-dev \
+  libxcb-xfixes0-dev libxkbcommon-dev libfontconfig1-dev libfreetype6-dev pkg-config
 ```
 
-- `--dev` (só fora do pacote) habilita DevTools e o override `--server=<url>`
-  (não é salvo). `--profile=<pasta>` isola config/cookies (útil em testes).
-- Se a variável `ELECTRON_RUN_AS_NODE` estiver definida no shell (alguns
-  terminais de IDE baseados em Electron a definem), o Electron sobe como Node e
-  o app falha com `Cannot read properties of undefined (reading 'isPackaged')`.
-  Remova-a antes: `env -u ELECTRON_RUN_AS_NODE npm run dev:desktop`.
+## Rodar e verificar
+
+```bash
+npm run dev:desktop   # atalho para: cargo run --manifest-path apps/desktop-native/Cargo.toml
+
+cd apps/desktop-native
+cargo test
+cargo clippy -- -D warnings
+```
+
+Na primeira tela, informe a origin do servidor (https; http só para
+`localhost`/`127.0.0.1`).
 
 ## Gerar instaladores
 
 ```bash
-npm run dist:desktop         # Windows: release/desktop/Scale-Setup-x64.exe
-npm run dist:desktop:linux   # Linux:   release/desktop/Scale-x64.AppImage e Scale-x64.deb
+cargo install cargo-packager --locked
+npm run dist:desktop   # atalho para: cargo packager --release --manifest-path apps/desktop-native/Cargo.toml
 ```
 
-Cada alvo só pode ser gerado no seu próprio sistema (o Linux também sai de um
-WSL/contêiner Ubuntu). O hook `scripts/after-pack.cjs` grava os fuses do
-Electron antes do instalador. Sem certificado de assinatura configurado o
-instalador sai **sem assinatura** (SmartScreen vai alertar).
-
-Os nomes dos artefatos **não têm versão** de propósito: a landing page linka
-`https://github.com/ShinuuL/Scale/releases/latest/download/<arquivo>`, que o
-GitHub redireciona sempre para a release mais recente — sem chamada de API,
-sem token, sem nada no backend (`apps/web/src/lib/downloads.ts`).
+Cada alvo só sai no seu próprio sistema (Linux também sai de um WSL/contêiner
+Ubuntu). Sem certificado de assinatura configurado, o instalador sai **sem
+assinatura** — o SmartScreen vai alertar no Windows.
 
 ## Publicar uma versão
 
-1. Suba a versão em `apps/desktop/package.json` (ex.: `0.2.0`) e faça o commit.
-2. `git tag v0.2.0 && git push origin v0.2.0`.
-3. O workflow `.github/workflows/release-desktop.yml` confere que a tag bate com
-   a versão do `package.json`, roda lint/testes e empacota Windows e Linux em
-   paralelo, enviando tudo para uma release **em rascunho**.
-4. Confira os artefatos e **publique a release** no GitHub. Só nesse momento os
-   apps instalados passam a enxergar a atualização.
+A publicação é automática e a regra de versão é obrigatória: **toda mudança em
+`apps/desktop-native` sobe `version` no `Cargo.toml`** (padrão: patch). O
+workflow [`desktop-release.yml`](../.github/workflows/desktop-release.yml) faz
+valer — o PR falha se a versão não for maior que a última release `desktop-v*`,
+e o merge na `main` roda testes e clippy, gera os instaladores nos runners
+Windows e Linux, calcula o `SHA256SUMS` e publica a release `desktop-v<version>`
+criando a tag.
 
 ## Auto-update
 
-`src/main/updater.ts` (electron-updater) checa a release mais recente na
-abertura e a cada 6 horas, baixa em segundo plano e só avisa quando o pacote
-está pronto: diálogo com **Reiniciar agora** / **Depois**. Escolhendo "Depois",
-a atualização é aplicada quando o app for fechado. Falha de rede em checagem
-automática é silenciosa; o item **Ajuda > Verificar atualizações...** sempre
-responde algo.
+Ao abrir, o app consulta a API de releases do GitHub. Havendo `desktop-v*` mais
+nova (sem rascunho/pré-release), ele baixa o instalador da plataforma, **confere
+o SHA-256 pelo `SHA256SUMS`** e avisa com "Reiniciar agora" / "Adiar". Checksum
+diferente descarta a atualização. No `.deb` ele só avisa e abre a página da
+release, porque instalar exige root. Detalhes no
+[README do crate](../apps/desktop-native/README.md).
 
-Onde funciona (`src/core/updatePolicy.ts`): Windows (NSIS) e Linux via
-**AppImage**. Instalação por `.deb` e execução fora do pacote (dev) não se
-atualizam sozinhas — nesses casos o menu oferece abrir a página de download.
+## Download no site
 
-## Segurança (resumo)
+`apps/web/src/lib/downloads.ts` resolve os instaladores **pela mesma API de
+releases que o app usa para se atualizar** e `DesktopDownload.tsx` mostra o
+botão do sistema do visitante: `.exe` no Windows, AppImage no Linux (com `.deb`
+como alternativa), e só uma explicação no macOS e no celular.
 
-| Item | Onde |
-|------|------|
-| `contextIsolation`, `sandbox`, `webSecurity`, sem `nodeIntegration`/`webviewTag`/conteúdo inseguro | `src/main/security.ts` (`secureWebPreferences`) |
-| Página remota sem preload; preloads mínimos só nas telas locais | `src/main/mainWindow.ts`, `src/preload/*` |
-| Telas locais via `scale-app://local` (sem privilégios de `file://`) | `src/main/localProtocol.ts`, `src/core/localAsset.ts` |
-| Navegação / `window.open` só na origin; `https:` externo no navegador | `src/core/navigation.ts`, `src/main/security.ts` |
-| Permissões: microfone/captura da origin; saída só frame principal; notificações com consentimento nativo por sessão | `src/core/permissions.ts`, `src/main/security.ts` |
-| Seletor de tela próprio | `src/main/picker.ts`, `src/renderer/picker/*` |
-| IPC: remetente conferido + zod | `src/main/ipcGuard.ts`, `src/core/ipcSchemas.ts` |
-| Instância única, sem DevTools em produção, CSP nas telas locais | `src/main/main.ts`, `src/main/paths.ts`, `src/renderer/*/index.html` |
-| Fuses | `scripts/after-pack.cjs` |
+Dois detalhes que valem lembrar antes de mexer:
+
+- **Por que a API e não um link fixo.** O cargo-packager nomeia os arquivos com
+  a versão (`scale-desktop_0.1.2_x64-setup.exe`), então
+  `releases/latest/download/<arquivo>` não tem nome estável para apontar. E o
+  `latest` do GitHub devolve a release mais recente de **qualquer** tag, não só
+  as de desktop — por isso a busca filtra `desktop-v*` e compara a versão
+  numericamente (`0.10.0` > `0.9.0`).
+- **Os assets são achados pela extensão**, nunca pelo nome completo: uma mudança
+  de convenção do cargo-packager não quebra a página.
+
+Tudo roda **depois da montagem**, porque a página é exportada estaticamente e o
+HTML servido não pode depender nem do navegador nem da API do GitHub. Falha de
+rede ou o limite de 60 requisições/hora da API pública caem no link para a
+página de releases.
 
 ## Pendências
 
+- Voz e compartilhamento de tela (R2+). Até lá, chamada só pelo navegador — a
+  landing page diz isso junto do botão.
 - Assinatura de código (certificado EV/OV) para o instalador e o executável.
-- Build macOS (código é multiplataforma; falta alvo, ícone `.icns`,
-  assinatura/notarização e runner macOS no workflow de release).
-- Auto-update da instalação `.deb` (hoje só AppImage e NSIS).
+- Build macOS (falta alvo, ícone `.icns`, assinatura/notarização e runner).
