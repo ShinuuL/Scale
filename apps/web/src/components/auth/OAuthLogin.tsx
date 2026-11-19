@@ -1,5 +1,6 @@
 'use client';
 
+import { rememberConsentReturn } from '@/lib/authNext';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { Icon, type IconName } from '@/components/ui/Icon';
@@ -74,7 +75,9 @@ export function OAuthLoginButtons({ mode = 'login' }: { mode?: 'login' | 'regist
       <div className="flex flex-col gap-2">
         {enabled.map((provider) => (
           <a key={provider} href={`/api/auth/${provider}`} className={BUTTON_CLASS} onClick={() => {
-            if (new URLSearchParams(window.location.search).get('next') === '/invite') sessionStorage.setItem('scale:invite-oauth-return', String(Date.now()));
+            const next = new URLSearchParams(window.location.search).get('next');
+            if (next === '/invite') sessionStorage.setItem('scale:invite-oauth-return', String(Date.now()));
+            rememberConsentReturn(next);
           }}>
             <Icon name={provider satisfies IconName} size={18} />
             {verb} {PROVIDER_NAME[provider]}

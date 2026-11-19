@@ -56,6 +56,8 @@ export const communityAuditEntrySchema = z.object({
   targetName: z.string().nullable(),
   reason: z.string().nullable(),
   detail: z.string().nullable(),
+  /** Acao feita por app conectado (MCP): nome do app; null = pelo proprio ator. */
+  viaApp: z.string().nullish(),
   createdAt: z.string(),
 });
 export type CommunityAuditEntry = z.infer<typeof communityAuditEntrySchema>;

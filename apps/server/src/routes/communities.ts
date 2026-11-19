@@ -1,3 +1,4 @@
+import { currentViaApp } from '../lib/viaApp.js';
 import { createHash, randomBytes } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Server } from 'socket.io';
@@ -261,7 +262,7 @@ export async function communityRoutes(app: FastifyInstance): Promise<void> {
     const replies = replyToId ? await loadReplies(room.id, [replyToId]) : null;
     const replyTo = replyToId ? replies?.get(replyToId) : undefined;
     if (replyToId && (!replyTo || !replyTo.authorName)) return invalid(reply);
-    const row = await prisma.chatMessage.create({ data: { roomId: room.id, authorId: me, content: body.data.content, replyToId: replyToId ?? null } });
+    const row = await prisma.chatMessage.create({ data: { roomId: room.id, authorId: me, content: body.data.content, replyToId: replyToId ?? null, viaApp: currentViaApp() } });
     const message = toChannelMessage(row, { id: user.id, name: user.name, username: user.username?.name ?? null }, { replyTo: replyTo ?? null });
     await emitToChannel(ioOf(app), room.communityId, room.id, 'channel:message', message);
     await emitCommunityActivity(ioOf(app), room.communityId, room.id, me);

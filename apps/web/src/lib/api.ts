@@ -40,6 +40,7 @@ import { messageSearchQuerySchema, type MessageSearchQuery, type MessageSearchRe
 import { createRoomSchema, authResponseSchema, roomResponseSchema, roomListItemSchema, metricsSchema } from './validation';
 
 import { communityCreateSchema, channelCreateSchema, channelUpdateSchema, communityMemberRoleSchema, communityInviteCreateSchema, communityInviteCodeSchema, channelMessageSendSchema, communityRoleSchema, channelKindSchema, communityPermissionsSchema, customRoleInputSchema, memberCustomRoleSchema, categoryInputSchema, communityLayoutSchema, type CustomRoleInput, type CommunityImageKind, type CommunityLayout } from '@scale/shared';
+import type { ConnectedApp, OAuthAuthorizeInfo } from '@scale/shared';
 import { channelOverrideSchema, channelSettingsSchema, type ChannelSettings } from '@scale/shared';
 import { communityEventInputSchema, communityEventInterestSchema, communityEventListSchema, type CommunityEventInput } from '@scale/shared';
 import { channelUserLimitSchema, communityWelcomeSchema, type CommunityWelcome } from '@scale/shared';
@@ -54,7 +55,7 @@ const channelSchema = z.object({ id: z.string(), name: z.string(), kind: channel
 const memberSchema = z.object({ userId: z.string(), name: z.string(), username: z.string().nullable(), role: communityRoleSchema, customRoleId: z.string().nullable().default(null), timeoutUntil: z.string().nullable().optional(), nickname: z.string().nullable().optional() });
 const customRoleSchema = z.object({ id: z.string(), name: z.string(), color: z.string(), permissions: communityPermissionsSchema });
 const noPermissions = { manageChannels: false, manageInvites: false, manageMessages: false, kickMembers: false };
-export const channelMessageSchema = z.object({ id: z.string(), channelId: z.string(), author: z.object({ id: z.string().nullable(), name: z.string(), username: z.string().nullable() }), content: z.string(), createdAt: z.string(), editedAt: z.string().nullable(), deletedAt: z.string().nullable(), files: z.array(z.object({ id: z.string(), filename: z.string(), mime: z.string(), size: z.number() })).default([]), replyTo: channelReplySchema.nullable().default(null), reactions: z.array(channelReactionSummarySchema).default([]), pinnedAt: z.string().nullable().default(null), pinnedById: z.string().nullable().default(null), system: z.boolean().optional(), threadId: z.string().nullish(), thread: channelThreadSummarySchema.nullish() });
+export const channelMessageSchema = z.object({ id: z.string(), channelId: z.string(), author: z.object({ id: z.string().nullable(), name: z.string(), username: z.string().nullable() }), content: z.string(), createdAt: z.string(), editedAt: z.string().nullable(), deletedAt: z.string().nullable(), files: z.array(z.object({ id: z.string(), filename: z.string(), mime: z.string(), size: z.number() })).default([]), replyTo: channelReplySchema.nullable().default(null), reactions: z.array(channelReactionSummarySchema).default([]), pinnedAt: z.string().nullable().default(null), pinnedById: z.string().nullable().default(null), system: z.boolean().optional(), threadId: z.string().nullish(), thread: channelThreadSummarySchema.nullish(), viaApp: z.string().nullish() });
 const messageSearchResponseSchema = z.object({ results: z.array(z.object({ id: z.string(), channelId: z.string(), channelName: z.string(), author: z.object({ id: z.string().nullable(), name: z.string(), username: z.string().nullable() }), content: z.string(), createdAt: z.string() })), nextCursor: z.string().nullable() });
 const communityDetailSchema = z.object({ community: communitySchema, myRole: communityRoleSchema, myPermissions: communityPermissionsSchema.default(noPermissions), roles: z.array(customRoleSchema).default([]), categories: z.array(categorySchema).optional(), channels: z.array(channelSchema), members: z.array(memberSchema) });
 export type CommunityCustomRole = z.infer<typeof customRoleSchema>;
@@ -378,6 +379,28 @@ class ApiClient {
   }
 
   /** Contas de login externo vinculadas a conta logada. */
+  /* Apps conectados (servidor MCP). A query do pedido vai como veio; o servidor valida. */
+  async getOAuthAuthorizeInfo(query: string): Promise<OAuthAuthorizeInfo> {
+    return this.request<OAuthAuthorizeInfo>(`/api/oauth/authorize/info?${query}`);
+  }
+
+  async decideOAuthAuthorize(params: Record<string, string>, approve: boolean): Promise<{ redirectTo: string }> {
+    const data = await this.request<unknown>('/api/oauth/authorize/decision', {
+      method: 'POST',
+      body: JSON.stringify({ ...params, approve }),
+    });
+    return z.object({ redirectTo: z.string().url() }).parse(data);
+  }
+
+  async getConnectedApps(): Promise<ConnectedApp[]> {
+    const data = await this.request<{ apps: ConnectedApp[] }>('/api/me/apps');
+    return data.apps;
+  }
+
+  async disconnectApp(id: string): Promise<void> {
+    await this.request<unknown>(`/api/me/apps/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  }
+
   async getLinkedAccounts(): Promise<{ github: { login: string } | null; google: boolean }> {
     const data = await this.request<unknown>('/api/me/links');
     return z

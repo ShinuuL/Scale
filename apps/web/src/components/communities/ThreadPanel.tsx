@@ -1,5 +1,6 @@
 'use client';
 
+import { ViaAppBadge } from '@/components/ui/ViaAppBadge';
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import {
   CHANNEL_THREAD_NAME_MAX,
@@ -315,6 +316,7 @@ export function ThreadPanel({
                 <time className="text-xs text-ink-muted" dateTime={message.createdAt}>
                   {timeFormatter.format(new Date(message.createdAt))}
                 </time>
+                {message.viaApp && <ViaAppBadge name={message.viaApp} className="self-center" />}
                 {message.editedAt && !message.deletedAt && (
                   <span className="text-xs text-ink-muted">editada</span>
                 )}

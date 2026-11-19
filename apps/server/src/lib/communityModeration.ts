@@ -1,3 +1,4 @@
+import { currentViaApp } from './viaApp.js';
 import type { Server } from 'socket.io';
 import { moderationRank, outranks, type CommunityAuditAction, type CommunityModerationEvent } from '@scale/shared';
 import { prisma } from './prisma.js';
@@ -51,7 +52,7 @@ export async function audit(communityId: string, input: AuditInput): Promise<voi
       data: {
         communityId, actorId: input.actorId, actorName: actor?.name ?? 'Desconhecido', action: input.action,
         targetId: input.targetId ?? null, targetName: input.targetName?.slice(0, 100) ?? null,
-        reason: input.reason ?? null, detail: input.detail?.slice(0, 200) ?? null,
+        reason: input.reason ?? null, detail: input.detail?.slice(0, 200) ?? null, viaApp: currentViaApp(),
       },
     });
   } catch {

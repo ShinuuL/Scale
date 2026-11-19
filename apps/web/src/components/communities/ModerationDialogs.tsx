@@ -200,7 +200,8 @@ const DETAILED = new Set<CommunityAuditEntry['action']>(['member.nickname', 'cha
 export function auditText(entry: CommunityAuditEntry): string {
   const target = entry.targetName ? `${entry.action === 'community.welcome' ? ' em' : ''} ${entry.targetName}` : '';
   const detail = !entry.detail ? '' : entry.action === 'member.timeout' ? ` por ${entry.detail}` : DETAILED.has(entry.action) ? `: ${entry.detail}` : '';
-  return `${entry.actorName} · ${COMMUNITY_AUDIT_LABELS[entry.action]}${target}${detail}`;
+  const via = entry.viaApp ? ` via ${entry.viaApp}` : '';
+  return `${entry.actorName}${via} · ${COMMUNITY_AUDIT_LABELS[entry.action]}${target}${detail}`;
 }
 
 /** Registro de auditoria paginado. */

@@ -53,6 +53,7 @@ export interface ChatMessageSource {
   editedAt?: Date | null;
   deletedAt?: Date | null;
   files?: ChatFileRow[];
+  viaApp?: string | null;
 }
 
 export interface PublicChatFile {
@@ -77,6 +78,8 @@ export interface PublicChatMessage {
   deletedAt: Date | null;
   edited: boolean;
   files: PublicChatFile[];
+  /** Enviada por app conectado (MCP): nome do app; null = digitada pelo autor. */
+  viaApp: string | null;
 }
 
 export function toPublicFile(file: ChatFileRow): PublicChatFile {
@@ -97,5 +100,6 @@ export function toPublicMessage(msg: ChatMessageSource, viewer?: MessageViewer):
     deletedAt: msg.deletedAt ?? null,
     edited: !deleted && msg.editedAt != null,
     files: deleted ? [] : (msg.files ?? []).filter((f) => f.deletedAt == null).map(toPublicFile),
+    viaApp: msg.viaApp ?? null,
   };
 }

@@ -31,6 +31,9 @@ import { githubAuthRoutes, googleAuthRoutes } from './routes/oauthAuth.js';
 import { moderationRoutes } from './routes/moderation.js';
 import { adminModerationRoutes } from './routes/adminModeration.js';
 import { adminUsersRoutes } from './routes/adminUsers.js';
+import { mcpOAuthRoutes } from './routes/mcpOAuth.js';
+import { mcpRoutes } from './routes/mcp.js';
+import { sweepExpiredOAuthTokens } from './lib/oauthServer.js';
 import { createSocketServer } from './socket/handler.js';
 import { gcDeletedFiles, gcOrphanUploads } from './lib/uploads.js';
 import { sweepExpiredRooms, retryPendingRoomDeletions, ROOM_SWEEP_INTERVAL_MS } from './lib/roomDeletion.js';
@@ -94,6 +97,8 @@ await server.register(googleAuthRoutes);
 await server.register(moderationRoutes);
 await server.register(adminModerationRoutes);
 await server.register(adminUsersRoutes);
+await server.register(mcpOAuthRoutes);
+await server.register(mcpRoutes);
 
 // Health check
 server.get('/health', async () => {
@@ -122,6 +127,7 @@ const runGc = async (): Promise<void> => {
     await retryPendingRoomDeletions(io, server.log);
     await gcDeletedFiles();
     await gcOrphanUploads();
+    await sweepExpiredOAuthTokens();
   } catch (err) { server.log.error(err); } finally { gcRunning = false; }
 };
 const gcTimer = setInterval(() => { void runGc(); }, 24 * 60 * 60 * 1000);

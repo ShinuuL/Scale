@@ -12,7 +12,7 @@ import Link from 'next/link';
 import { OAuthLoginButtons, readOAuthError } from '@/components/auth/OAuthLogin';
 
 export default function LoginPage() {
-  const [next, setNext] = useState<'/invite' | '/communities' | '/'>('/');
+  const [next, setNext] = useState<string>('/');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);

@@ -62,7 +62,10 @@ const policy = [
   "worker-src 'self'",
   "manifest-src 'self'",
   // 'self' cobre fetch /api e o WebSocket same-origin (ws/wss do proprio host).
-  "connect-src 'self' wss:",
+  // api.github.com: a secao "Baixar o aplicativo" resolve os instaladores da
+  // release mais recente pela API publica de releases
+  // (apps/web/src/lib/downloads.ts). Sem isto o fetch morre na CSP em producao.
+  "connect-src 'self' wss: https://api.github.com",
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",

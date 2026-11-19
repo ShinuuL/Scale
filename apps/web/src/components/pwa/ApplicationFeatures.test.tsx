@@ -65,7 +65,7 @@ describe('optional application features', () => {
     expect(event.defaultPrevented).toBe(true);
     expect(prompt).not.toHaveBeenCalled();
     fireEvent.click(screen.getByText('Aplicativo e notificações'));
-    fireEvent.click(screen.getByRole('button', { name: 'Instalar Scale' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Instalar no navegador' }));
     await waitFor(() => expect(screen.getByText('Use o menu do navegador para instalar o Scale.')).toBeInTheDocument());
   });
   it('returns focus to the visible header trigger after Escape', () => {
@@ -126,7 +126,7 @@ describe('optional application features', () => {
     render(<ApplicationFeatures />);
     const prompt = Object.assign(new Event('beforeinstallprompt'), { prompt: vi.fn(async () => {}), userChoice: Promise.resolve({ outcome: 'dismissed' as const }) });
     act(() => { window.dispatchEvent(prompt); });
-    expect(screen.queryByRole('button', { name: 'Instalar Scale' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Instalar no navegador' })).not.toBeInTheDocument();
     expect(screen.queryByRole('complementary', { name: 'Instalar o Scale' })).not.toBeInTheDocument();
   });
 });

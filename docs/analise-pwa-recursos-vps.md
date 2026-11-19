@@ -6,6 +6,10 @@ Data: 2026-11-06. Baseline: HEAD `706075f`.
 > após esta análise. Consulte o [estado atual da implementação](./implantacao.md)
 > para entregas, verificações e pendências. Os achados abaixo foram preservados
 > como registro do HEAD analisado; não constituem avaliação do código atual.
+>
+> Os links para `apps/desktop/` apontam para o cliente **Electron**, removido em
+> 2026-11-16 (último commit com ele: `aa15b4c`). O desktop atual é nativo em
+> Rust, em `apps/desktop-native` — veja [docs/desktop.md](./desktop.md).
 
 ## Escopo e limites
 

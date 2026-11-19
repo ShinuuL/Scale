@@ -171,7 +171,7 @@ export async function communityModerationRoutes(app: FastifyInstance): Promise<v
     });
     const entries: CommunityAuditEntry[] = rows.map((r) => ({
       id: r.id, action: r.action as CommunityAuditAction, actorId: r.actorId, actorName: r.actorName, targetId: r.targetId,
-      targetName: r.targetName, reason: r.reason, detail: r.detail, createdAt: r.createdAt.toISOString(),
+      targetName: r.targetName, reason: r.reason, detail: r.detail, viaApp: r.viaApp, createdAt: r.createdAt.toISOString(),
     }));
     return reply.send({ entries, nextCursor: rows.length === q.data.limit ? rows[rows.length - 1]?.id ?? null : null });
   });
