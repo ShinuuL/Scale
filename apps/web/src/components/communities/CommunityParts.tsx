@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Button as AriaButton, Menu, MenuItem, MenuTrigger, Popover } from 'react-aria-components';
 import { AppModal } from '@/components/ui/AppModal';
 import { Icon } from '@/components/ui/Icon';
@@ -49,6 +49,29 @@ export interface Member {
 }
 
 /** Nome acessivel da contagem: "1 mensagem não lida", "3 mensagens não lidas", "mais de 99 ...". */
+/**
+ * Foto do membro (rota da comunidade) ou, sem foto / se a imagem falhar, a
+ * inicial. Decorativo: o nome vem sempre ao lado.
+ */
+function MemberAvatar({ name, src, className }: { name: string; src?: string | null; className: string }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [src]);
+  if (src && !failed) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element -- export estatico, sem otimizador de imagem
+      <img src={src} alt="" aria-hidden="true" draggable={false} onError={() => setFailed(true)} className={`${className} object-cover`} />
+    );
+  }
+  return (
+    <span aria-hidden="true" className={`${className} flex items-center justify-center bg-surface-hover font-semibold text-ink-primary`}>
+      {(name.trim().slice(0, 1) || '?').toLocaleUpperCase('pt-BR')}
+    </span>
+  );
+}
+
+/** Resolve a URL da foto de um membro pelo userId (null = sem foto). */
+export type AvatarFor = (userId: string) => string | null;
+
 export function unreadLabel(count: number): string {
   if (count > 99) return 'mais de 99 mensagens não lidas';
   return count === 1 ? '1 mensagem não lida' : `${count} mensagens não lidas`;
@@ -142,7 +165,15 @@ export function CommunityRail({
                 move(community.id, index + (event.key === 'ArrowUp' ? -1 : 1));
                 requestAnimationFrame(() => target.focus());
               }}
-              className={`${railButton} ${community.id === selected ? 'btn-primary' : 'bg-surface-hover text-ink-muted hover:text-ink-primary'}`}
+              className={`${railButton} ${
+                community.iconUpdatedAt
+                  ? // Com icone: a imagem ocupa o quadrado inteiro; selecionado = anel.
+                    // (btn-primary tem padding de botao e espremia a imagem.)
+                    `overflow-hidden p-0 ${community.id === selected ? 'ring-2 ring-accent ring-offset-2 ring-offset-surface-secondary' : 'opacity-90 hover:opacity-100'}`
+                  : community.id === selected
+                    ? 'btn-primary !min-h-0 !p-0'
+                    : 'bg-surface-hover text-ink-muted hover:text-ink-primary'
+              }`}
             >
               {community.iconUpdatedAt ? (
                 // eslint-disable-next-line @next/next/no-img-element -- export estatico, sem otimizador de imagem
@@ -198,6 +229,7 @@ export function ChannelList({
   selected,
   voiceStates,
   speakingUserIds,
+  avatarFor,
   onSelect,
   onInvite,
   onSettings,
@@ -224,6 +256,8 @@ export function ChannelList({
   voiceStates: CommunityVoiceState[];
   /** Quem esta falando agora nos canais de voz (`community:voice-speaking`). */
   speakingUserIds?: ReadonlySet<string>;
+  /** Foto dos membros conectados na voz. */
+  avatarFor?: AvatarFor;
   onSelect: (channel: Channel) => void;
   onInvite: () => void;
   onSettings: () => void;
@@ -315,6 +349,7 @@ export function ChannelList({
                           []
                         }
                         speakingUserIds={speakingUserIds}
+                        avatarFor={avatarFor}
                         active={channel.id === activeVoiceId}
                         joined={channel.id === activeVoiceId && activeVoiceJoined}
                         onSelect={() => onSelect(channel)}
@@ -347,6 +382,7 @@ export function ChannelList({
 function VoiceChannelItem({
   channel,
   members,
+  avatarFor,
   speakingUserIds,
   active,
   joined,
@@ -355,6 +391,7 @@ function VoiceChannelItem({
 }: {
   channel: Channel;
   members: CommunityVoiceState['members'];
+  avatarFor?: AvatarFor;
   speakingUserIds?: ReadonlySet<string>;
   active: boolean;
   joined: boolean;
@@ -420,6 +457,7 @@ function VoiceChannelItem({
               key={member.userId}
               member={member}
               speaking={speakingUserIds?.has(member.userId) === true}
+              avatarFor={avatarFor}
             />
           ))}
         </ul>
@@ -444,20 +482,22 @@ export function voiceMemberStatus(
 function VoiceMemberRow({
   member,
   speaking,
+  avatarFor,
 }: {
   member: CommunityVoiceState['members'][number];
   speaking: boolean;
+  avatarFor?: AvatarFor;
 }) {
   const status = voiceMemberStatus(member, speaking);
   const talking = speaking && !member.muted;
   return (
     <li className="flex items-center gap-2 py-1 pl-9 pr-2">
-      <span
-        aria-hidden="true"
-        data-speaking={talking ? 'true' : undefined}
-        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-surface-hover text-[11px] font-semibold text-ink-primary motion-safe:transition-shadow ${talking ? 'ring-2 ring-emerald-400' : ''}`}
-      >
-        {member.name.slice(0, 1).toLocaleUpperCase('pt-BR')}
+      <span data-speaking={talking ? 'true' : undefined} className="contents">
+        <MemberAvatar
+          name={member.name}
+          src={avatarFor?.(member.userId)}
+          className={`h-6 w-6 shrink-0 rounded-full text-[11px] motion-safe:transition-shadow ${talking ? 'ring-2 ring-emerald-400' : ''}`}
+        />
       </span>
       <span
         className={`min-w-0 flex-1 truncate text-sm ${talking ? 'text-ink-primary' : 'text-ink-secondary'}`}
@@ -501,8 +541,11 @@ export function MemberList({
   onModerate,
   canEditNickname,
   onNickname,
+  avatarFor,
 }: {
   members: Member[];
+  /** Foto de cada membro (rota da comunidade). */
+  avatarFor?: AvatarFor;
   friendStatus?: (member: Member) => FriendStatus;
   /** Envia (ou aceita, se ja houver pedido recebido) a amizade pelo @nome. */
   onAddFriend?: (member: Member) => Promise<void>;
@@ -570,12 +613,7 @@ export function MemberList({
             className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-2 text-left outline-none hover:bg-surface-hover data-[focus-visible]:outline data-[focus-visible]:outline-2 data-[focus-visible]:outline-accent"
           >
             <span className="relative shrink-0">
-              <span
-                aria-hidden="true"
-                className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-hover text-xs font-semibold text-ink-primary"
-              >
-                {shown.slice(0, 1).toLocaleUpperCase('pt-BR')}
-              </span>
+              <MemberAvatar name={shown} src={avatarFor?.(member.userId)} className="h-8 w-8 rounded-full text-xs" />
               {presence && (
                 <span
                   role="img"
@@ -727,12 +765,7 @@ export function MemberList({
       {profile && (
         <AppModal title="Perfil" onClose={() => setProfile(null)} closeLabel="Fechar perfil" size="sm">
           <div className="flex flex-col items-center gap-3 text-center">
-            <span
-              aria-hidden="true"
-              className="flex h-20 w-20 items-center justify-center rounded-full bg-surface-hover text-3xl font-semibold text-ink-primary"
-            >
-              {profile.name.slice(0, 1).toLocaleUpperCase('pt-BR')}
-            </span>
+            <MemberAvatar name={profile.name} src={avatarFor?.(profile.userId)} className="h-20 w-20 rounded-full text-3xl" />
             <div>
               <p className="text-lg font-semibold text-ink-primary">{profile.nickname || profile.name}</p>
               {profile.nickname && <p className="text-sm text-ink-secondary">{profile.name}</p>}

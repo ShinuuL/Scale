@@ -31,6 +31,8 @@ interface ParticipantListProps {
   onReport?: (peerId: string) => void;
   /** Dono da sala: encerra a partilha de tela de quem está ao vivo. */
   onStopShare?: (peerId: string) => void;
+  /** Fotos de perfil (LOCAL_ID ou peerId -> URL), as mesmas da grade. */
+  avatars?: Map<string, string>;
 }
 
 /** Menu de ações sobre OUTRO participante (react-aria): denunciar e, para o dono, encerrar a partilha. */
@@ -93,6 +95,7 @@ export function ParticipantList({
   onWatch,
   onReport,
   onStopShare,
+  avatars,
 }: ParticipantListProps) {
   const participants: Participant[] = [
     {
@@ -142,18 +145,34 @@ export function ParticipantList({
               key={p.id}
               className="flex min-h-[44px] items-center gap-2.5 rounded-lg px-2 py-1.5 transition-colors duration-150 hover:bg-surface-hover motion-reduce:transition-none"
             >
-              <span
-                aria-hidden="true"
-                className={clsx(
-                  'flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold',
-                  'bg-accent-subtle text-accent transition-shadow duration-150 motion-reduce:transition-none',
-                  isSpeaking
-                    ? 'ring-2 ring-[var(--status-online)] ring-offset-2 ring-offset-surface-secondary animate-speak-pulse motion-reduce:animate-none'
-                    : '',
-                )}
-              >
-                {p.name.charAt(0).toUpperCase()}
-              </span>
+              {avatars?.get(p.id) ? (
+                // eslint-disable-next-line @next/next/no-img-element -- export estatico; URL blob: ou /api versionada
+                <img
+                  src={avatars.get(p.id)}
+                  alt=""
+                  aria-hidden="true"
+                  draggable={false}
+                  className={clsx(
+                    'h-8 w-8 flex-shrink-0 rounded-full object-cover transition-shadow duration-150 motion-reduce:transition-none',
+                    isSpeaking
+                      ? 'ring-2 ring-[var(--status-online)] ring-offset-2 ring-offset-surface-secondary animate-speak-pulse motion-reduce:animate-none'
+                      : '',
+                  )}
+                />
+              ) : (
+                <span
+                  aria-hidden="true"
+                  className={clsx(
+                    'flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold',
+                    'bg-accent-subtle text-accent transition-shadow duration-150 motion-reduce:transition-none',
+                    isSpeaking
+                      ? 'ring-2 ring-[var(--status-online)] ring-offset-2 ring-offset-surface-secondary animate-speak-pulse motion-reduce:animate-none'
+                      : '',
+                  )}
+                >
+                  {p.name.charAt(0).toUpperCase()}
+                </span>
+              )}
               <span
                 className={clsx(
                   'min-w-0 flex-1 truncate text-sm',

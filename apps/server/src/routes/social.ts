@@ -332,6 +332,24 @@ export async function socialRoutes(fastify: FastifyInstance): Promise<void> {
     return sendUserAvatar(reply, other);
   });
 
+  // GET /api/communities/:communityId/members/:userId/avatar — foto de outro
+  // membro da MESMA comunidade (lista de membros e canal de voz). Quem nao e
+  // membro, alvo fora da comunidade ou sem foto: o mesmo 404.
+  fastify.get('/api/communities/:communityId/members/:userId/avatar', auth, async (request, reply) => {
+    const me = sessionUser(request, reply);
+    if (!me) return reply;
+    const params = communityMemberAvatarParams.safeParse(request.params);
+    if (!params.success) return reply.code(404).send({ error: 'No avatar' });
+    const { communityId, userId } = params.data;
+    const rows = await prisma.communityMember.findMany({
+      where: { communityId, userId: { in: [me, userId] } },
+      select: { userId: true },
+    });
+    const ids = new Set(rows.map((r) => r.userId));
+    if (!ids.has(me) || !ids.has(userId)) return reply.code(404).send({ error: 'No avatar' });
+    return sendUserAvatar(reply, userId);
+  });
+
   // GET /api/rooms/:roomId/peers/:peerId/avatar — foto de quem esta na chamada.
   // So participante da sala (room ticket no header, ou dono) e so de um peer
   // que esta NELA agora; o userId nao trafega, o cliente so conhece o peerId.
@@ -358,6 +376,8 @@ const peerAvatarParams = z.object({
 });
 
 /** Envia a foto do usuario (sandbox em AVATARS_ROOT) ou 404 "No avatar". */
+const communityMemberAvatarParams = z.object({ communityId: z.string().uuid(), userId: z.string().min(1).max(64) });
+
 async function sendUserAvatar(reply: FastifyReply, userId: string): Promise<FastifyReply> {
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { avatarPath: true, avatarMime: true } });
   const abs = user?.avatarPath ? path.resolve(process.cwd(), user.avatarPath) : null;
