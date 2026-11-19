@@ -5,7 +5,7 @@ import { Dialog, Heading, Modal, ModalOverlay } from 'react-aria-components';
 import type { CommunityVoiceState } from '@scale/shared';
 import { useRouter } from 'next/navigation';
 import type { FriendsList } from '@scale/shared';
-import { api, communityImageUrl, type CommunityDetail, type CommunityListItem } from '@/lib/api';
+import { api, communityImageUrl, communityMemberAvatarUrl, type CommunityDetail, type CommunityListItem } from '@/lib/api';
 import type { CommunityLayout } from '@scale/shared';
 import { applyLayout } from './channelLayout';
 import { callScreenPath, startBackgroundCall, useActiveCall } from '@/lib/callControl';
@@ -139,9 +139,16 @@ export function CommunityView({
     }
     await loadFriends();
   };
+  // Foto dos membros (lista e canal de voz): rota da comunidade, versionada.
+  const avatarFor = (userId: string): string | null => {
+    if (!detail) return null;
+    const member = detail.members.find((m) => m.userId === userId);
+    return member ? communityMemberAvatarUrl(detail.community.id, userId, member.avatarUpdatedAt) : null;
+  };
   const memberList = detail && (
     <MemberList
       members={detail.members}
+      avatarFor={avatarFor}
       friendStatus={friendStatus}
       onAddFriend={addFriend}
       onMessage={(member) => router.push(`/friends?dm=${encodeURIComponent(member.userId)}`)}
@@ -381,6 +388,7 @@ export function CommunityView({
       selected={selected?.id}
       voiceStates={withVoiceNicknames(voice, nicknames)}
       speakingUserIds={speakingIds}
+      avatarFor={avatarFor}
       onSelect={(channel) => {
         setDialog(null);
         setError('');

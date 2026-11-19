@@ -759,6 +759,7 @@ export function RoomSession({
               localMuted={webrtc.isMuted}
               localScreenSharing={webrtc.isScreenSharing}
               channelName={roomName}
+              avatars={callAvatars}
               maxParticipants={room?.room.maxParticipants ?? 8}
               speaking={speaking}
               onWatch={setFocusedShareId}

@@ -51,7 +51,7 @@ const communitySchema = z.object({ id: z.string(), name: z.string(), ownerId: z.
 const categorySchema = z.object({ id: z.string(), name: z.string(), position: z.number() });
 export type CommunityCategory = z.infer<typeof categorySchema>;
 const channelSchema = z.object({ id: z.string(), name: z.string(), kind: channelKindSchema, position: z.number(), categoryId: z.string().nullish(), topic: z.string().nullish(), userLimit: z.number().int().nullish(), unread: z.number().int().min(0).optional(), announcement: z.boolean().optional(), slowModeSeconds: z.number().int().min(0).optional(), canSend: z.boolean().optional(), overrides: z.array(channelOverrideSchema).optional() });
-const memberSchema = z.object({ userId: z.string(), name: z.string(), username: z.string().nullable(), role: communityRoleSchema, customRoleId: z.string().nullable().default(null), timeoutUntil: z.string().nullable().optional(), nickname: z.string().nullable().optional() });
+const memberSchema = z.object({ userId: z.string(), name: z.string(), username: z.string().nullable(), role: communityRoleSchema, customRoleId: z.string().nullable().default(null), timeoutUntil: z.string().nullable().optional(), nickname: z.string().nullable().optional(), avatarUpdatedAt: z.string().nullish() });
 const customRoleSchema = z.object({ id: z.string(), name: z.string(), color: z.string(), permissions: communityPermissionsSchema });
 const noPermissions = { manageChannels: false, manageInvites: false, manageMessages: false, kickMembers: false };
 export const channelMessageSchema = z.object({ id: z.string(), channelId: z.string(), author: z.object({ id: z.string().nullable(), name: z.string(), username: z.string().nullable() }), content: z.string(), createdAt: z.string(), editedAt: z.string().nullable(), deletedAt: z.string().nullable(), files: z.array(z.object({ id: z.string(), filename: z.string(), mime: z.string(), size: z.number() })).default([]), replyTo: channelReplySchema.nullable().default(null), reactions: z.array(channelReactionSummarySchema).default([]), pinnedAt: z.string().nullable().default(null), pinnedById: z.string().nullable().default(null), system: z.boolean().optional(), threadId: z.string().nullish(), thread: channelThreadSummarySchema.nullish() });
@@ -216,6 +216,13 @@ export function avatarUrl(avatarUpdatedAt: string | null | undefined): string | 
 export function userAvatarUrl(userId: string, avatarUpdatedAt: string | null | undefined): string | null {
   return avatarUpdatedAt
     ? `/api/users/${encodeURIComponent(userId)}/avatar?v=${encodeURIComponent(avatarUpdatedAt)}`
+    : null;
+}
+
+/** Foto de outro membro da mesma comunidade (lista de membros e voz). */
+export function communityMemberAvatarUrl(communityId: string, userId: string, avatarUpdatedAt: string | null | undefined): string | null {
+  return avatarUpdatedAt
+    ? `/api/communities/${encodeURIComponent(communityId)}/members/${encodeURIComponent(userId)}/avatar?v=${encodeURIComponent(avatarUpdatedAt)}`
     : null;
 }
 
