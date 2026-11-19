@@ -592,3 +592,36 @@ export function isCommunityNicknameRateLimited(userId: string): RateLimitResult 
 export function resetCommunityNicknameRateLimit(userId: string): void {
   reset(communityNicknameStore, userId);
 }
+
+// Servidor MCP / OAuth (apps conectados).
+// Registro dinamico de cliente: 10 / hora por IP (qualquer um pode registrar).
+const OAUTH_REGISTER_WINDOW_MS = 60 * 60_000;
+const OAUTH_REGISTER_MAX = 10;
+const oauthRegisterStore = createBucket('oauthRegister');
+
+export function isOAuthRegisterRateLimited(ip: string): RateLimitResult {
+  return ipBucket(oauthRegisterStore, ip, OAUTH_REGISTER_WINDOW_MS, OAUTH_REGISTER_MAX);
+}
+
+// Endpoint de token (troca de codigo e renovacao): 60 / 10 min por IP.
+const OAUTH_TOKEN_WINDOW_MS = 10 * 60_000;
+const OAUTH_TOKEN_MAX = 60;
+const oauthTokenStore = createBucket('oauthToken');
+
+export function isOAuthTokenRateLimited(ip: string): RateLimitResult {
+  return ipBucket(oauthTokenStore, ip, OAUTH_TOKEN_WINDOW_MS, OAUTH_TOKEN_MAX);
+}
+
+// Chamadas MCP: 60 / min por app conectado (grant). As rotas chamadas por
+// dentro continuam com os baldes delas (ex.: mensagens por usuario).
+const MCP_CALL_WINDOW_MS = 60_000;
+const MCP_CALL_MAX = 60;
+const mcpCallStore = createBucket('mcpCall');
+
+export function isMcpCallRateLimited(grantId: string): RateLimitResult {
+  return take(mcpCallStore, grantId, MCP_CALL_WINDOW_MS, MCP_CALL_MAX);
+}
+
+export function resetMcpCallRateLimit(grantId: string): void {
+  reset(mcpCallStore, grantId);
+}

@@ -47,6 +47,7 @@ model User {
   friendRequestsReceived Friendship[]    @relation("FriendshipAddressee")
   directMessagesSent     DirectMessage[] @relation("DirectMessageSender")
   directMessagesReceived DirectMessage[] @relation("DirectMessageRecipient")
+  oauthGrants            OAuthGrant[]
 }
 
 // Conta GitHub vinculada (login OAuth). Tabela propria pelo mesmo motivo do
@@ -291,6 +292,8 @@ model ChatMessage {
   isSystem    Boolean   @default(false)
   /// Topico (Fase 4): mensagem dentro de um ChannelThread; null = canal principal. Sem FK (coluna anulavel).
   threadId    String?
+  /// Enviada por app conectado (MCP): nome do app no momento do envio. Null = digitada pelo autor.
+  viaApp      String?
 
   room      Room                  @relation(fields: [roomId], references: [id], onDelete: Cascade)
   files     ChatFile[]
@@ -500,6 +503,8 @@ model CommunityAuditLog {
   targetName  String?
   reason      String?
   detail      String?
+  /// Acao feita por app conectado (MCP): nome do app. Null = feita pelo proprio ator.
+  viaApp      String?
   createdAt   DateTime @default(now())
 
   community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
@@ -536,4 +541,47 @@ model CommunityEventInterest {
   event CommunityEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
   @@id([eventId, userId])
+}
+
+/// Apps conectados (servidor MCP, OAuth 2.1 com PKCE). Cliente publico criado
+/// pelo registro dinamico (RFC 7591): sem segredo, so as URLs de retorno.
+model OAuthClient {
+  id           String   @id
+  name         String
+  /// JSON: lista de URLs de retorno registradas (comparacao exata).
+  redirectUris String
+  createdAt    DateTime @default(now())
+
+  grants OAuthGrant[]
+}
+
+/// Autorizacao de um usuario a um app: o que aparece em "Apps conectados".
+model OAuthGrant {
+  id         String    @id @default(uuid())
+  userId     String
+  clientId   String
+  /// Escopos separados por espaco.
+  scopes     String
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+
+  user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  client OAuthClient  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  tokens OAuthToken[]
+
+  @@unique([userId, clientId])
+}
+
+/// Tokens de acesso (1 h) e de renovacao (30 dias, rotativo). So o SHA-256 e gravado.
+model OAuthToken {
+  tokenHash String   @id
+  grantId   String
+  kind      String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  grant OAuthGrant @relation(fields: [grantId], references: [id], onDelete: Cascade)
+
+  @@index([grantId])
+  @@index([expiresAt])
 }

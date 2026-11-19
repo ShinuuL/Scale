@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
+import { takeConsentReturn } from '@/lib/authNext';
 import { Card, CardContent } from '@/components/ui/Card';
 import { AppModal } from '@/components/ui/AppModal';
 import { Button } from '@/components/ui/Button';
@@ -207,6 +208,11 @@ function HomePageInner() {
         const me = await api.getMe();
         if (!cancelled) setAccount(me.user);
         authed = true;
+        const consentReturn = takeConsentReturn();
+        if (consentReturn) {
+          window.location.replace(consentReturn);
+          return;
+        }
         const inviteReturn = Number(sessionStorage.getItem('scale:invite-oauth-return'));
         sessionStorage.removeItem('scale:invite-oauth-return');
         if (inviteReturn > 0 && Date.now() - inviteReturn >= 0 && Date.now() - inviteReturn < 10 * 60 * 1000) {

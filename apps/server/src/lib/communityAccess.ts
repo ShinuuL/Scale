@@ -4,7 +4,7 @@ import { toPublicFile } from './publicDto.js';
 
 interface ChannelMessageRow {
   id: string; roomId: string; content: string; createdAt: Date; editedAt: Date | null; deletedAt: Date | null;
-  pinnedAt?: Date | null; pinnedById?: string | null; isSystem?: boolean; threadId?: string | null;
+  pinnedAt?: Date | null; pinnedById?: string | null; isSystem?: boolean; threadId?: string | null; viaApp?: string | null;
   files?: Array<{ id: string; filename: string; mime: string; size: number; deletedAt: Date | null }>;
 }
 
@@ -28,6 +28,8 @@ export function toChannelMessage(
     threadId: row.threadId ?? null,
     /** Fase 4: topico aberto a partir desta mensagem. */
     thread: extras.thread ?? null,
+    /** Enviada por app conectado (MCP): nome do app; null = digitada pelo autor. */
+    viaApp: row.viaApp ?? null,
   };
 }
 

@@ -178,6 +178,22 @@ docker compose up --build -d
   único), nunca em cookie editável. Vincular não troca a sessão.
 - `GET /api/me/links` (logado): `{ github: { login } | null, google }`.
 
+### Servidor MCP (apps conectados)
+- Guia: `docs/mcp.md`. OAuth 2.1 + PKCE S256, registro dinamico, cliente
+  publico; consentimento na pagina `/oauth/authorize`; lista e desconexao em
+  Configuracoes > Apps conectados (`GET|DELETE /api/me/apps`).
+- `POST /mcp` (Streamable HTTP sem estado). Escopos `channels`,
+  `community.manage`, `room.chat` (`MCP_SCOPES` em `@scale/shared`).
+- Ferramenta = rota REST de sempre via `app.inject` como o usuario: o app
+  nunca tem mais poder que ele. Nao reimplementar regra de negocio em
+  `lib/mcpTools.ts`.
+- Sem modo oculto: `ChatMessage.viaApp` / `CommunityAuditLog.viaApp` gravam o
+  nome do app; a UI mostra "via <app>". A marca so nasce do nonce interno
+  `x-scale-via-app` (`lib/viaApp.ts`), nunca de input do cliente.
+- Chat de sala so com o usuario NA sala (usa o socket e o handler dele).
+- Tokens opacos (SHA-256 no banco): acesso 1 h, renovacao 30 dias rotativa.
+  Logout nao desconecta apps. Baldes `oauthRegister`, `oauthToken`, `mcpCall`.
+
 ### Convidado (guestId)
 - O servidor emite um `guestId` (UUID v4) no cookie `scale_guest` — HttpOnly,
   SameSite=Strict, Secure em produção, 180 dias, assinado (HMAC,

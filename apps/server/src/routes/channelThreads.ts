@@ -1,3 +1,4 @@
+import { currentViaApp } from '../lib/viaApp.js';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Server } from 'socket.io';
 import { Prisma } from '@prisma/client';
@@ -117,7 +118,7 @@ export async function channelThreadRoutes(app: FastifyInstance): Promise<void> {
     if (!post.ok) { if (post.body.retryAfterSeconds) void reply.header('Retry-After', String(post.body.retryAfterSeconds)); return reply.code(post.status).send(post.body); }
     if (isChatRateLimited(`user:${me}`)) return tooMany(reply);
     const user = await prisma.user.findUnique({ where: { id: me }, include: { username: true } }); if (!user) return missing(reply);
-    const row = await prisma.chatMessage.create({ data: { roomId: room.id, authorId: me, content: body.data.content, threadId: thread.id } });
+    const row = await prisma.chatMessage.create({ data: { roomId: room.id, authorId: me, content: body.data.content, threadId: thread.id, viaApp: currentViaApp() } });
     const message = toChannelMessage(row, { id: user.id, name: user.name, username: user.username?.name ?? null });
     await emitToChannel(ioOf(app), room.communityId, room.id, 'channel:message', message);
     const summary = await threadSummaryOf(thread.id);

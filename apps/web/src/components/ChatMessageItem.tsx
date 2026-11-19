@@ -1,5 +1,6 @@
 'use client';
 
+import { ViaAppBadge } from '@/components/ui/ViaAppBadge';
 import { useState } from 'react';
 import type { ChatMessage } from '@/hooks/useChat';
 import { downloadRoomFile } from '@/lib/roomAccess';
@@ -102,6 +103,7 @@ export function ChatMessageItem({
       >
         <div className="flex items-baseline gap-2 text-xs text-ink-muted">
           <span className="font-medium text-ink-primary">{authorName}</span>
+          {message.viaApp && <ViaAppBadge name={message.viaApp} className="self-center" />}
           {(message.edited || message.editedAt) && !isDeleted && (
             <span className="italic">(editado)</span>
           )}

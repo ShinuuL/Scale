@@ -33,6 +33,8 @@ export interface ChatMessage {
   files?: ChatFileInfo[];
   /** Mensagens `chat:system` do servidor (entrou/saiu/convite rotacionado). */
   system?: boolean;
+  /** Enviada por app conectado (MCP): nome do app; null = digitada pelo autor. */
+  viaApp?: string | null;
 }
 
 export interface ChatApi {

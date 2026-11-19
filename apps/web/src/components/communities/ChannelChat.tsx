@@ -1,5 +1,6 @@
 'use client';
 
+import { ViaAppBadge } from '@/components/ui/ViaAppBadge';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type FormEvent } from 'react';
 import { CHAT_EDIT_WINDOW_MS, CHAT_MESSAGE_MAX, formatCountdown, formatThreadReplies } from '@scale/shared';
 import { api, type ChannelMessage } from '@/lib/api';
@@ -160,6 +161,7 @@ function MessageItem({
         <time className="text-xs text-ink-muted" dateTime={message.createdAt}>
           {timeFormatter.format(new Date(message.createdAt))}
         </time>
+        {message.viaApp && <ViaAppBadge name={message.viaApp} className="self-center" />}
         {message.editedAt && !message.deletedAt && (
           <span className="text-xs text-ink-muted">editada</span>
         )}

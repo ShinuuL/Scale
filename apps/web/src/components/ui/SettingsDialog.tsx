@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { Input } from '@/components/ui/Input';
 import { LinkedAccounts } from '@/components/ui/LinkedAccounts';
+import { ConnectedApps } from '@/components/ui/ConnectedApps';
 import { PrivacySettings } from '@/components/ui/PrivacySettings';
 import { ThemePicker } from '@/components/ui/ThemePicker';
 import { api, avatarUrl, type MeUser } from '@/lib/api';
@@ -296,6 +297,8 @@ export function SettingsDialog({ user, onClose, onUserChange }: SettingsDialogPr
         )}
 
         {user && <LinkedAccounts />}
+
+        {user && <ConnectedApps />}
 
         {user && <PrivacySettings user={user} onUserChange={onUserChange} />}
 

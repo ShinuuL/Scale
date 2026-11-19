@@ -51,6 +51,14 @@
 	handle /socket.io/* {
 		reverse_proxy backend:4000
 	}
+	# Servidor MCP (apps conectados) e descoberta OAuth: o cliente MCP espera
+	# estes caminhos na RAIZ do dominio (RFC 8414 / RFC 9728), fora de /api.
+	handle /mcp {
+		reverse_proxy backend:4000
+	}
+	handle /.well-known/oauth-* {
+		reverse_proxy backend:4000
+	}
 
 	# Compatibilidade: links antigos /room/<id>[?token=...] -> /room?id=<id>[&token=...].
 	# O export estatico nao tem rota dinamica. Com query string ela e anexada com

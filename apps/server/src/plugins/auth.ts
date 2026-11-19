@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { verifyToken } from '../lib/auth.js';
+import { enterViaAppFromNonce, VIA_APP_HEADER } from '../lib/viaApp.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -15,6 +16,9 @@ declare module 'fastify' {
 export async function authPlugin(fastify: FastifyInstance): Promise<void> {
   // Hook opcional: tenta preencher request.userId se houver cookie válido, sem falhar
   fastify.addHook('onRequest', async (request) => {
+    // Chamada interna de ferramenta MCP: sincrono, antes de qualquer await,
+    // para o contexto valer no resto da requisicao (lib/viaApp.ts).
+    if (request.headers[VIA_APP_HEADER] !== undefined) enterViaAppFromNonce(request.headers[VIA_APP_HEADER]);
     const token = request.cookies?.token ?? (request.headers.authorization?.startsWith('Bearer ') ? request.headers.authorization.slice(7) : undefined);
     if (!token) return;
     try {

@@ -51,7 +51,12 @@ module.exports = (phase) => {
   const devConfig = {
     env: { NEXT_PUBLIC_DEV_WS_URL: process.env.NEXT_PUBLIC_DEV_WS_URL || backendUrl },
     async rewrites() {
-      return [{ source: '/api/:path*', destination: `${backendUrl}/api/:path*` }];
+      return [
+        { source: '/api/:path*', destination: `${backendUrl}/api/:path*` },
+        // Servidor MCP e descoberta OAuth (em producao o Caddy encaminha).
+        { source: '/mcp', destination: `${backendUrl}/mcp` },
+        { source: '/.well-known/:path(oauth-.*)', destination: `${backendUrl}/.well-known/:path` },
+      ];
     },
   };
   return devConfig;

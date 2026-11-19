@@ -1,4 +1,5 @@
 import { timeoutOf } from '../lib/communityModeration.js';
+import { currentViaApp } from '../lib/viaApp.js';
 import type { Server as HttpServer, IncomingMessage } from 'http';
 import { Server, Socket } from 'socket.io';
 import bcrypt from 'bcryptjs';
@@ -115,6 +116,7 @@ export interface ChatMessageRow {
   guestName?: string;
   guestId?: string | null;
   createdAt: Date;
+  viaApp?: string | null;
 }
 
 export const chatBuffers = new Map<string, Array<ChatMessageRow>>();
@@ -191,6 +193,22 @@ export function readCookie(header: string | undefined, name: string): string | u
  * mensagens privadas (routes/social.ts). Convidado nao entra em nenhuma.
  */
 export const userRoom = (userId: string): string => `user:${userId}`;
+
+type ChatAck = { success?: boolean; messageId?: string; error?: string; code?: string; category?: string; details?: unknown };
+/** Envio de chat de sala por socket.id: o MESMO handler do `chat:message` (moderacao, castigo, limites). */
+const internalChatSenders = new Map<string, (data: unknown) => Promise<ChatAck>>();
+
+/**
+ * Chat de sala enviado por app conectado (MCP): so funciona se o usuario esta
+ * NA sala agora (regra de participacao). Usa o socket dele: a mensagem sai com
+ * o mesmo autor, nome e checagens de quem digita; `viaApp` vem do contexto.
+ */
+export async function sendRoomChatAsUser(roomId: string, userId: string, content: string): Promise<ChatAck> {
+  const sid = findUserSocketInRoom(roomId, userId);
+  const send = sid ? internalChatSenders.get(sid) : undefined;
+  if (!send) return { error: 'Not in room' };
+  return send({ roomId, content });
+}
 
 export function createSocketServer(httpServer: HttpServer): Server {
   const io = new Server(httpServer, {
@@ -768,7 +786,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
       callback?.({ success: true });
     });
 
-    socket.on('chat:message', async (data, callback) => {
+    const handleChatMessage = async (data: unknown, callback?: (ack: ChatAck) => void): Promise<void> => {
       if (
         isRateLimited(`socket:${socket.id}`) ||
         isChatRateLimited(`chat:${socket.id}`)
@@ -778,9 +796,10 @@ export function createSocketServer(httpServer: HttpServer): Server {
       }
 
       // trim antes de validar para respeitar 1..500 após trim
+      const raw = data as { content?: unknown } | null | undefined;
       const trimmed =
-        typeof data?.content === 'string'
-          ? { ...data, content: data.content.trim() }
+        typeof raw?.content === 'string'
+          ? { ...raw, content: raw.content.trim() }
           : data;
       const parsed = chatMessageSchema.safeParse(trimmed);
       if (!parsed.success) {
@@ -849,6 +868,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
             authorId: user.userId,
             guestName: user.guestName ?? user.name,
             guestId: user.userId ? null : (user.guestId ?? null),
+            viaApp: currentViaApp(),
           },
         });
         savedMsg = created as ChatMessageRow;
@@ -864,6 +884,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
           guestName: user.guestName ?? user.name,
           guestId: user.userId ? null : (user.guestId ?? null),
           createdAt: new Date(),
+          viaApp: currentViaApp(),
         };
         const buf = chatBuffers.get(roomId) ?? [];
         buf.push(savedMsg);
@@ -889,7 +910,11 @@ export function createSocketServer(httpServer: HttpServer): Server {
         }
       }
       callback?.({ success: true, messageId: savedMsg.id });
-    });
+    };
+    socket.on('chat:message', (data, callback) => { void handleChatMessage(data, callback); });
+    internalChatSenders.set(socket.id, (data) => new Promise<ChatAck>((resolve) => {
+      handleChatMessage(data, resolve).catch(() => resolve({ error: 'Internal error' }));
+    }));
 
     socket.on('chat:edit', async (data, callback) => {
       if (
@@ -1128,6 +1153,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
     });
 
     socket.on('disconnect', () => {
+      internalChatSenders.delete(socket.id);
       const roomId = socket.data.roomId as string | undefined;
       if (roomId) {
         handleLeaveRoom(io, socket, roomId);
